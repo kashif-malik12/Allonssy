@@ -200,6 +200,18 @@ class _FeedScreenState extends State<FeedScreen> {
   // -----------------------------
   // Feed load (reset + paginate)
   // -----------------------------
+
+  String _intentLabel(String? intent) {
+    switch (intent) {
+      case 'buying':
+        return 'Buying';
+      case 'selling':
+        return 'Selling';
+      default:
+        return (intent ?? '').trim();
+    }
+  }
+
   bool _matchesMarketIntent(Post post, String intent) {
     final declaredIntent = post.marketIntent;
     if (declaredIntent == 'buying' || declaredIntent == 'selling') {

@@ -18,7 +18,43 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   String? _error;
   String _selectedCategory = 'all';
   String _selectedIntent = 'all';
+  String _search = '';
+  final TextEditingController _searchCtrl = TextEditingController();
   List<Post> _posts = [];
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  String _intentLabel(String? intent) {
+    switch (intent) {
+      case 'buying':
+        return 'Buying';
+      case 'selling':
+        return 'Selling';
+      default:
+        return (intent ?? '').trim();
+    }
+  }
+
+  bool _matchesIntentByContent(Post post, String targetIntent) {
+    final text = post.content.toLowerCase();
+    if (targetIntent == 'selling') {
+      return text.contains('sell') ||
+          text.contains('for sale') ||
+          text.contains('wts');
+    }
+
+    if (targetIntent == 'buying') {
+      return text.contains('buy') ||
+          text.contains('looking for') ||
+          text.contains('wtb');
+    }
+
+    return true;
+  }
 
   @override
   void initState() {
@@ -33,27 +69,50 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     });
 
     try {
-      // Building the query step by step to avoid analyzer issues
-      var query = Supabase.instance.client
+      final data = await Supabase.instance.client
           .from('posts')
           .select('*, profiles(full_name, avatar_url)')
-          ..filter('post_type', 'eq', 'market')
+          .eq('post_type', 'market')
           .order('created_at', ascending: false)
-          .limit(60);
+          .limit(120);
+
+      final rows = (data as List).cast<Map<String, dynamic>>();
+
+      var items = rows.map((e) => Post.fromMap(e)).toList();
 
       if (_selectedCategory != 'all') {
-        query..filter('market_category', 'eq', _selectedCategory);
-      }
-      if (_selectedIntent != 'all') {
-        query..filter('market_intent', 'eq', _selectedIntent);
+        items = items
+            .where((p) => (p.marketCategory ?? '').trim() == _selectedCategory)
+            .toList();
       }
 
-      final data = await query;
-      final rows = (data as List).cast<Map<String, dynamic>>();
+      if (_selectedIntent != 'all') {
+        items = items.where((p) {
+          final intent = (p.marketIntent ?? '').trim();
+          if (intent.isNotEmpty) {
+            return intent == _selectedIntent;
+          }
+          return _matchesIntentByContent(p, _selectedIntent);
+        }).toList();
+      }
+
+      final q = _search.trim().toLowerCase();
+      if (q.isNotEmpty) {
+        items = items.where((p) {
+          final title = (p.marketTitle ?? '').toLowerCase();
+          final content = p.content.toLowerCase();
+          final seller = (p.authorName ?? '').toLowerCase();
+          final category = marketCategoryLabel(p.marketCategory ?? '').toLowerCase();
+          return title.contains(q) ||
+              content.contains(q) ||
+              seller.contains(q) ||
+              category.contains(q);
+        }).toList();
+      }
 
       if (!mounted) return;
       setState(() {
-        _posts = rows.map((e) => Post.fromMap(e)).toList();
+        _posts = items;
       });
     } catch (e) {
       if (!mounted) return;
@@ -81,6 +140,32 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search products, category, seller...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _search.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _search = '');
+                          _load();
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (value) {
+                setState(() => _search = value);
+                _load();
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: Row(
               children: [
                 const Text('Category:'),
@@ -141,39 +226,117 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                ? Center(child: Text('Error: $_error'))
-                : _posts.isEmpty
-                ? const Center(child: Text('No marketplace posts found'))
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: ListView.separated(
-                      itemCount: _posts.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final p = _posts[index];
-                        final author = (p.authorName ?? 'Unknown').trim();
-                        final category = p.marketCategory;
-                        final intent = p.marketIntent;
+                    ? Center(child: Text('Error: $_error'))
+                    : _posts.isEmpty
+                        ? const Center(child: Text('No marketplace posts found'))
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: GridView.builder(
+                              padding: const EdgeInsets.all(12),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.72,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                              ),
+                              itemCount: _posts.length,
+                              itemBuilder: (context, index) {
+                                final p = _posts[index];
+                                final seller = (p.authorName ?? 'Unknown').trim();
+                                final title = (p.marketTitle ?? '').trim().isNotEmpty
+                                    ? p.marketTitle!.trim()
+                                    : p.content.trim();
+                                final intent = p.marketIntent;
+                                final priceText = p.marketPrice != null
+                                    ? '\$${p.marketPrice!.toStringAsFixed(2)}'
+                                    : (intent == 'buying' ? 'Looking to buy' : 'Price on request');
 
-                        return ListTile(
-                          onTap: () => context.push('/post/${p.id}'),
-                          title: Text(p.content),
-                          subtitle: Text(
-                            [
-                              'by $author',
-                              if (intent != null && intent.isNotEmpty)
-                                intent == 'buying' ? 'Buying' : intent == 'selling' ? 'Selling' : intent,
-                              if (category != null && category.isNotEmpty)
-                                marketCategoryLabel(category),
-                            ].join(' • '),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () => context.push('/marketplace/product/${p.id}'),
+                                  child: Ink(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.black12),
+                                      color: Theme.of(context).cardColor,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: ClipRRect(
+                                            borderRadius: const BorderRadius.vertical(
+                                              top: Radius.circular(12),
+                                            ),
+                                            child: Container(
+                                              width: double.infinity,
+                                              color: Colors.grey.shade200,
+                                              child: p.imageUrl != null && p.imageUrl!.isNotEmpty
+                                                  ? Image.network(
+                                                      p.imageUrl!,
+                                                      fit: BoxFit.cover,
+                                                    )
+                                                  : const Icon(
+                                                      Icons.image_outlined,
+                                                      size: 46,
+                                                      color: Colors.black45,
+                                                    ),
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                priceText,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Seller: $seller',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade700,
+                                                ),
+                                              ),
+                                              if (intent != null && intent.isNotEmpty)
+                                                Text(
+                                                  _intentLabel(intent),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                          trailing: const Icon(Icons.chevron_right),
-                        );
-                      },
-                    ),
-                  ),
           ),
         ],
       ),

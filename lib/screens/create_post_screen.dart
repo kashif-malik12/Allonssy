@@ -7,6 +7,7 @@ import '../core/post_types.dart';
 import '../core/market_categories.dart';
 import '../services/post_service.dart';
 
+
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
 
@@ -48,9 +49,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() => _imageXFile = x);
   }
 
-  Future<Map<String, dynamic>?> _loadProfileLocation(
-    SupabaseClient supabase,
-  ) async {
+  Future<Map<String, dynamic>?> _loadProfileLocation(SupabaseClient supabase) async {
     final user = supabase.auth.currentUser;
     if (user == null) return null;
 
@@ -68,56 +67,41 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (uri == null) return false;
 
     final host = uri.host.toLowerCase();
+    // accept common youtube hosts
     return host.contains('youtube.com') || host.contains('youtu.be');
   }
 
-  bool get _showMarketTemplate => _selectedPostType == PostType.market;
-
-  String _buildMarketTemplateContent(String freeTextDescription) {
-    final title = _marketTitleCtrl.text.trim();
-    final price = _marketPriceCtrl.text.trim();
-    final intentLabel = _selectedMarketIntent == 'buying' ? 'BUYING' : 'SELLING';
-
-    final lines = <String>[
-      '[$intentLabel] $title',
-      'Price: $price',
-      if (freeTextDescription.isNotEmpty) 'Details: $freeTextDescription',
-    ];
-
-    return lines.join('\n');
-  }
-
   Future<void> _submit() async {
-    final typedContent = _contentCtrl.text.trim();
-
-    if (_showMarketTemplate) {
-      if (_marketTitleCtrl.text.trim().isEmpty ||
-          _marketPriceCtrl.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Add product title and price')),
-        );
-        return;
-      }
-
-      if (_imageXFile == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Add a product photo')),
-        );
-        return;
-      }
-    } else if (typedContent.isEmpty) {
+final content = _contentCtrl.text.trim();
+    if (content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Write something')),
       );
       return;
     }
 
-    final content = _showMarketTemplate
-        ? _buildMarketTemplateContent(typedContent)
-        : typedContent;
-
     final videoUrlRaw = _videoUrlCtrl.text.trim();
     final videoUrl = videoUrlRaw.isEmpty ? null : videoUrlRaw;
+    final marketTitle = _marketTitleCtrl.text.trim();
+    final marketPriceRaw = _marketPriceCtrl.text.trim();
+    
+    if (_selectedPostType == PostType.market && _selectedMarketCategory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a market category')),
+      );
+      return;
+    }
+
+double? marketPrice;
+    if (_selectedPostType == PostType.market && marketPriceRaw.isNotEmpty) {
+      marketPrice = double.tryParse(marketPriceRaw);
+      if (marketPrice == null || marketPrice < 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid price')),
+        );
+        return;
+      }
+    }
 
     if (_selectedPostType == PostType.market && _selectedMarketCategory.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -129,10 +113,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     // optional: validate youtube link if provided
     if (videoUrl != null && !_isValidYoutubeUrl(videoUrl)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Please paste a valid YouTube link (youtube.com / youtu.be)'),
-        ),
+        const SnackBar(content:Text('Please paste a valid YouTube link (youtube.com / youtu.be)'),),
       );
       return;
     }
@@ -142,12 +123,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final supabase = Supabase.instance.client;
       final service = PostService(supabase);
 
+      // ✅ Get location from profile
       final profile = await _loadProfileLocation(supabase);
       final city = profile?['city'] as String?;
       final lat = profile?['latitude'] as num?;
       final lng = profile?['longitude'] as num?;
 
       final hasLocation = lat != null && lng != null;
+     
       if (!hasLocation) {
         if (!mounted) return;
 
@@ -200,6 +183,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         marketIntent: _selectedPostType == PostType.market
             ? _selectedMarketIntent
             : null,
+        marketTitle: _selectedPostType == PostType.market ? marketTitle : null,
+        marketPrice: _selectedPostType == PostType.market ? marketPrice : null,
       );
 
       if (mounted) Navigator.pop(context, true);
@@ -214,7 +199,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
-  @override
+ @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Create Post')),
@@ -222,6 +207,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
+            TextField(
+              controller: _contentCtrl,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'What’s happening?',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ✅ Post type
             DropdownButtonFormField<PostType>(
               initialValue: _selectedPostType,
               items: PostType.values.map((t) {
@@ -247,6 +243,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             const SizedBox(height: 12),
 
             if (_selectedPostType == PostType.market) ...[
+               TextField(
+                controller: _marketTitleCtrl,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Product title',
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              TextField(
+                controller: _marketPriceCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Price (optional)',
+                  hintText: 'e.g. 1200',
+                  prefixText: '\$ ',
+                ),
+              ),
+              const SizedBox(height: 12),
+
               DropdownButtonFormField<String>(
                 initialValue: _selectedMarketIntent,
                 items: const [
@@ -286,53 +303,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               const SizedBox(height: 12),
             ],
 
-            if (_showMarketTemplate) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade100),
-                ),
-                child: const Text(
-                  'Market template: include product photo, title, and price.',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _marketTitleCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Product title',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _marketPriceCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Price',
-                  hintText: 'Example: 49.99',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-
-            TextField(
-              controller: _contentCtrl,
-              maxLines: 5,
-              decoration: InputDecoration(
-                labelText: _showMarketTemplate ? 'Description (optional)' : 'What\'s on your mind?',
-                border: const OutlineInputBorder(),
+              // ✅ Visibility
+              DropdownButtonFormField<String>(
+                initialValue: _selectedMarketIntent,
+                items: const [
+                  DropdownMenuItem(value: 'selling', child: Text('Selling')),
+                  DropdownMenuItem(value: 'buying', child: Text('Buying')),
+                ],
+                onChanged: (v) => setState(() => _visibility = v ?? 'public'),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Visibility',
               ),
             ),
-            const SizedBox(height: 12),
 
+              const SizedBox(height: 12),
+
+            // ✅Youtube Link
             TextField(
               controller: _videoUrlCtrl,
+              keyboardType: TextInputType.url,
               decoration: const InputDecoration(
                 labelText: 'YouTube video URL (optional)',
                 hintText: 'https://youtube.com/watch?v=...',

@@ -25,6 +25,8 @@ class Post {
   final String? postType;
   final String? marketCategory;
   final String? marketIntent;
+  final String? marketTitle;
+  final double? marketPrice;
   final double? distanceKm;
 
   Post({
@@ -44,6 +46,8 @@ class Post {
     this.postType,
     this.marketCategory,
     this.marketIntent,
+    this.marketTitle,
+    this.marketPrice,
     this.distanceKm,
   });
 

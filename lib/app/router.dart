@@ -26,6 +26,7 @@ import '../screens/post_detail_screen.dart';
 import '../screens/search_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../screens/marketplace_screen.dart';
+import '../screens/marketplace_product_detail_screen.dart';
 
 // ✅ Chat screens
 import '../features/chat/presentation/chat_list_screen.dart';
@@ -129,6 +130,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/feed',
         builder: (context, state) => const FeedScreen(),
+      ),
+
+ GoRoute(
+        path: '/marketplace',
+        builder: (context, state) => const MarketplaceScreen(),
+      ),
+
+      GoRoute(
+        path: '/marketplace/product/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return MarketplaceProductDetailScreen(postId: id);
+        },
       ),
 
       GoRoute(

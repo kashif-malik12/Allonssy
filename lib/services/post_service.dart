@@ -83,6 +83,8 @@ class PostService {
     required String postType,
     String? marketCategory,
     String? marketIntent,
+    String? marketTitle,
+    double? marketPrice,
   }) async {
     final user = _db.auth.currentUser;
     if (user == null) throw Exception('Not logged in');
@@ -110,6 +112,8 @@ class PostService {
       'author_profile_type': authorType,
       'market_category': marketCategory,
       'market_intent': marketIntent,
+      'market_title': marketTitle,
+      'market_price': marketPrice,
     };
 
     try {
@@ -142,7 +146,9 @@ class PostService {
             msg.contains('post_type') ||
             msg.contains('author_profile_type') ||
             msg.contains('market_category') ||
-            msg.contains('market_intent'));
+            msg.contains('market_intent') ||
+            msg.contains('market_title') ||
+            msg.contains('market_price'));
   }
 
   // -----------------------------
@@ -261,4 +267,4 @@ class PostService {
 
     return (rows as List).cast<Map<String, dynamic>>();
   }
-}
+} // Added missing closing brace
