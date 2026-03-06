@@ -24,7 +24,6 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> _messages = [];
 
   // ✅ Header (other user)
-  String? _otherUserId;
   String _otherName = 'Chat';
 
   RealtimeChannel? _msgChannel;
@@ -75,7 +74,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // 2) Determine other user
     final other = (user1 == me) ? user2 : user1;
-    _otherUserId = other;
 
     // 3) Fetch other user profile name
     final prof = await _db

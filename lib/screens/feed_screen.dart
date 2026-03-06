@@ -18,6 +18,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/post_model.dart';
+import '../core/market_categories.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/youtube_preview.dart';
@@ -107,7 +108,7 @@ class _FeedScreenState extends State<FeedScreen> {
       final rows = await Supabase.instance.client
           .from('notifications')
           .select('id')
-          .eq('recipient_id', uid)
+          .filter('recipient_id', 'eq', uid)
           .isFilter('read_at', null);
 
       if (!mounted) return;
@@ -199,6 +200,28 @@ class _FeedScreenState extends State<FeedScreen> {
   // -----------------------------
   // Feed load (reset + paginate)
   // -----------------------------
+  bool _matchesMarketIntent(Post post, String intent) {
+    final declaredIntent = post.marketIntent;
+    if (declaredIntent == 'buying' || declaredIntent == 'selling') {
+      return declaredIntent == intent;
+    }
+
+    final text = post.content.toLowerCase();
+    if (intent == 'selling') {
+      return text.contains('sell') ||
+          text.contains('for sale') ||
+          text.contains('wts');
+    }
+
+    if (intent == 'buying') {
+      return text.contains('buy') ||
+          text.contains('looking for') ||
+          text.contains('wtb');
+    }
+
+    return true;
+  }
+
   Future<void> _load({required bool reset}) async {
     if (reset) {
       setState(() {
@@ -217,24 +240,38 @@ class _FeedScreenState extends State<FeedScreen> {
     try {
       final service = PostService(Supabase.instance.client);
 
+      final effectivePostType =
+          (_selectedPostType == 'buying' || _selectedPostType == 'selling')
+          ? 'market'
+          : _selectedPostType;
+
       final raw = await service.fetchPublicFeed(
         scope: _selectedScope,
-        postType: _selectedPostType,
+        postType: effectivePostType,
         authorType: _selectedAuthorType,
         limit: _pageSize,
         beforeCreatedAt: _cursorCreatedAt,
         beforeId: _cursorId,
       );
 
-      final incoming = raw.map((e) => Post.fromMap(e)).toList();
+      final fetchedPosts = raw.map((e) => Post.fromMap(e)).toList();
+      final incoming = fetchedPosts
+          .where(
+            (post) =>
+                _selectedPostType == 'buying' ||
+                    _selectedPostType == 'selling'
+                ? _matchesMarketIntent(post, _selectedPostType)
+                : true,
+          )
+          .toList();
 
-      // If we got fewer than a page, no more pages
-      final gotFullPage = incoming.length == _pageSize;
+      // If backend returned fewer than a page, no more pages
+      final gotFullPage = fetchedPosts.length == _pageSize;
       if (!gotFullPage) _hasMore = false;
 
-      // Update cursor from the oldest item in incoming list
-      if (incoming.isNotEmpty) {
-        final last = incoming.last;
+      // Update cursor from the oldest item returned by backend
+      if (fetchedPosts.isNotEmpty) {
+        final last = fetchedPosts.last;
         _cursorCreatedAt = last.createdAt;
         _cursorId = last.id;
       }
@@ -349,7 +386,8 @@ class _FeedScreenState extends State<FeedScreen> {
             items: const [
               DropdownMenuItem(value: 'all', child: Text('All posts')),
               DropdownMenuItem(value: 'post', child: Text('General')),
-              DropdownMenuItem(value: 'market', child: Text('Market')),
+              DropdownMenuItem(value: 'buying', child: Text('Buying')),
+              DropdownMenuItem(value: 'selling', child: Text('Selling')),
               DropdownMenuItem(value: 'service_offer', child: Text('Service offer')),
               DropdownMenuItem(value: 'service_request', child: Text('Service request')),
               DropdownMenuItem(value: 'lost_found', child: Text('Lost & found')),
@@ -373,6 +411,11 @@ class _FeedScreenState extends State<FeedScreen> {
               setState(() => _selectedAuthorType = v);
               _load(reset: true);
             },
+          ),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/marketplace'),
+            icon: const Icon(Icons.storefront_outlined),
+            label: const Text('Marketplace'),
           ),
           TextButton.icon(
             onPressed: () {
@@ -541,6 +584,20 @@ class _FeedScreenState extends State<FeedScreen> {
                               const SizedBox(height: 8),
                               if (p.locationName != null)
                                 Text('📍 ${p.locationName}', style: const TextStyle(fontSize: 12)),
+                              if (p.postType == 'market' &&
+                                  p.marketIntent != null &&
+                                  p.marketIntent!.isNotEmpty)
+                                Text(
+                                  'Type: ${p.marketIntent == 'buying' ? 'Buying' : p.marketIntent == 'selling' ? 'Selling' : p.marketIntent}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              if (p.postType == 'market' &&
+                                  p.marketCategory != null &&
+                                  p.marketCategory!.isNotEmpty)
+                                Text(
+                                  'Category: ${marketCategoryLabel(p.marketCategory!)}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
                               Text(
                                 p.createdAt.toLocal().toString(),
                                 style: const TextStyle(fontSize: 12),

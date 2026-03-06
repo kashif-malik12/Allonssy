@@ -23,6 +23,8 @@ class Post {
 
   // Post type + distance (distance comes from RPC)
   final String? postType;
+  final String? marketCategory;
+  final String? marketIntent;
   final double? distanceKm;
 
   Post({
@@ -40,6 +42,8 @@ class Post {
     this.authorAvatarUrl,
     this.authorType,
     this.postType,
+    this.marketCategory,
+    this.marketIntent,
     this.distanceKm,
   });
 
@@ -80,6 +84,8 @@ class Post {
       authorType: map['author_profile_type'] as String?,
 
       postType: map['post_type'] as String?,
+      marketCategory: map['market_category'] as String?,
+      marketIntent: map['market_intent'] as String?,
 
       // RPC returns distance_km; joined select usually doesn't
       distanceKm: (map['distance_km'] as num?)?.toDouble(),

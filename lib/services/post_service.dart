@@ -81,6 +81,8 @@ class PostService {
     String? imageUrl,
     String? videoUrl,
     required String postType,
+    String? marketCategory,
+    String? marketIntent,
   }) async {
     final user = _db.auth.currentUser;
     if (user == null) throw Exception('Not logged in');
@@ -95,7 +97,7 @@ class PostService {
         (profile?['account_type'] as String?) ??
         'person';
 
-    await _db.from('posts').insert({
+    final payload = <String, dynamic>{
       'user_id': user.id,
       'content': content,
       'visibility': visibility,
@@ -106,7 +108,41 @@ class PostService {
       'video_url': videoUrl,
       'post_type': postType,
       'author_profile_type': authorType,
-    });
+      'market_category': marketCategory,
+      'market_intent': marketIntent,
+    };
+
+    try {
+      await _db.from('posts').insert(payload);
+    } on PostgrestException catch (e) {
+      // Backward-compatible fallback for deployments where optional columns
+      // (video_url / post_type / author_profile_type / market_category / market_intent) are not migrated yet.
+      if (!_isMissingColumnError(e)) rethrow;
+
+      await _db.from('posts').insert({
+        'user_id': user.id,
+        'content': content,
+        'visibility': visibility,
+        'latitude': latitude,
+        'longitude': longitude,
+        'location_name': locationName,
+        'image_url': imageUrl,
+      });
+    }
+  }
+
+  bool _isMissingColumnError(PostgrestException e) {
+    final code = (e.code ?? '').trim();
+    final msg = e.message.toLowerCase();
+
+    if (code == '42703') return true;
+
+    return msg.contains('column') &&
+        (msg.contains('video_url') ||
+            msg.contains('post_type') ||
+            msg.contains('author_profile_type') ||
+            msg.contains('market_category') ||
+            msg.contains('market_intent'));
   }
 
   // -----------------------------

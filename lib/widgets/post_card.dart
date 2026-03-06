@@ -29,7 +29,6 @@ class PostCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _HeaderRow(post: post, isMe: isMe),
-
               if (post.locationName != null &&
                   post.locationName!.trim().isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -51,36 +50,175 @@ class PostCard extends StatelessWidget {
                   ],
                 ),
               ],
-
               const SizedBox(height: 10),
-
-              if (post.content.trim().isNotEmpty)
-                Text(
-                  post.content.trim(),
-                  style: const TextStyle(fontSize: 14),
-                ),
-
-              if (post.imageUrl != null && post.imageUrl!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    post.imageUrl!,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ],
-
-              // If you already have a YouTube preview widget, insert it here.
-              // Example:
-              // if (post.videoUrl != null && post.videoUrl!.isNotEmpty) ...[
-              //   const SizedBox(height: 10),
-              //   YoutubePreview(videoUrl: post.videoUrl!),
-              // ],
+              if (post.postType == 'market')
+                _MarketListingBody(post: post)
+              else
+                _RegularPostBody(post: post),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RegularPostBody extends StatelessWidget {
+  final Post post;
+
+  const _RegularPostBody({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (post.content.trim().isNotEmpty)
+          Text(
+            post.content.trim(),
+            style: const TextStyle(fontSize: 14),
+          ),
+        if (post.imageUrl != null && post.imageUrl!.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              post.imageUrl!,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MarketListingBody extends StatelessWidget {
+  final Post post;
+
+  const _MarketListingBody({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final parsed = _MarketPostData.parse(post.content);
+    final badgeColor = parsed.intent == 'buy' ? Colors.teal : Colors.orange;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (post.imageUrl != null && post.imageUrl!.isNotEmpty)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: AspectRatio(
+              aspectRatio: 4 / 3,
+              child: Image.network(
+                post.imageUrl!,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: badgeColor.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                parsed.intentLabel,
+                style: TextStyle(
+                  color: badgeColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            Text(
+              parsed.price,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          parsed.title,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        if (parsed.details != null && parsed.details!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            parsed.details!,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MarketPostData {
+  final String intent;
+  final String title;
+  final String price;
+  final String? details;
+
+  const _MarketPostData({
+    required this.intent,
+    required this.title,
+    required this.price,
+    required this.details,
+  });
+
+  String get intentLabel => intent == 'buy' ? 'BUY' : 'SELL';
+
+  static _MarketPostData parse(String rawContent) {
+    final lines = rawContent
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    String intent = 'sell';
+    String title = '';
+    String price = 'Price not set';
+    String? details;
+
+    if (lines.isNotEmpty) {
+      final first = lines.first;
+      if (first.startsWith('[BUYING] ')) {
+        intent = 'buy';
+        title = first.replaceFirst('[BUYING] ', '').trim();
+      } else if (first.startsWith('[SELLING] ')) {
+        intent = 'sell';
+        title = first.replaceFirst('[SELLING] ', '').trim();
+      } else {
+        title = first;
+      }
+    }
+
+    for (final line in lines.skip(1)) {
+      if (line.startsWith('Price:')) {
+        final parsedPrice = line.replaceFirst('Price:', '').trim();
+        if (parsedPrice.isNotEmpty) price = parsedPrice;
+      }
+
+      if (line.startsWith('Details:')) {
+        final parsedDetails = line.replaceFirst('Details:', '').trim();
+        if (parsedDetails.isNotEmpty) details = parsedDetails;
+      }
+    }
+
+    if (title.isEmpty) title = 'Market listing';
+
+    return _MarketPostData(
+      intent: intent,
+      title: title,
+      price: price,
+      details: details,
     );
   }
 }
@@ -108,14 +246,14 @@ class _HeaderRow extends StatelessWidget {
               : null,
         ),
         const SizedBox(width: 10),
-
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 post.authorName ?? 'Unknown',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
               const SizedBox(height: 2),
               Row(
@@ -151,7 +289,6 @@ class _HeaderRow extends StatelessWidget {
             ],
           ),
         ),
-
         PopupMenuButton<String>(
           onSelected: (value) async {
             if (value == 'report') {
@@ -163,7 +300,7 @@ class _HeaderRow extends StatelessWidget {
 
               if (reported == true && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Thanks — we’ll review it.')),
+                  const SnackBar(content: Text("Thanks - we'll review it.")),
                 );
               }
             }

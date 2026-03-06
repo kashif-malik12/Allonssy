@@ -25,6 +25,7 @@ import '../screens/comments_screen.dart';
 import '../screens/post_detail_screen.dart';
 import '../screens/search_screen.dart';
 import '../screens/notifications_screen.dart';
+import '../screens/marketplace_screen.dart';
 
 // ✅ Chat screens
 import '../features/chat/presentation/chat_list_screen.dart';
@@ -64,7 +65,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         final profile = await Supabase.instance.client
             .from('profiles')
             .select('is_admin')
-            .eq('id', user!.id)
+            .eq('id', user.id)
             .maybeSingle();
 
         final isAdmin = profile?['is_admin'] == true;
@@ -83,7 +84,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final profile = await Supabase.instance.client
           .from('profiles')
           .select('full_name, account_type, latitude, longitude')
-          .eq('id', user!.id)
+          .eq('id', user.id)
           .maybeSingle();
 
       final fullName = profile?['full_name'] as String?;
@@ -128,6 +129,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/feed',
         builder: (context, state) => const FeedScreen(),
+      ),
+
+      GoRoute(
+        path: '/marketplace',
+        builder: (context, state) => const MarketplaceScreen(),
       ),
 
       GoRoute(
