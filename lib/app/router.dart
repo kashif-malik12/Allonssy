@@ -27,6 +27,8 @@ import '../screens/search_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../screens/marketplace_screen.dart';
 import '../screens/marketplace_product_detail_screen.dart';
+import '../screens/gigs_screen.dart';
+import '../screens/gig_detail_screen.dart';
 
 // ✅ Chat screens
 import '../features/chat/presentation/chat_list_screen.dart';
@@ -144,6 +146,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return MarketplaceProductDetailScreen(postId: id);
         },
       ),
+
+      GoRoute(
+        path: '/gigs',
+        builder: (context, state) => const GigsScreen(),
+      ),
+
+      GoRoute(
+        path: '/gigs/service/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return GigDetailScreen(postId: id);
+        },
+      ),
+
+
 
       GoRoute(
         path: '/marketplace',

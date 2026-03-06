@@ -90,7 +90,9 @@ class Post {
       postType: map['post_type'] as String?,
       marketCategory: map['market_category'] as String?,
       marketIntent: map['market_intent'] as String?,
-
+      marketTitle: map['market_title'] as String?,
+      marketPrice: (map['market_price'] as num?)?.toDouble(),
+      
       // RPC returns distance_km; joined select usually doesn't
       distanceKm: (map['distance_km'] as num?)?.toDouble(),
     );

@@ -19,6 +19,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/post_model.dart';
 import '../core/market_categories.dart';
+import '../core/service_categories.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/youtube_preview.dart';
@@ -429,6 +430,11 @@ class _FeedScreenState extends State<FeedScreen> {
             icon: const Icon(Icons.storefront_outlined),
             label: const Text('Marketplace'),
           ),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/gigs'),
+            icon: const Icon(Icons.miscellaneous_services_outlined),
+            label: const Text('Gigs'),
+          ),
           TextButton.icon(
             onPressed: () {
               setState(() {
@@ -603,11 +609,13 @@ class _FeedScreenState extends State<FeedScreen> {
                                   'Type: ${p.marketIntent == 'buying' ? 'Buying' : p.marketIntent == 'selling' ? 'Selling' : p.marketIntent}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
-                              if (p.postType == 'market' &&
+                              if ((p.postType == 'market' ||
+                                      p.postType == 'service_offer' ||
+                                      p.postType == 'service_request') &&
                                   p.marketCategory != null &&
                                   p.marketCategory!.isNotEmpty)
                                 Text(
-                                  'Category: ${marketCategoryLabel(p.marketCategory!)}',
+                                  'Category: ${p.postType == 'market' ? marketCategoryLabel(p.marketCategory!) : serviceCategoryLabel(p.marketCategory!)}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               Text(
