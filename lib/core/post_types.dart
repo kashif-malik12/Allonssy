@@ -4,6 +4,7 @@ enum PostType {
   serviceOffer,
   serviceRequest,
   lostFound,
+  foodAd,
 }
 
 extension PostTypeX on PostType {
@@ -19,6 +20,8 @@ extension PostTypeX on PostType {
         return 'service_request';
       case PostType.lostFound:
         return 'lost_found';
+      case PostType.foodAd:
+        return 'food_ad';
     }
   }
 
@@ -34,6 +37,8 @@ extension PostTypeX on PostType {
         return 'Request Service';
       case PostType.lostFound:
         return 'Lost & Found';
+      case PostType.foodAd:
+        return 'Food Ad';
     }
   }
 }

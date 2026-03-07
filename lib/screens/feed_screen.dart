@@ -19,7 +19,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/post_model.dart';
 import '../core/market_categories.dart';
-import '../core/service_categories.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/youtube_preview.dart';
@@ -404,6 +403,7 @@ class _FeedScreenState extends State<FeedScreen> {
               DropdownMenuItem(value: 'service_offer', child: Text('Service offer')),
               DropdownMenuItem(value: 'service_request', child: Text('Service request')),
               DropdownMenuItem(value: 'lost_found', child: Text('Lost & found')),
+              DropdownMenuItem(value: 'food_ad', child: Text('Food ad')),
             ],
             onChanged: (v) {
               if (v == null) return;
@@ -434,6 +434,16 @@ class _FeedScreenState extends State<FeedScreen> {
             onPressed: () => context.push('/gigs'),
             icon: const Icon(Icons.miscellaneous_services_outlined),
             label: const Text('Gigs'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/restaurants'),
+            icon: const Icon(Icons.restaurant_menu),
+            label: const Text('Restaurants'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/foods'),
+            icon: const Icon(Icons.fastfood),
+            label: const Text('Foods'),
           ),
           TextButton.icon(
             onPressed: () {
@@ -609,13 +619,11 @@ class _FeedScreenState extends State<FeedScreen> {
                                   'Type: ${p.marketIntent == 'buying' ? 'Buying' : p.marketIntent == 'selling' ? 'Selling' : p.marketIntent}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
-                              if ((p.postType == 'market' ||
-                                      p.postType == 'service_offer' ||
-                                      p.postType == 'service_request') &&
+                              if (p.postType == 'market' &&
                                   p.marketCategory != null &&
                                   p.marketCategory!.isNotEmpty)
                                 Text(
-                                  'Category: ${p.postType == 'market' ? marketCategoryLabel(p.marketCategory!) : serviceCategoryLabel(p.marketCategory!)}',
+                                  'Category: ${marketCategoryLabel(p.marketCategory!)}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               Text(

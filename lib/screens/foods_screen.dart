@@ -1,0 +1,224 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/food_categories.dart';
+import '../models/post_model.dart';
+import '../widgets/global_app_bar.dart';
+
+class FoodsScreen extends StatefulWidget {
+  const FoodsScreen({super.key});
+
+  @override
+  State<FoodsScreen> createState() => _FoodsScreenState();
+}
+
+class _FoodsScreenState extends State<FoodsScreen> {
+  bool _loading = true;
+  String? _error;
+  String _selectedCategory = 'all';
+  String _search = '';
+  final _searchCtrl = TextEditingController();
+  List<Post> _posts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final data = await Supabase.instance.client
+          .from('posts')
+          .select('*, profiles(full_name, avatar_url)')
+          .eq('post_type', 'food_ad')
+          .order('created_at', ascending: false)
+          .limit(150);
+
+      final rows = (data as List).cast<Map<String, dynamic>>();
+      var items = rows.map((e) => Post.fromMap(e)).toList();
+
+      if (_selectedCategory != 'all') {
+        items = items.where((p) => (p.marketCategory ?? '') == _selectedCategory).toList();
+      }
+
+      if (_search.trim().isNotEmpty) {
+        final q = _search.trim().toLowerCase();
+        items = items.where((p) {
+          return (p.marketTitle ?? '').toLowerCase().contains(q) ||
+              p.content.toLowerCase().contains(q) ||
+              (p.authorName ?? '').toLowerCase().contains(q) ||
+              foodCategoryLabel(p.marketCategory ?? '').toLowerCase().contains(q);
+        }).toList();
+      }
+
+      if (!mounted) return;
+      setState(() => _posts = items);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const GlobalAppBar(
+        title: 'Food Ads',
+        showBackIfPossible: true,
+        homeRoute: '/feed',
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search foods, category, restaurant...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _search.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _search = '');
+                          _load();
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (v) {
+                setState(() => _search = v);
+                _load();
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButtonFormField<String>(
+              value: _selectedCategory,
+              items: [
+                const DropdownMenuItem(value: 'all', child: Text('All food categories')),
+                ...foodMainCategories.map(
+                  (c) => DropdownMenuItem(value: c, child: Text(foodCategoryLabel(c))),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _selectedCategory = v);
+                _load();
+              },
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Food category',
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(child: Text('Error: $_error'))
+                    : _posts.isEmpty
+                        ? const Center(child: Text('No food ads found'))
+                        : GridView.builder(
+                            padding: const EdgeInsets.all(12),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 0.72,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                            ),
+                            itemCount: _posts.length,
+                            itemBuilder: (context, index) {
+                              final p = _posts[index];
+                              final title = (p.marketTitle ?? '').trim().isNotEmpty
+                                  ? p.marketTitle!.trim()
+                                  : p.content.trim();
+                              final price = p.marketPrice != null
+                                  ? '\$${p.marketPrice!.toStringAsFixed(2)}'
+                                  : 'Price on request';
+
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => context.push('/foods/${p.id}'),
+                                child: Ink(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.black12),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: ClipRRect(
+                                          borderRadius: const BorderRadius.vertical(
+                                            top: Radius.circular(12),
+                                          ),
+                                          child: Container(
+                                            width: double.infinity,
+                                            color: Colors.grey.shade200,
+                                            child: p.imageUrl != null && p.imageUrl!.isNotEmpty
+                                                ? Image.network(p.imageUrl!, fit: BoxFit.cover)
+                                                : const Icon(Icons.fastfood, size: 44),
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.all(10),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontWeight: FontWeight.w600),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              price,
+                                              style: const TextStyle(fontWeight: FontWeight.bold),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              foodCategoryLabel(p.marketCategory ?? ''),
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ],
+      ),
+    );
+  }
+}

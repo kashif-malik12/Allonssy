@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/restaurant_categories.dart';
 import '../../../services/profile_service.dart';
 import '../../../widgets/global_app_bar.dart'; // ✅ NEW
 
@@ -28,6 +29,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
   String _accountType = 'person'; // person | business | org
   String? _orgKind; // government | nonprofit (only when org)
+  bool _isRestaurant = false;
+  String? _restaurantType;
   int _radiusKm = 5;
 
   // ✅ Avatar
@@ -63,32 +66,45 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) return;
 
-      final data = await Supabase.instance.client
-          .from('profiles')
-          .select(
-            'full_name, bio, zipcode, latitude, longitude, profile_type, account_type, org_kind, radius_km, avatar_url',
-          )
-          .eq('id', user.id)
-          .maybeSingle();
+       Map<String, dynamic>? data;
+      try {
+        data = await Supabase.instance.client
+            .from('profiles')
+            .select(
+              'full_name, bio, zipcode, latitude, longitude, profile_type, account_type, org_kind, radius_km, avatar_url, is_restaurant, restaurant_type',
+            )
+            .eq('id', user.id)
+            .maybeSingle();
+      } on PostgrestException {
+        data = await Supabase.instance.client
+            .from('profiles')
+            .select(
+              'full_name, bio, zipcode, latitude, longitude, profile_type, account_type, org_kind, radius_km, avatar_url',
+            )
+            .eq('id', user.id)
+            .maybeSingle();
+      }
 
       if (data == null || !mounted) return;
 
       setState(() {
-        _name.text = (data['full_name'] as String?) ?? '';
-        _bio.text = (data['bio'] as String?) ?? '';
-        _zipCtrl.text = (data['zipcode'] as String?) ?? '';
+        _name.text = (data?['full_name'] as String?) ?? '';
+        _bio.text = (data?['bio'] as String?) ?? '';
+        _zipCtrl.text = (data?['zipcode'] as String?) ?? '';
 
-        _avatarUrl = (data['avatar_url'] as String?);
+        _avatarUrl = (data?['avatar_url'] as String?);
 
-        _lat = (data['latitude'] as num?)?.toDouble();
-        _lng = (data['longitude'] as num?)?.toDouble();
+        _lat = (data?['latitude'] as num?)?.toDouble();
+        _lng = (data?['longitude'] as num?)?.toDouble();
 
-        _accountType = (data['profile_type'] as String?) ??
-            (data['account_type'] as String?) ??
+        _accountType = (data?['profile_type'] as String?) ??
+            (data?['account_type'] as String?) ??
             'person';
 
-        _orgKind = data['org_kind'] as String?;
-        _radiusKm = (data['radius_km'] as int?) ?? 5;
+        _orgKind = data?['org_kind'] as String?;
+        _isRestaurant = data?['is_restaurant'] == true;
+        _restaurantType = data?['restaurant_type'] as String?;
+        _radiusKm = (data?['radius_km'] as int?) ?? 5;
       });
     } catch (e) {
       if (!mounted) return;
@@ -234,6 +250,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         throw 'Please select Government or Non-profit';
       }
 
+      if (_accountType == 'business' && _isRestaurant && _restaurantType == null) {
+        throw 'Please select restaurant type';
+      }
+      
       final updateData = <String, dynamic>{
         'full_name': fullName,
         'bio': _bio.text.trim().isEmpty ? null : _bio.text.trim(),
@@ -241,7 +261,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         'account_type': _accountType,
         'profile_type': _accountType,
         'org_kind': _accountType == 'org' ? _orgKind : null,
-
+        'is_restaurant': _accountType == 'business' ? _isRestaurant : false,
+        'restaurant_type': (_accountType == 'business' && _isRestaurant) ? _restaurantType : null,
+        
         'radius_km': _radiusKm,
 
         // ✅ keep avatar
@@ -257,10 +279,24 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         });
       }
 
-      await Supabase.instance.client.from('profiles').upsert({
-        'id': user.id,
-        ...updateData,
-      });
+      try {
+        await Supabase.instance.client.from('profiles').upsert({
+          'id': user.id,
+          ...updateData,
+        });
+      } on PostgrestException catch (e) {
+        final msg = (e.message).toLowerCase();
+        if (!msg.contains('is_restaurant') && !msg.contains('restaurant_type')) rethrow;
+
+        final fallback = Map<String, dynamic>.from(updateData)
+          ..remove('is_restaurant')
+          ..remove('restaurant_type');
+
+        await Supabase.instance.client.from('profiles').upsert({
+          'id': user.id,
+          ...fallback,
+        });
+      }
 
       if (mounted) context.go('/feed');
     } catch (e) {
@@ -349,6 +385,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 setState(() {
                   _accountType = v ?? 'person';
                   if (_accountType != 'org') _orgKind = null;
+                  if (_accountType != 'business') {
+                    _isRestaurant = false;
+                    _restaurantType = null;
+                  }
                 });
               },
               decoration: const InputDecoration(
@@ -372,6 +412,42 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+            ],
+
+            if (_accountType == 'business') ...[
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _isRestaurant,
+                onChanged: (v) {
+                  setState(() {
+                    _isRestaurant = v ?? false;
+                    if (!_isRestaurant) _restaurantType = null;
+                  });
+                },
+                title: const Text('Are you a restaurant?'),
+                secondary: Icon(
+                  _isRestaurant ? Icons.verified : Icons.verified_outlined,
+                  color: _isRestaurant ? Colors.green : null,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_isRestaurant) ...[
+                DropdownButtonFormField<String>(
+                  value: _restaurantType,
+                  items: restaurantMainCategories
+                      .map((c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(restaurantCategoryLabel(c)),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setState(() => _restaurantType = v),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Restaurant category',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
             ],
 
             TextField(

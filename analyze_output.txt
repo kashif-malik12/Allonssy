@@ -1,0 +1,61 @@
+Analyzing local_social...                                       
+
+   info - Unnecessary use of multiple underscores - lib\features\chat\presentation\chat_list_screen.dart:61:45 - unnecessary_underscores
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\chat\presentation\chat_screen.dart:199:51 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\chat\presentation\chat_screen.dart:200:51 - deprecated_member_use
+   info - Unnecessary use of multiple underscores - lib\features\moderation\presentation\admin_review_screen.dart:315:31 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores - lib\features\moderation\presentation\admin_review_screen.dart:385:31 - unnecessary_underscores
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:91:27 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:92:26 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:93:30 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:95:27 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:97:21 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:98:21 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:100:29 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:101:18 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:104:24 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:105:29 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:106:31 - unchecked_use_of_nullable_value
+  error - The method '[]' can't be unconditionally invoked because the receiver can be 'null' - lib\features\profile\presentation\complete_profile_screen.dart:107:26 - unchecked_use_of_nullable_value
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\features\profile\presentation\complete_profile_screen.dart:378:15 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\features\profile\presentation\complete_profile_screen.dart:403:17 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\features\profile\presentation\complete_profile_screen.dart:436:19 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\features\profile\presentation\complete_profile_screen.dart:502:15 - deprecated_member_use
+   info - Unnecessary use of multiple underscores - lib\features\profile\presentation\follow_requests_screen.dart:92:49 - unnecessary_underscores
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\profile\presentation\profile_detail_screen.dart:352:40 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\screens\comments_screen.dart:59:28 - use_build_context_synchronously
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\screens\create_post_screen.dart:419:15 - deprecated_member_use
+warning - Unused import: '../core/food_categories.dart' - lib\screens\feed_screen.dart:21:8 - unused_import
+warning - Unused import: '../core/market_categories.dart' - lib\screens\feed_screen.dart:22:8 - unused_import
+warning - Unused import: '../core/service_categories.dart' - lib\screens\feed_screen.dart:23:8 - unused_import
+warning - The declaration '_intentLabel' isn't referenced - lib\screens\feed_screen.dart:206:10 - unused_element
+   info - Use of 'return' in a 'finally' clause - lib\screens\feed_screen.dart:311:21 - control_flow_in_finally
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\screens\feed_screen.dart:352:40 - use_build_context_synchronously
+  error - Expected an identifier - lib\screens\feed_screen.dart:627:65 - missing_identifier
+  error - The element type 'bool' can't be assigned to the list type 'Widget' - lib\screens\feed_screen.dart:627:65 - list_element_type_not_assignable
+  error - Expected to find ']' - lib\screens\feed_screen.dart:629:63 - expected_token
+   info - Use of 'return' in a 'finally' clause - lib\screens\food_ad_detail_screen.dart:47:21 - control_flow_in_finally
+   info - Use of 'return' in a 'finally' clause - lib\screens\foods_screen.dart:73:21 - control_flow_in_finally
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\screens\foods_screen.dart:116:15 - deprecated_member_use
+   info - Use of 'return' in a 'finally' clause - lib\screens\gig_detail_screen.dart:56:21 - control_flow_in_finally
+   info - Use of 'return' in a 'finally' clause - lib\screens\gigs_screen.dart:93:21 - control_flow_in_finally
+   info - Use of 'return' in a 'finally' clause - lib\screens\marketplace_product_detail_screen.dart:65:21 - control_flow_in_finally
+   info - Use of 'return' in a 'finally' clause - lib\screens\marketplace_screen.dart:121:21 - control_flow_in_finally
+   info - Unnecessary use of multiple underscores - lib\screens\notifications_screen.dart:339:43 - unnecessary_underscores
+   info - Use of 'return' in a 'finally' clause - lib\screens\restaurants_screen.dart:140:21 - control_flow_in_finally
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\screens\restaurants_screen.dart:183:15 - deprecated_member_use
+   info - Unnecessary use of multiple underscores - lib\screens\restaurants_screen.dart:231:51 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores - lib\screens\search_screen.dart:462:31 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores - lib\screens\search_screen.dart:497:29 - unnecessary_underscores
+   info - Use the null-aware marker '?' rather than a null check via an 'if' - lib\widgets\global_app_bar.dart:97:9 - use_null_aware_elements
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\widgets\post_card.dart:128:35 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps - lib\widgets\post_card.dart:309:36 - use_build_context_synchronously
+   info - Use of 'return' in a 'finally' clause - lib\widgets\report_post_sheet.dart:62:21 - control_flow_in_finally
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\widgets\report_post_sheet.dart:93:15 - deprecated_member_use
+   info - Use of 'return' in a 'finally' clause - lib\widgets\report_user_sheet.dart:60:21 - control_flow_in_finally
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre - lib\widgets\report_user_sheet.dart:91:15 - deprecated_member_use
+   info - Unnecessary use of multiple underscores - lib\widgets\youtube_preview.dart:41:37 - unnecessary_underscores
+   info - Unnecessary use of multiple underscores - lib\widgets\youtube_preview.dart:41:41 - unnecessary_underscores
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\widgets\youtube_preview.dart:52:39 - deprecated_member_use
+
+57 issues found. (ran in 2.8s)

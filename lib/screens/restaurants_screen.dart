@@ -1,0 +1,268 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/restaurant_categories.dart';
+import '../widgets/global_app_bar.dart';
+
+class RestaurantsScreen extends StatefulWidget {
+  const RestaurantsScreen({super.key});
+
+  @override
+  State<RestaurantsScreen> createState() => _RestaurantsScreenState();
+}
+
+class _RestaurantsScreenState extends State<RestaurantsScreen> {
+  bool _loading = true;
+  String? _error;
+  String _search = '';
+  String _selectedCategory = 'all';
+  double _maxDistanceKm = 20;
+  final _searchCtrl = TextEditingController();
+
+  double? _meLat;
+  double? _meLng;
+  List<Map<String, dynamic>> _restaurants = [];
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  double _distanceKm(double lat1, double lng1, double lat2, double lng2) {
+    const earth = 6371.0;
+    final dLat = _toRad(lat2 - lat1);
+    final dLng = _toRad(lng2 - lng1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRad(lat1)) *
+            math.cos(_toRad(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earth * c;
+  }
+
+  double _toRad(double d) => d * math.pi / 180;
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final db = Supabase.instance.client;
+      final me = db.auth.currentUser;
+
+      if (me != null) {
+        final myProfile = await db
+            .from('profiles')
+            .select('latitude, longitude')
+            .eq('id', me.id)
+            .maybeSingle();
+        _meLat = (myProfile?['latitude'] as num?)?.toDouble();
+        _meLng = (myProfile?['longitude'] as num?)?.toDouble();
+      }
+
+      List<Map<String, dynamic>> rows;
+      try {
+        final data = await db
+            .from('profiles')
+            .select('id, full_name, bio, avatar_url, city, latitude, longitude, is_restaurant, restaurant_type, account_type')
+            .eq('is_restaurant', true)
+            .order('full_name');
+        rows = (data as List).cast<Map<String, dynamic>>();
+      } on PostgrestException {
+        final data = await db
+            .from('profiles')
+            .select('id, full_name, bio, avatar_url, city, latitude, longitude, account_type')
+            .eq('account_type', 'business')
+            .order('full_name');
+        rows = (data as List).cast<Map<String, dynamic>>();
+      }
+
+      var items = rows;
+      if (_selectedCategory != 'all') {
+        items = items
+            .where((r) => (r['restaurant_type'] ?? '').toString() == _selectedCategory)
+            .toList();
+      }
+
+      if (_search.trim().isNotEmpty) {
+        final q = _search.toLowerCase().trim();
+        items = items.where((r) {
+          return (r['full_name'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['bio'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['city'] ?? '').toString().toLowerCase().contains(q) ||
+              restaurantCategoryLabel((r['restaurant_type'] ?? '').toString())
+                  .toLowerCase()
+                  .contains(q);
+        }).toList();
+      }
+
+      if (_meLat != null && _meLng != null) {
+        items = items.where((r) {
+          final lat = (r['latitude'] as num?)?.toDouble();
+          final lng = (r['longitude'] as num?)?.toDouble();
+          if (lat == null || lng == null) return false;
+          return _distanceKm(_meLat!, _meLng!, lat, lng) <= _maxDistanceKm;
+        }).toList();
+
+        items.sort((a, b) {
+          final aLat = (a['latitude'] as num?)?.toDouble();
+          final aLng = (a['longitude'] as num?)?.toDouble();
+          final bLat = (b['latitude'] as num?)?.toDouble();
+          final bLng = (b['longitude'] as num?)?.toDouble();
+          final ad = (aLat != null && aLng != null)
+              ? _distanceKm(_meLat!, _meLng!, aLat, aLng)
+              : 9999.0;
+          final bd = (bLat != null && bLng != null)
+              ? _distanceKm(_meLat!, _meLng!, bLat, bLng)
+              : 9999.0;
+          return ad.compareTo(bd);
+        });
+      }
+
+      if (!mounted) return;
+      setState(() => _restaurants = items);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const GlobalAppBar(
+        title: 'Restaurants',
+        showBackIfPossible: true,
+        homeRoute: '/feed',
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search restaurants...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _search.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _search = '');
+                          _load();
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (v) {
+                setState(() => _search = v);
+                _load();
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DropdownButtonFormField<String>(
+              value: _selectedCategory,
+              items: [
+                const DropdownMenuItem(value: 'all', child: Text('All types')),
+                ...restaurantMainCategories.map(
+                  (c) => DropdownMenuItem(value: c, child: Text(restaurantCategoryLabel(c))),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _selectedCategory = v);
+                _load();
+              },
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Restaurant type',
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: Row(
+              children: [
+                const Text('Distance:'),
+                Expanded(
+                  child: Slider(
+                    value: _maxDistanceKm,
+                    min: 1,
+                    max: 50,
+                    divisions: 49,
+                    label: '${_maxDistanceKm.toStringAsFixed(0)} km',
+                    onChanged: (v) => setState(() => _maxDistanceKm = v),
+                    onChangeEnd: (_) => _load(),
+                  ),
+                ),
+                Text('${_maxDistanceKm.toStringAsFixed(0)} km'),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(child: Text('Error: $_error'))
+                    : _restaurants.isEmpty
+                        ? const Center(child: Text('No restaurants found'))
+                        : ListView.separated(
+                            itemCount: _restaurants.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, i) {
+                              final r = _restaurants[i];
+                              final lat = (r['latitude'] as num?)?.toDouble();
+                              final lng = (r['longitude'] as num?)?.toDouble();
+                              final dist = (_meLat != null && _meLng != null && lat != null && lng != null)
+                                  ? _distanceKm(_meLat!, _meLng!, lat, lng)
+                                  : null;
+
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  backgroundImage: (r['avatar_url'] ?? '').toString().isNotEmpty
+                                      ? NetworkImage((r['avatar_url'] ?? '').toString())
+                                      : null,
+                                  child: (r['avatar_url'] ?? '').toString().isEmpty
+                                      ? const Icon(Icons.storefront_outlined)
+                                      : null,
+                                ),
+                                title: Row(
+                                  children: [
+                                    Expanded(child: Text((r['full_name'] ?? 'Restaurant').toString())),
+                                    const Icon(Icons.verified, color: Colors.green, size: 18),
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  '${(r['restaurant_type'] ?? '').toString().isNotEmpty ? restaurantCategoryLabel((r['restaurant_type'] ?? '').toString()) : 'Restaurant'}'
+                                  '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
+                                  '${(r['city'] ?? '').toString().isNotEmpty ? ' • ${(r['city'] ?? '').toString()}' : ''}',
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ],
+      ),
+    );
+  }
+}

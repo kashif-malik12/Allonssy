@@ -29,6 +29,9 @@ import '../screens/marketplace_screen.dart';
 import '../screens/marketplace_product_detail_screen.dart';
 import '../screens/gigs_screen.dart';
 import '../screens/gig_detail_screen.dart';
+import '../screens/food_ad_detail_screen.dart';
+import '../screens/foods_screen.dart';
+import '../screens/restaurants_screen.dart';
 
 // ✅ Chat screens
 import '../features/chat/presentation/chat_list_screen.dart';
@@ -147,6 +150,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
 
+
       GoRoute(
         path: '/gigs',
         builder: (context, state) => const GigsScreen(),
@@ -160,13 +164,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
 
-
-
       GoRoute(
-        path: '/marketplace',
-        builder: (context, state) => const MarketplaceScreen(),
+        path: '/restaurants',
+        builder: (context, state) => const RestaurantsScreen(),
       ),
 
+      GoRoute(
+        path: '/foods',
+        builder: (context, state) => const FoodsScreen(),
+      ),
+
+      GoRoute(
+        path: '/foods/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return FoodAdDetailScreen(postId: id);
+        },
+      ),
+      
       GoRoute(
         path: '/create-post',
         builder: (context, state) => const CreatePostScreen(),

@@ -6,8 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../core/post_types.dart';
+import '../core/food_categories.dart';
 import '../core/market_categories.dart';
+import '../core/post_types.dart';
 import '../core/service_categories.dart';
 import '../services/post_service.dart';
 
@@ -29,6 +30,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _selectedMarketCategory = marketMainCategories.first;
   String _selectedMarketIntent = 'selling';
   String _selectedServiceCategory = serviceMainCategories.first;
+  String _selectedFoodCategory = foodMainCategories.first;
+  bool _isRestaurantAuthor = false;
 
   XFile? _imageXFile;
   bool _loading = false;
@@ -39,7 +42,32 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool get _isServicePost =>
       _selectedPostType == PostType.serviceOffer ||
       _selectedPostType == PostType.serviceRequest;
+  bool get _isFoodAdPost => _selectedPostType == PostType.foodAd;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadRestaurantFlag();
+  }
+
+  Future<void> _loadRestaurantFlag() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final row = await Supabase.instance.client
+          .from('profiles')
+          .select('is_restaurant')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (!mounted) return;
+      setState(() => _isRestaurantAuthor = row?['is_restaurant'] == true);
+    } on PostgrestException {
+      if (!mounted) return;
+      setState(() => _isRestaurantAuthor = false);
+    }
+  }
+  
   @override
   void dispose() {
     _contentCtrl.dispose();
@@ -78,7 +106,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _submit() async {
-final content = _contentCtrl.text.trim();
+    final content = _contentCtrl.text.trim();
     if (content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Write something')),
@@ -105,6 +133,13 @@ final content = _contentCtrl.text.trim();
       return;
     }
 
+    if (_isFoodAdPost && marketTitle.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter food name')),
+      );
+      return;
+    }
+
     double? marketPrice;
     if (_isMarketPost || _isServicePost && marketPriceRaw.isNotEmpty) {
       marketPrice = double.tryParse(marketPriceRaw);
@@ -116,6 +151,20 @@ final content = _contentCtrl.text.trim();
       }
     }
 
+    if (_isFoodAdPost && marketPriceRaw.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter food price')),
+      );
+      return;
+    }
+
+    if (_isFoodAdPost && _selectedFoodCategory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a food category')),
+      );
+      return;
+    }
+    
     if (videoUrl != null && !_isValidYoutubeUrl(videoUrl)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -184,10 +233,12 @@ final content = _contentCtrl.text.trim();
         postType: _selectedPostType.dbValue,
         marketCategory: _isMarketPost
             ? _selectedMarketCategory
-            : (_isServicePost ? _selectedServiceCategory : null),
+            : (_isServicePost 
+                ? _selectedServiceCategory
+                : (_isFoodAdPost ? _selectedFoodCategory : null)),
         marketIntent: _isMarketPost ? _selectedMarketIntent : null,
-        marketTitle: (_isMarketPost || _isServicePost) ? marketTitle : null,
-        marketPrice: (_isMarketPost || _isServicePost) ? marketPrice : null,
+        marketTitle: (_isMarketPost || _isServicePost || _isFoodAdPost) ? marketTitle : null,
+        marketPrice: (_isMarketPost || _isServicePost || _isFoodAdPost) ? marketPrice : null,
       );
 
       if (mounted) Navigator.pop(context, true);
@@ -222,6 +273,7 @@ final content = _contentCtrl.text.trim();
             DropdownButtonFormField<PostType>(
               initialValue: _selectedPostType,
               items: PostType.values
+                  .where((t) => _isRestaurantAuthor || t != PostType.foodAd)
                   .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
                   .toList(),
               onChanged: (v) {
@@ -234,6 +286,9 @@ final content = _contentCtrl.text.trim();
                   if (!_isServicePost) {
                     _selectedServiceCategory = serviceMainCategories.first;
                   }
+                  if (!_isFoodAdPost) {
+                    _selectedFoodCategory = foodMainCategories.first;
+                  }
                 });
               },
               decoration: const InputDecoration(
@@ -242,12 +297,14 @@ final content = _contentCtrl.text.trim();
               ),
             ),
             const SizedBox(height: 12),
-            if (_isMarketPost || _isServicePost) ...[
+             if (_isMarketPost || _isServicePost || _isFoodAdPost) ...[
               TextField(
                 controller: _marketTitleCtrl,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
-                  labelText: _isServicePost ? 'Service title' : 'Product title',
+                  labelText: _isFoodAdPost
+                      ? 'Food name'
+                      : (_isServicePost ? 'Service title' : 'Product title'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -256,8 +313,10 @@ final content = _contentCtrl.text.trim();
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
-                  labelText: _isServicePost ? 'Rate/Budget (optional)' : 'Price (optional)',
-                  hintText: _isServicePost ? 'e.g. 50' : 'e.g. 1200',
+                  labelText: _isFoodAdPost
+                      ? 'Food price'
+                      : (_isServicePost ? 'Rate/Budget (optional)' : 'Price (optional)'),
+                  hintText: _isFoodAdPost ? 'e.g. 12.99' : (_isServicePost ? 'e.g. 50' : 'e.g. 1200'),
                   prefixText: '\$ ',
                 ),
               ),
@@ -319,6 +378,29 @@ final content = _contentCtrl.text.trim();
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   labelText: 'Service category',
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+             if (_isFoodAdPost) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _selectedFoodCategory,
+                items: foodMainCategories
+                    .map(
+                      (c) => DropdownMenuItem(
+                        value: c,
+                        child: Text(foodCategoryLabel(c)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedFoodCategory = v);
+                },
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Food category',
                 ),
               ),
               const SizedBox(height: 12),
