@@ -1,8 +1,9 @@
 // lib/app/router.dart
 //
 // ✅ Updated with Notifications + Chat routes
-// ✅ Added Admin Guard for /admin/review
+// ✅ Added Admin Guard for /adminlive
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,11 +13,13 @@ import '../app/go_router_refresh_stream.dart';
 // ✅ Screens
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
+import '../features/auth/presentation/reset_password_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/profile/presentation/complete_profile_screen.dart';
 import '../features/profile/presentation/profile_detail_screen.dart';
 import '../features/profile/presentation/follow_list_screen.dart';
 import '../features/profile/presentation/follow_requests_screen.dart';
+import '../features/profile/presentation/managed_ads_screen.dart';
 import '../features/moderation/presentation/admin_review_screen.dart';
 
 import '../screens/feed_screen.dart';
@@ -41,10 +44,13 @@ import '../features/chat/presentation/chat_start_screen.dart';
 import '../features/chat/presentation/offer_chat_screen.dart';
 import '../features/chat/presentation/offer_chat_start_screen.dart';
 
+final appRouterNavigatorKey = GlobalKey<NavigatorState>();
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final auth = Supabase.instance.client.auth;
 
   return GoRouter(
+    navigatorKey: appRouterNavigatorKey,
     initialLocation: '/login',
     refreshListenable: GoRouterRefreshStream(auth.onAuthStateChange),
 
@@ -55,39 +61,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       final loggedIn = session != null && user != null;
 
-      final loc = state.matchedLocation;
-      final isAuth = loc == '/login' || loc == '/register';
-      final isOnboarding = loc == '/complete-profile';
-      final isProfile = loc == '/profile';
-      final isAdminRoute = loc == '/admin/review';
+      final path = state.uri.path;
+      final isAuth = path == '/login' || path == '/register';
+      final isOnboarding = path == '/complete-profile';
+      final isProfile = path == '/profile';
+      final isResetPassword = path == '/reset-password';
+      final isAdminRoute =
+          path.startsWith('/adminlive') || path.startsWith('/admin/review');
 
       // ❌ Not logged in → must be on auth pages
       if (!loggedIn) {
-        return isAuth ? null : '/login';
+        return (isAuth || isResetPassword || isAdminRoute) ? null : '/login';
       }
 
       // 🔁 Logged in → block auth pages
+      if (isAdminRoute) return null;
+
       if (loggedIn && isAuth) return '/feed';
 
-      // 🔐 Admin guard
-      if (isAdminRoute) {
-        final profile = await Supabase.instance.client
-            .from('profiles')
-            .select('is_admin')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        final isAdmin = profile?['is_admin'] == true;
-
-        if (!isAdmin) {
-          return '/feed';
-        }
-
-        return null; // allow admin
-      }
-
       // Allow /profile always
-      if (isProfile) return null;
+      if (isProfile || isResetPassword) return null;
 
       // ✅ Profile completeness check
       final profile = await Supabase.instance.client
@@ -123,6 +116,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
+      ),
+
+      GoRoute(
+        path: '/reset-password',
+        builder: (context, state) => const ResetPasswordScreen(),
       ),
 
       GoRoute(
@@ -197,8 +195,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       // 🔐 Admin Moderation Panel
       GoRoute(
+        path: '/adminlive',
+        builder: (context, state) => const AdminLiveScreen(),
+      ),
+
+      GoRoute(
         path: '/admin/review',
-        builder: (context, state) => const AdminReviewScreen(),
+        builder: (context, state) => const AdminLiveScreen(),
       ),
 
       // ✅ Notifications
@@ -266,6 +269,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/edit',
         builder: (context, state) => const CompleteProfileScreen(),
+      ),
+
+      GoRoute(
+        path: '/profile/my-products',
+        builder: (context, state) => const ManagedAdsScreen(mode: ManagedAdsMode.products),
+      ),
+
+      GoRoute(
+        path: '/profile/my-gigs',
+        builder: (context, state) => const ManagedAdsScreen(mode: ManagedAdsMode.gigs),
+      ),
+
+      GoRoute(
+        path: '/profile/my-foods',
+        builder: (context, state) => const ManagedAdsScreen(mode: ManagedAdsMode.foods),
       ),
 
       GoRoute(

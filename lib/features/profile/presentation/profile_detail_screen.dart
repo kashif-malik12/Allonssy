@@ -61,6 +61,545 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     _loadAll();
   }
 
+  Widget _buildProfileHeader({
+    required BuildContext context,
+    required String name,
+    required String type,
+    required String location,
+    required String bio,
+    required bool canOpenLists,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE6DDCE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          if (type.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Type: $type', style: const TextStyle(fontSize: 12)),
+          ],
+          if (location.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Location: $location', style: const TextStyle(fontSize: 12)),
+          ],
+          if (bio.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(bio),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _clickableStat(
+                  enabled: canOpenLists,
+                  onTap: canOpenLists
+                      ? () => context.push('/p/${widget.profileId}/followers')
+                      : null,
+                  child: _StatTile(label: 'Followers', value: _followersCount),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _clickableStat(
+                  enabled: canOpenLists,
+                  onTap: canOpenLists
+                      ? () => context.push('/p/${widget.profileId}/following')
+                      : null,
+                  child: _StatTile(label: 'Following', value: _followingCount),
+                ),
+              ),
+            ],
+          ),
+          if (!canOpenLists) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Followers/Following lists are private.',
+              style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
+            ),
+          ],
+          if (!_isMe) ...[
+            const SizedBox(height: 16),
+            if (!_canMessageLoading && _canMessage) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push('/chat/user/${widget.profileId}'),
+                  icon: const Icon(Icons.message_outlined),
+                  label: const Text('Message'),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed:
+                    (_loading || _followStatus == FollowStatus.pending) ? null : _toggleFollow,
+                child: Text(_followButtonText()),
+              ),
+            ),
+            if (!_canMessageLoading && !_canMessage) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Message is available after you both follow each other.',
+                style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _profileTypeLabel() {
+    final type = (_profile?['profile_type'] ?? _profile?['account_type'] ?? '').toString();
+    if (type != 'org') return type;
+
+    final orgKind = (_profile?['org_kind'] ?? '').toString();
+    switch (orgKind) {
+      case 'government':
+        return 'Organization • Government';
+      case 'nonprofit':
+        return 'Organization • Non-profit';
+      case 'news_agency':
+        return 'Organization • News agency';
+      default:
+        return 'Organization';
+    }
+  }
+
+  Widget _buildProfileSidebar(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE6DDCE)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Profile actions',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 14),
+              if (_isMe) ...[
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.person_add_alt_1_outlined,
+                  title: 'Follow requests',
+                  subtitle: _pendingRequests > 0
+                      ? '$_pendingRequests pending requests'
+                      : 'Review incoming requests',
+                  onTap: () => context.push('/follow-requests'),
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.edit_outlined,
+                  title: 'Edit profile',
+                  subtitle: 'Update your details and location',
+                  onTap: () async {
+                    final router = GoRouter.of(context);
+                    await router.push('/profile/edit');
+                    if (!mounted) return;
+                    await _loadAll();
+                  },
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.groups_outlined,
+                  title: 'Followers',
+                  subtitle: '$_followersCount people follow you',
+                  onTap: () => context.push('/p/${widget.profileId}/followers'),
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.group_outlined,
+                  title: 'Following',
+                  subtitle: '$_followingCount profiles you follow',
+                  onTap: () => context.push('/p/${widget.profileId}/following'),
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.inventory_2_outlined,
+                  title: 'My products',
+                  subtitle: 'Edit or delete your marketplace ads',
+                  onTap: () => context.push('/profile/my-products'),
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.work_outline,
+                  title: 'My gigs',
+                  subtitle: 'Edit or delete your service ads',
+                  onTap: () => context.push('/profile/my-gigs'),
+                ),
+                if ((_profile?['is_restaurant'] == true))
+                  _buildSidebarAction(
+                    context: context,
+                    icon: Icons.restaurant_menu_outlined,
+                    title: 'My foods',
+                    subtitle: 'Edit or delete your food ads',
+                    onTap: () => context.push('/profile/my-foods'),
+                  ),
+              ] else ...[
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.groups_outlined,
+                  title: 'Followers',
+                  subtitle: 'Visible only on your own profile',
+                  onTap: null,
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.group_outlined,
+                  title: 'Following',
+                  subtitle: 'Visible only on your own profile',
+                  onTap: null,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProfileLeftSidebar({
+    required BuildContext context,
+    required String name,
+    required String type,
+    required String location,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE6DDCE)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Profile overview',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                name,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              if (type.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Type: $type',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              if (location.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Location: $location',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE6DDCE)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Connections',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 14),
+              _clickableStat(
+                enabled: _isMe,
+                onTap: _isMe ? () => context.push('/p/${widget.profileId}/followers') : null,
+                child: _StatTile(label: 'Followers', value: _followersCount),
+              ),
+              const SizedBox(height: 10),
+              _clickableStat(
+                enabled: _isMe,
+                onTap: _isMe ? () => context.push('/p/${widget.profileId}/following') : null,
+                child: _StatTile(label: 'Following', value: _followingCount),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSidebarAction({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Opacity(
+          opacity: onTap == null ? 0.55 : 1,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.45),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                  child: Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileMainContent({
+    required BuildContext context,
+    required String name,
+    required String type,
+    required String location,
+    required String bio,
+    required bool canOpenLists,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildProfileHeader(
+          context: context,
+          name: name,
+          type: type,
+          location: location,
+          bio: bio,
+          canOpenLists: canOpenLists,
+        ),
+        if (_isMe) ...[
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'This is your profile',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 12),
+        _buildPortfolioSection(context),
+        Row(
+          children: [
+            Expanded(
+              child: Text('Posts', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            IconButton(
+              tooltip: 'Refresh posts',
+              onPressed: _postsLoading ? null : _loadPosts,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_postsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_postsError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text('Posts error:\n$_postsError'),
+          )
+        else if (_posts.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('No posts yet.'),
+          )
+        else
+          ..._posts.map(
+            (p) => Card(
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            p.authorName ?? (_isMe ? 'You' : 'Unknown'),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (_db.auth.currentUser?.id != p.userId)
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) async {
+                              if (value == 'report_post') {
+                                await _reportPost(p);
+                              }
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'report_post',
+                                child: Text('Report post'),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(p.content),
+                    if (p.videoUrl != null && p.videoUrl!.isNotEmpty) ...[
+                      YoutubePreview(videoUrl: p.videoUrl!),
+                    ],
+                    if (p.imageUrl != null) ...[
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(p.imageUrl!, fit: BoxFit.cover),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    if (p.postType == 'market' ||
+                        p.postType == 'service_offer' ||
+                        p.postType == 'service_request' ||
+                        p.postType == 'food_ad' ||
+                        p.postType == 'food')
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              if (p.postType == 'market') {
+                                context.push('/marketplace/product/${p.id}');
+                                return;
+                              }
+                              if (p.postType == 'service_offer' ||
+                                  p.postType == 'service_request') {
+                                context.push('/gigs/service/${p.id}');
+                                return;
+                              }
+                              context.push('/foods/${p.id}');
+                            },
+                            icon: Icon(
+                              p.postType == 'market'
+                                  ? Icons.open_in_new
+                                  : (p.postType == 'food_ad' || p.postType == 'food')
+                                      ? Icons.restaurant
+                                      : Icons.work_outline,
+                              size: 18,
+                            ),
+                            label: Text(
+                              p.postType == 'market'
+                                  ? 'Open product'
+                                  : (p.postType == 'food_ad' || p.postType == 'food')
+                                      ? 'Open food'
+                                      : 'Open gig',
+                            ),
+                          ),
+                        ],
+                      ),
+                    const SizedBox(height: 6),
+                    _buildReactionsRow(p),
+                    const SizedBox(height: 8),
+                    if (p.locationName != null)
+                      Text('Location: ${p.locationName}', style: const TextStyle(fontSize: 12)),
+                    Text(
+                      p.createdAt.toLocal().toString(),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     final ch = _reqChannel;
@@ -262,6 +801,14 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
       final list = (rows as List)
           .map((e) => Post.fromMap(e as Map<String, dynamic>))
+          .where((post) {
+            final type = (post.postType ?? '').trim();
+            return type != 'market' &&
+                type != 'service_offer' &&
+                type != 'service_request' &&
+                type != 'food_ad' &&
+                type != 'food';
+          })
           .toList();
 
       if (mounted) setState(() => _posts = list);
@@ -506,6 +1053,22 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     }
   }
 
+  Future<(Uint8List, String)?> _pickPortfolioFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null) return null;
+
+    final file = result.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      throw Exception('No image bytes. Try again.');
+    }
+
+    return (bytes, (file.extension ?? 'jpg').toLowerCase());
+  }
+
   void _openImage(String url) {
     showDialog(
       context: context,
@@ -552,6 +1115,35 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Portfolio delete error: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _portfolioActionLoading = false);
+    }
+  }
+
+  Future<void> _replacePortfolioImage(PortfolioItem item) async {
+    if (!_isMe) return;
+    if (_portfolioActionLoading) return;
+
+    setState(() => _portfolioActionLoading = true);
+
+    try {
+      final picked = await _pickPortfolioFile();
+      if (picked == null) return;
+
+      final svc = PortfolioService(_db);
+      await svc.replacePortfolioImage(
+        itemId: item.id,
+        profileId: widget.profileId,
+        bytes: picked.$1,
+        fileExt: picked.$2,
+      );
+
+      await _loadPortfolio();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Portfolio update error: $e')),
       );
     } finally {
       if (mounted) setState(() => _portfolioActionLoading = false);
@@ -608,27 +1200,66 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
             style: TextStyle(color: Theme.of(context).hintColor),
           )
         else
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _portfolio.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-            ),
-            itemBuilder: (_, i) {
-              final item = _portfolio[i];
-              return GestureDetector(
-                onTap: () => _openImage(item.imageUrl),
-                onLongPress: _isMe ? () => _confirmDeletePortfolio(item.id) : null,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(item.imageUrl, fit: BoxFit.cover),
-                ),
-              );
-            },
-          ),
+           GridView.builder(
+             shrinkWrap: true,
+             physics: const NeverScrollableScrollPhysics(),
+             itemCount: _portfolio.length,
+             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+               crossAxisCount: 3,
+               crossAxisSpacing: 8,
+               mainAxisSpacing: 8,
+               childAspectRatio: 1.0,
+             ),
+             itemBuilder: (_, i) {
+               final item = _portfolio[i];
+               return GestureDetector(
+                 onTap: () => _openImage(item.imageUrl),
+                 child: ClipRRect(
+                   borderRadius: BorderRadius.circular(12),
+                   child: Stack(
+                     children: [
+                       Container(
+                         color: Colors.grey.shade200,
+                         padding: const EdgeInsets.all(6),
+                         width: double.infinity,
+                         height: double.infinity,
+                         child: Image.network(
+                           item.imageUrl,
+                           fit: BoxFit.contain,
+                           alignment: Alignment.center,
+                         ),
+                       ),
+                       if (_isMe)
+                         Positioned(
+                           top: 8,
+                           right: 8,
+                           child: Row(
+                             mainAxisSize: MainAxisSize.min,
+                             children: [
+                               _buildPortfolioActionButton(
+                                 icon: Icons.edit_outlined,
+                                 tooltip: 'Replace photo',
+                                 onTap: _portfolioActionLoading
+                                     ? null
+                                     : () => _replacePortfolioImage(item),
+                               ),
+                               const SizedBox(width: 6),
+                               _buildPortfolioActionButton(
+                                 icon: Icons.delete_outline,
+                                 tooltip: 'Remove photo',
+                                 onTap: _portfolioActionLoading
+                                     ? null
+                                     : () => _confirmDeletePortfolio(item.id),
+                               ),
+                             ],
+                           ),
+                         ),
+                     ],
+                   ),
+                 ),
+               );
+             },
+           ),
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 12),
@@ -654,7 +1285,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
     final name = (_profile?['full_name'] ?? 'Profile').toString();
     final bio = (_profile?['bio'] ?? '').toString();
-    final type = (_profile?['profile_type'] ?? _profile?['account_type'] ?? '').toString();
+    final type = _profileTypeLabel();
     final city = (_profile?['city'] ?? '').toString();
     final zipcode = (_profile?['zipcode'] ?? '').toString();
     final location = city.isNotEmpty ? city : zipcode;
@@ -686,208 +1317,95 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _loadAll,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(name, style: Theme.of(context).textTheme.headlineSmall),
-            if (type.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text('Type: $type', style: const TextStyle(fontSize: 12)),
-            ],
-            if (location.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text('Location: $location', style: const TextStyle(fontSize: 12)),
-            ],
-            if (bio.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(bio),
-            ],
-            const SizedBox(height: 16),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 1100;
 
-            Row(
-              children: [
-                Expanded(
-                  child: _clickableStat(
-                    enabled: canOpenLists,
-                    onTap: canOpenLists ? () => context.push('/p/${widget.profileId}/followers') : null,
-                    child: _StatTile(label: 'Followers', value: _followersCount),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _clickableStat(
-                    enabled: canOpenLists,
-                    onTap: canOpenLists ? () => context.push('/p/${widget.profileId}/following') : null,
-                    child: _StatTile(label: 'Following', value: _followingCount),
-                  ),
-                ),
-              ],
-            ),
-
-            if (!canOpenLists) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Followers/Following lists are private.',
-                style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
-              ),
-            ],
-
-            const SizedBox(height: 16),
-
-            if (!_isMe)
-              Column(
+            if (!isWide) {
+              return ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  if (!_canMessageLoading && _canMessage) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () => context.push('/chat/user/${widget.profileId}'),
-                        icon: const Icon(Icons.message_outlined),
-                        label: const Text('Message'),
+                  _buildProfileLeftSidebar(
+                    context: context,
+                    name: name,
+                    type: type,
+                    location: location,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildProfileMainContent(
+                    context: context,
+                    name: name,
+                    type: type,
+                    location: location,
+                    bio: bio,
+                    canOpenLists: canOpenLists,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildProfileSidebar(context),
+                ],
+              );
+            }
+
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 250,
+                    child: _buildProfileLeftSidebar(
+                      context: context,
+                      name: name,
+                      type: type,
+                      location: location,
+                    ),
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: _buildProfileMainContent(
+                        context: context,
+                        name: name,
+                        type: type,
+                        location: location,
+                        bio: bio,
+                        canOpenLists: canOpenLists,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                  ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: (_loading || _followStatus == FollowStatus.pending) ? null : _toggleFollow,
-                      child: Text(_followButtonText()),
-                    ),
                   ),
-                  if (!_canMessageLoading && !_canMessage) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Message is available after you both follow each other.',
-                      style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ],
-              )
-            else
-              Column(
-                children: [
-                  const Text('This is your profile', textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  _followRequestsButtonWithBadge(context),
-                  const SizedBox(height: 12),
+                  const SizedBox(width: 18),
                   SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        final router = GoRouter.of(context);
-                        await router.push('/profile/edit');
-                        if (!mounted) return;
-                        await _loadAll();
-                      },
-                      icon: const Icon(Icons.edit),
-                      label: const Text('Edit Profile'),
-                    ),
+                    width: 320,
+                    child: _buildProfileSidebar(context),
                   ),
                 ],
               ),
+            );
+          },
+        ),
+      ),
+    );
+  }
 
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 12),
-
-            _buildPortfolioSection(context),
-
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Posts', style: Theme.of(context).textTheme.titleMedium),
-                ),
-                IconButton(
-                  tooltip: 'Refresh posts',
-                  onPressed: _postsLoading ? null : _loadPosts,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            if (_postsLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_postsError != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text('Posts error:\n$_postsError'),
-              )
-            else if (_posts.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('No posts yet.'),
-              )
-            else
-              ..._posts.map(
-                (p) => Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ✅ header row with report post menu (if not my post)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                p.authorName ?? (_isMe ? 'You' : 'Unknown'),
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            if (_db.auth.currentUser?.id != p.userId)
-                              PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert),
-                                onSelected: (value) async {
-                                  if (value == 'report_post') {
-                                    await _reportPost(p);
-                                  }
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                    value: 'report_post',
-                                    child: Text('Report post'),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-
-                        Text(p.content),
-
-                        if (p.videoUrl != null && p.videoUrl!.isNotEmpty) ...[
-                          YoutubePreview(videoUrl: p.videoUrl!),
-                        ],
-
-                        if (p.imageUrl != null) ...[
-                          const SizedBox(height: 10),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.network(p.imageUrl!, fit: BoxFit.cover),
-                          ),
-                        ],
-                        const SizedBox(height: 6),
-                        _buildReactionsRow(p),
-                        const SizedBox(height: 8),
-                        if (p.locationName != null)
-                          Text('📍 ${p.locationName}', style: const TextStyle(fontSize: 12)),
-                        Text(
-                          p.createdAt.toLocal().toString(),
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
+  Widget _buildPortfolioActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.black.withOpacity(0.58),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Tooltip(
+          message: tooltip,
+          child: Padding(
+            padding: const EdgeInsets.all(7),
+            child: Icon(icon, color: Colors.white, size: 18),
+          ),
         ),
       ),
     );

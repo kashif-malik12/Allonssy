@@ -257,10 +257,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Create Post')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Card(
+              child: ListView(
+                padding: const EdgeInsets.all(18),
+                children: [
             TextField(
               controller: _contentCtrl,
               maxLines: 5,
@@ -419,7 +424,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               value: _visibility,
               items: const [
                 DropdownMenuItem(value: 'public', child: Text('Public')),
-                DropdownMenuItem(value: 'local', child: Text('Local')),
+                DropdownMenuItem(value: 'followers', child: Text('Local')),
               ],
               onChanged: (v) => setState(() => _visibility = v ?? 'public'),
               decoration: const InputDecoration(
@@ -456,7 +461,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ? const CircularProgressIndicator()
                   : const Text('Post'),
             ),
-          ],
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -47,4 +47,32 @@ class PortfolioService {
   Future<void> deletePortfolioItem({required String itemId}) async {
     await _db.from('profile_portfolio').delete().eq('id', itemId);
   }
+
+  Future<void> replacePortfolioImage({
+    required String itemId,
+    required String profileId,
+    required Uint8List bytes,
+    required String fileExt,
+  }) async {
+    final safeExt = (fileExt.toLowerCase() == 'png') ? 'png' : 'jpg';
+    final path =
+        'portfolio/$profileId/${DateTime.now().millisecondsSinceEpoch}.$safeExt';
+
+    await _db.storage.from('portfolio-images').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: false,
+            contentType: safeExt == 'png' ? 'image/png' : 'image/jpeg',
+          ),
+        );
+
+    final publicUrl = _db.storage.from('portfolio-images').getPublicUrl(path);
+
+    await _db
+        .from('profile_portfolio')
+        .update({'image_url': publicUrl})
+        .eq('id', itemId)
+        .eq('profile_id', profileId);
+  }
 }

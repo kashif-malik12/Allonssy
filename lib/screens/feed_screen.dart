@@ -17,10 +17,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app/chat_singletons.dart';
+import '../core/food_categories.dart';
 import '../models/post_model.dart';
 import '../core/business_categories.dart';
 import '../core/market_categories.dart';
 import '../core/restaurant_categories.dart';
+import '../core/service_categories.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/youtube_preview.dart';
@@ -35,37 +38,63 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
+  static const String _feedFiltersKey = 'feed_filters';
+
   // Feed state
   bool _loading = true;
   String? _error;
   List<Post> _posts = [];
   final Map<String, String> _authorBadgeLabels = {};
   final Map<String, String> _authorLocationLabels = {};
+  final Map<String, String> _authorOrgKinds = {};
 
   // ✅ Pagination state
   static const int _pageSize = 20;
   final ScrollController _scroll = ScrollController();
   bool _loadingMore = false;
   bool _hasMore = true;
+  bool _showScrollTop = false;
   DateTime? _cursorCreatedAt;
   String? _cursorId;
 
   // ✅ Filters
-  String _selectedScope = 'all'; // 'all' or 'following'
-  String _selectedPostType = 'all';
-  String _selectedAuthorType = 'all';
+  bool _generalPostsEnabled = true;
+  String _generalPostsScope = 'all';
+  bool _marketplaceEnabled = true;
+  String _marketplaceScope = 'all';
+  final Set<String> _selectedMarketplaceIntents = {'buying', 'selling'};
+  final Set<String> _selectedMarketplaceCategories = {};
+  bool _gigsEnabled = true;
+  String _gigsScope = 'all';
+  final Set<String> _selectedGigTypes = {'service_offer', 'service_request'};
+  final Set<String> _selectedGigCategories = {};
+  bool _lostFoundEnabled = true;
+  String _lostFoundScope = 'all';
+  bool _foodAdsEnabled = true;
+  String _foodAdsScope = 'all';
+  final Set<String> _selectedFoodCategories = {};
+  bool _organizationsEnabled = false;
+  String _organizationsScope = 'all';
+  final Set<String> _selectedOrganizationKinds = {};
+  int? _publicDistanceLimitKm;
 
   // ✅ Notifications badge + realtime
   int _unreadNotifs = 0;
   RealtimeChannel? _notifChannel;
   Timer? _notifDebounce;
+  Map<String, dynamic>? _myProfileSummary;
+  int _profileCompleteness = 0;
+  int _pendingOfferConversations = 0;
+  int _unreadOfferMessages = 0;
+  List<Map<String, dynamic>> _topPosts = [];
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
-    _load(reset: true);
+    _initFeed();
     _initNotificationsUnread();
+    _loadSidebarData();
   }
 
   @override
@@ -88,8 +117,95 @@ class _FeedScreenState extends State<FeedScreen> {
   void _onScroll() {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
+    final shouldShowTop = pos.pixels > 900;
+    if (shouldShowTop != _showScrollTop && mounted) {
+      setState(() => _showScrollTop = shouldShowTop);
+    }
     if (pos.pixels >= pos.maxScrollExtent - 350) {
       _loadMore();
+    }
+  }
+
+  Future<void> _initFeed() async {
+    await _restoreSavedFilters();
+    await _load(reset: true);
+  }
+
+  Future<void> _restoreSavedFilters() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    final data = user?.userMetadata?[_feedFiltersKey];
+    if (data is! Map) return;
+
+    if (!mounted) return;
+    setState(() {
+      _generalPostsEnabled = data['general_enabled'] != false;
+      _generalPostsScope = (data['general_scope'] as String?) ?? 'all';
+      _marketplaceEnabled = data['market_enabled'] != false;
+      _marketplaceScope = (data['market_scope'] as String?) ?? 'all';
+      _selectedMarketplaceIntents
+        ..clear()
+        ..addAll(((data['market_intents'] as List?) ?? const []).map((e) => e.toString()));
+      _selectedMarketplaceCategories
+        ..clear()
+        ..addAll(((data['market_categories'] as List?) ?? const []).map((e) => e.toString()));
+      _gigsEnabled = data['gigs_enabled'] != false;
+      _gigsScope = (data['gigs_scope'] as String?) ?? 'all';
+      _selectedGigTypes
+        ..clear()
+        ..addAll(((data['gig_types'] as List?) ?? const []).map((e) => e.toString()));
+      _selectedGigCategories
+        ..clear()
+        ..addAll(((data['gig_categories'] as List?) ?? const []).map((e) => e.toString()));
+      _lostFoundEnabled = data['lost_found_enabled'] != false;
+      _lostFoundScope = (data['lost_found_scope'] as String?) ?? 'all';
+      _foodAdsEnabled = data['food_enabled'] != false;
+      _foodAdsScope = (data['food_scope'] as String?) ?? 'all';
+      _selectedFoodCategories
+        ..clear()
+        ..addAll(((data['food_categories'] as List?) ?? const []).map((e) => e.toString()));
+      _organizationsEnabled = data['org_enabled'] == true;
+      _organizationsScope = (data['org_scope'] as String?) ?? 'all';
+      _selectedOrganizationKinds
+        ..clear()
+        ..addAll(((data['org_kinds'] as List?) ?? const []).map((e) => e.toString()));
+      _publicDistanceLimitKm = (data['public_distance_km'] as num?)?.toInt();
+    });
+  }
+
+  Future<void> _saveFilters() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    final payload = <String, dynamic>{
+      _feedFiltersKey: {
+        'general_enabled': _generalPostsEnabled,
+        'general_scope': _generalPostsScope,
+        'market_enabled': _marketplaceEnabled,
+        'market_scope': _marketplaceScope,
+        'market_intents': _selectedMarketplaceIntents.toList(),
+        'market_categories': _selectedMarketplaceCategories.toList(),
+        'gigs_enabled': _gigsEnabled,
+        'gigs_scope': _gigsScope,
+        'gig_types': _selectedGigTypes.toList(),
+        'gig_categories': _selectedGigCategories.toList(),
+        'lost_found_enabled': _lostFoundEnabled,
+        'lost_found_scope': _lostFoundScope,
+        'food_enabled': _foodAdsEnabled,
+        'food_scope': _foodAdsScope,
+        'food_categories': _selectedFoodCategories.toList(),
+        'org_enabled': _organizationsEnabled,
+        'org_scope': _organizationsScope,
+        'org_kinds': _selectedOrganizationKinds.toList(),
+        'public_distance_km': _publicDistanceLimitKm,
+      },
+    };
+
+    try {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(data: payload),
+      );
+    } catch (_) {
+      // non-blocking
     }
   }
 
@@ -173,8 +289,12 @@ class _FeedScreenState extends State<FeedScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
+                  color: const Color(0xFFD92D20),
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.surface,
+                    width: 1.2,
+                  ),
                 ),
                 constraints: const BoxConstraints(minWidth: 18),
                 child: Text(
@@ -238,6 +358,138 @@ class _FeedScreenState extends State<FeedScreen> {
     return true;
   }
 
+  bool _matchesVisibilityScope(Post post, String scope) {
+    switch (scope) {
+      case 'public':
+        return post.visibility == 'public';
+      case 'following':
+        return post.visibility == 'followers';
+      case 'all':
+      default:
+        return post.visibility == 'public' || post.visibility == 'followers';
+    }
+  }
+
+  bool _isGeneralPost(Post post) {
+    final type = (post.postType ?? '').trim();
+    return type.isEmpty || type == 'post';
+  }
+
+  bool _isMarketplacePost(Post post) => (post.postType ?? '').trim() == 'market';
+
+  bool _isGigPost(Post post) {
+    final type = (post.postType ?? '').trim();
+    return type == 'service_offer' || type == 'service_request';
+  }
+
+  bool _isLostFoundPost(Post post) => (post.postType ?? '').trim() == 'lost_found';
+
+  bool _isFoodPost(Post post) {
+    final type = (post.postType ?? '').trim();
+    return type == 'food_ad' || type == 'food';
+  }
+
+  bool _matchesMarketplaceFilters(Post post) {
+    if (!_isMarketplacePost(post) || !_matchesVisibilityScope(post, _marketplaceScope)) {
+      return false;
+    }
+
+    if (_selectedMarketplaceCategories.isEmpty) {
+      return false;
+    }
+
+    if (_selectedMarketplaceIntents.isNotEmpty &&
+        !_selectedMarketplaceIntents.any((intent) => _matchesMarketIntent(post, intent))) {
+      return false;
+    }
+
+    final category = (post.marketCategory ?? '').trim();
+    if (!_selectedMarketplaceCategories.contains(category)) return false;
+
+    return true;
+  }
+
+  bool _matchesGigFilters(Post post) {
+    if (!_isGigPost(post) || !_matchesVisibilityScope(post, _gigsScope)) {
+      return false;
+    }
+
+    if (_selectedGigCategories.isEmpty) {
+      return false;
+    }
+
+    if (_selectedGigTypes.isNotEmpty &&
+        !_selectedGigTypes.contains((post.postType ?? '').trim())) {
+      return false;
+    }
+
+    final category = (post.marketCategory ?? '').trim();
+    if (!_selectedGigCategories.contains(category)) return false;
+
+    return true;
+  }
+
+  bool _matchesSelectedFilters(Post post) {
+    final myId = Supabase.instance.client.auth.currentUser?.id;
+    if (myId != null && post.userId == myId) {
+      return true;
+    }
+
+    var matchedSection = false;
+
+    if (_generalPostsEnabled &&
+        _isGeneralPost(post) &&
+        _matchesVisibilityScope(post, _generalPostsScope)) {
+      matchedSection = true;
+    }
+
+    if (!matchedSection && _marketplaceEnabled && _matchesMarketplaceFilters(post)) {
+      matchedSection = true;
+    }
+
+    if (!matchedSection && _gigsEnabled && _matchesGigFilters(post)) {
+      matchedSection = true;
+    }
+
+    if (!matchedSection &&
+        _lostFoundEnabled &&
+        _isLostFoundPost(post) &&
+        _matchesVisibilityScope(post, _lostFoundScope)) {
+      matchedSection = true;
+    }
+
+    if (!matchedSection &&
+        _foodAdsEnabled &&
+        _isFoodPost(post) &&
+        _matchesVisibilityScope(post, _foodAdsScope)) {
+      if (_selectedFoodCategories.isNotEmpty) {
+        matchedSection = _selectedFoodCategories.contains((post.marketCategory ?? '').trim());
+      }
+    }
+
+    if (_organizationsEnabled &&
+        !matchedSection &&
+        (post.authorType ?? '').trim() == 'org' &&
+        _matchesVisibilityScope(post, _organizationsScope) &&
+        _isGeneralPost(post)) {
+      if (_selectedOrganizationKinds.isNotEmpty) {
+        final orgKind = ((post.authorOrgKind ?? _authorOrgKinds[post.userId]) ?? '').trim();
+        matchedSection = orgKind.isEmpty || _selectedOrganizationKinds.contains(orgKind);
+      }
+    }
+
+    if (!matchedSection) return false;
+
+    if (_publicDistanceLimitKm != null && (post.visibility ?? 'public') == 'public') {
+      final distance = post.distanceKm;
+      if (distance == null || distance > _publicDistanceLimitKm!) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   Future<void> _load({required bool reset}) async {
     if (reset) {
       setState(() {
@@ -256,33 +508,155 @@ class _FeedScreenState extends State<FeedScreen> {
     try {
       final service = PostService(Supabase.instance.client);
 
-      final effectivePostType =
-          (_selectedPostType == 'buying' || _selectedPostType == 'selling')
-          ? 'market'
-          : _selectedPostType;
-
       final raw = await service.fetchPublicFeed(
-        scope: _selectedScope,
-        postType: effectivePostType,
-        authorType: _selectedAuthorType,
+        scope: 'all',
+        postType: 'all',
+        authorType: 'all',
         limit: _pageSize,
         beforeCreatedAt: _cursorCreatedAt,
         beforeId: _cursorId,
       );
 
-      final fetchedPosts = raw.map((e) => Post.fromMap(e)).toList();
-      final incoming = fetchedPosts
-          .where(
-            (post) =>
-                _selectedPostType == 'buying' ||
-                    _selectedPostType == 'selling'
-                ? _matchesMarketIntent(post, _selectedPostType)
-                : true,
-          )
-          .toList();
+      final me = Supabase.instance.client.auth.currentUser?.id;
+      List<Map<String, dynamic>> ownRows = const [];
+      List<Map<String, dynamic>> followedRows = const [];
+      List<Map<String, dynamic>> orgRows = const [];
+      if (me != null) {
+        var ownQuery = Supabase.instance.client
+            .from('posts')
+            .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
+            .eq('user_id', me);
+
+        if (_cursorCreatedAt != null) {
+          final ts = _cursorCreatedAt!.toIso8601String();
+          if (_cursorId != null && _cursorId!.isNotEmpty) {
+            ownQuery = ownQuery.or(
+              'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$_cursorId)',
+            );
+          } else {
+            ownQuery = ownQuery.lt('created_at', ts);
+          }
+        }
+
+        final ownData = await ownQuery
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .limit(_pageSize);
+        ownRows = (ownData as List).cast<Map<String, dynamic>>();
+
+        final followed = await Supabase.instance.client
+            .from('follows')
+            .select('followed_profile_id')
+            .eq('follower_id', me)
+            .eq('status', 'accepted');
+
+        final followedIds = (followed as List)
+            .map((e) => e['followed_profile_id'] as String?)
+            .whereType<String>()
+            .toSet()
+            .toList();
+
+        if (followedIds.isNotEmpty) {
+          var followedQuery = Supabase.instance.client
+              .from('posts')
+              .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
+              .inFilter('user_id', followedIds);
+
+          if (_cursorCreatedAt != null) {
+            final ts = _cursorCreatedAt!.toIso8601String();
+            if (_cursorId != null && _cursorId!.isNotEmpty) {
+              followedQuery = followedQuery.or(
+                'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$_cursorId)',
+              );
+            } else {
+              followedQuery = followedQuery.lt('created_at', ts);
+            }
+          }
+
+          final followedData = await followedQuery
+              .order('created_at', ascending: false)
+              .order('id', ascending: false)
+              .limit(_pageSize);
+          followedRows = (followedData as List).cast<Map<String, dynamic>>();
+        }
+      }
+
+      if (_organizationsEnabled) {
+        dynamic orgQuery = Supabase.instance.client
+            .from('posts')
+            .select('*, profiles!inner(full_name, avatar_url, city, zipcode, org_kind)')
+            .eq('author_profile_type', 'org');
+
+        if (_organizationsScope == 'public') {
+          orgQuery = orgQuery.eq('visibility', 'public');
+        } else if (_organizationsScope == 'following') {
+          if (me == null) {
+            orgRows = const [];
+            orgQuery = null;
+          } else {
+          final followed = await Supabase.instance.client
+              .from('follows')
+              .select('followed_profile_id')
+              .eq('follower_id', me)
+              .eq('status', 'accepted');
+          final ids = (followed as List)
+              .map((e) => e['followed_profile_id'] as String?)
+              .whereType<String>()
+              .toSet()
+              .toList();
+          if (!ids.contains(me)) ids.add(me);
+          if (ids.isEmpty) {
+            orgRows = const [];
+            orgQuery = null;
+          } else {
+            orgQuery = orgQuery.inFilter('user_id', ids);
+          }
+          }
+        } else {
+          orgQuery = orgQuery.inFilter('visibility', ['public', 'followers']);
+        }
+
+        if (orgQuery != null && _cursorCreatedAt != null) {
+          final ts = _cursorCreatedAt!.toIso8601String();
+          if (_cursorId != null && _cursorId!.isNotEmpty) {
+            orgQuery = orgQuery.or(
+              'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$_cursorId)',
+            );
+          } else {
+            orgQuery = orgQuery.lt('created_at', ts);
+          }
+        }
+
+        if (orgQuery != null) {
+          final orgData = await orgQuery
+              .order('created_at', ascending: false)
+              .order('id', ascending: false)
+              .limit(_pageSize);
+          orgRows = (orgData as List).cast<Map<String, dynamic>>();
+        }
+      }
+
+      final mergedRaw = <Map<String, dynamic>>[];
+      final seenIds = <String>{};
+      for (final row in [...raw, ...ownRows, ...followedRows, ...orgRows]) {
+        final id = (row['id'] ?? '').toString();
+        if (id.isEmpty || !seenIds.add(id)) continue;
+        mergedRaw.add(row);
+      }
+      mergedRaw.sort((a, b) {
+        final aCreated = DateTime.tryParse((a['created_at'] ?? '').toString()) ?? DateTime(1970);
+        final bCreated = DateTime.tryParse((b['created_at'] ?? '').toString()) ?? DateTime(1970);
+        final timeCompare = bCreated.compareTo(aCreated);
+        if (timeCompare != 0) return timeCompare;
+        return ((b['id'] ?? '').toString()).compareTo((a['id'] ?? '').toString());
+      });
+
+      final fetchedPosts = mergedRaw.map((e) => Post.fromMap(e)).toList();
+      await _loadAuthorBadges(fetchedPosts);
+      final incoming = fetchedPosts.where(_matchesSelectedFilters).toList();
 
       // If backend returned fewer than a page, no more pages
-      final gotFullPage = fetchedPosts.length == _pageSize;
+      final gotFullPage = mergedRaw.length >= _pageSize;
       if (!gotFullPage) _hasMore = false;
 
       // Update cursor from the oldest item returned by backend
@@ -304,7 +678,7 @@ class _FeedScreenState extends State<FeedScreen> {
         _posts = merged;
         _error = null;
       });
-      await _loadAuthorBadges(merged);
+      await _loadSidebarData();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -392,12 +766,13 @@ class _FeedScreenState extends State<FeedScreen> {
       final rows = await Supabase.instance.client
           .from('profiles')
           .select(
-            'id, profile_type, account_type, is_restaurant, restaurant_type, business_type, city, zipcode',
+            'id, profile_type, account_type, org_kind, is_restaurant, restaurant_type, business_type, city, zipcode',
           )
           .inFilter('id', ids);
 
       final labels = <String, String>{};
       final locations = <String, String>{};
+      final orgKinds = <String, String>{};
       for (final row in (rows as List).cast<Map<String, dynamic>>()) {
         final id = (row['id'] ?? '').toString();
         if (id.isEmpty) continue;
@@ -411,6 +786,11 @@ class _FeedScreenState extends State<FeedScreen> {
 
         final type =
             ((row['profile_type'] ?? row['account_type']) ?? '').toString();
+
+        final orgKind = (row['org_kind'] ?? '').toString().trim();
+        if (orgKind.isNotEmpty) {
+          orgKinds[id] = orgKind;
+        }
 
         if (type == 'org') {
           labels[id] = 'ORGANIZATION';
@@ -442,10 +822,88 @@ class _FeedScreenState extends State<FeedScreen> {
         _authorLocationLabels
           ..clear()
           ..addAll(locations);
+        _authorOrgKinds
+          ..clear()
+          ..addAll(orgKinds);
       });
     } catch (_) {
       // Badge enrichment is optional. Keep existing feed if this fails.
     }
+  }
+
+  Future<void> _loadSidebarData() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    try {
+      final results = await Future.wait<dynamic>([
+        Supabase.instance.client
+            .from('profiles')
+            .select(
+              'id, full_name, bio, avatar_url, zipcode, city, latitude, longitude, profile_type',
+            )
+            .eq('id', uid)
+            .maybeSingle(),
+        Supabase.instance.client.rpc('get_offer_chat_list'),
+        Supabase.instance.client
+            .from('posts')
+            .select('id, content, market_title, post_type, image_url')
+            .eq('visibility', 'public')
+            .order('created_at', ascending: false)
+            .limit(12),
+      ]);
+
+      final profile = results[0] as Map<String, dynamic>?;
+      final offerRows = (results[1] as List).cast<Map<String, dynamic>>();
+      final topPostRows = (results[2] as List).cast<Map<String, dynamic>>();
+      final pendingOffers = offerRows
+          .where((row) => (row['current_offer_status'] ?? '') == 'pending')
+          .length;
+      final unreadOffers = offerRows.fold<int>(
+        0,
+        (sum, row) => sum + (((row['unread_count'] as num?)?.toInt()) ?? 0),
+      );
+      final react = ReactionService(Supabase.instance.client);
+      final ranked = <Map<String, dynamic>>[];
+      for (final row in topPostRows) {
+        final id = (row['id'] ?? '').toString();
+        if (id.isEmpty) continue;
+        final likes = await react.likesCount(id);
+        final comments = await react.commentsCount(id);
+        ranked.add({
+          ...row,
+          'engagement': likes + comments,
+        });
+      }
+      ranked.sort((a, b) => ((b['engagement'] as int?) ?? 0).compareTo((a['engagement'] as int?) ?? 0));
+
+      if (!mounted) return;
+      setState(() {
+        _myProfileSummary = profile;
+        _profileCompleteness = _calculateProfileCompleteness(profile);
+        _pendingOfferConversations = pendingOffers;
+        _unreadOfferMessages = unreadOffers;
+        _topPosts = ranked.take(10).toList();
+      });
+    } catch (_) {
+      // Sidebar enrichment is optional.
+    }
+  }
+
+  int _calculateProfileCompleteness(Map<String, dynamic>? profile) {
+    if (profile == null) return 0;
+    final checks = <bool>[
+      (profile['full_name'] ?? '').toString().trim().isNotEmpty,
+      (profile['bio'] ?? '').toString().trim().isNotEmpty,
+      (profile['avatar_url'] ?? '').toString().trim().isNotEmpty,
+      (profile['zipcode'] ?? '').toString().trim().isNotEmpty,
+      (profile['city'] ?? '').toString().trim().isNotEmpty,
+      profile['latitude'] != null,
+      profile['longitude'] != null,
+      (profile['profile_type'] ?? '').toString().trim().isNotEmpty,
+    ];
+    final filled = checks.where((v) => v).length;
+    return ((filled / checks.length) * 100).round();
   }
 
   bool _isPrivateListing(Post post) {
@@ -483,95 +941,1498 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildFilters() {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFFFCF7), Color(0xFFF1E9D8)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE6DDCE)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Discover nearby',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _feedWhatShowing(),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _openFilterSheet,
+                  icon: const Icon(Icons.tune_rounded, size: 18),
+                  label: const Text('Filters'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () async {
+                    final res = await context.push('/create-post');
+                    if (!mounted) return;
+                    if (res == true) _load(reset: true);
+                  },
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Post'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildQuickLinkButton(
+                    icon: Icons.storefront_outlined,
+                    label: 'Marketplace',
+                    onPressed: () => context.push('/marketplace'),
+                  ),
+                  _buildQuickLinkButton(
+                    icon: Icons.miscellaneous_services_outlined,
+                    label: 'Gigs',
+                    onPressed: () => context.push('/gigs'),
+                  ),
+                  _buildQuickLinkButton(
+                    icon: Icons.restaurant_menu,
+                    label: 'Restaurants',
+                    onPressed: () => context.push('/restaurants'),
+                  ),
+                  _buildQuickLinkButton(
+                    icon: Icons.business,
+                    label: 'Businesses',
+                    onPressed: () => context.push('/businesses'),
+                  ),
+                  _buildQuickLinkButton(
+                    icon: Icons.fastfood,
+                    label: 'Foods',
+                    onPressed: () => context.push('/foods'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeedSummaryBanner() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE6DDCE)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F766E).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.radar_outlined,
+                color: Color(0xFF0F766E),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Current feed view',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: const Color(0xFF0F766E),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _feedWhatShowing(),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFilterSheet() async {
+    var draftGeneralEnabled = _generalPostsEnabled;
+    var draftGeneralScope = _generalPostsScope;
+    var draftMarketplaceEnabled = _marketplaceEnabled;
+    var draftMarketplaceScope = _marketplaceScope;
+    final draftMarketplaceIntents = {..._selectedMarketplaceIntents};
+    final draftMarketplaceCategories = {..._selectedMarketplaceCategories};
+    var draftGigsEnabled = _gigsEnabled;
+    var draftGigsScope = _gigsScope;
+    final draftGigTypes = {..._selectedGigTypes};
+    final draftGigCategories = {..._selectedGigCategories};
+    var draftLostFoundEnabled = _lostFoundEnabled;
+    var draftLostFoundScope = _lostFoundScope;
+    var draftFoodAdsEnabled = _foodAdsEnabled;
+    var draftFoodAdsScope = _foodAdsScope;
+    final draftFoodCategories = {..._selectedFoodCategories};
+    var draftOrganizationsEnabled = _organizationsEnabled;
+    var draftOrganizationsScope = _organizationsScope;
+    final draftOrganizationKinds = {..._selectedOrganizationKinds};
+    int? draftPublicDistanceLimitKm = _publicDistanceLimitKm;
+    bool hasInvalidRequiredSelections() {
+      return (draftMarketplaceEnabled && draftMarketplaceCategories.isEmpty) ||
+          (draftGigsEnabled && draftGigCategories.isEmpty) ||
+          (draftFoodAdsEnabled && draftFoodCategories.isEmpty) ||
+          (draftOrganizationsEnabled && draftOrganizationKinds.isEmpty);
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  12,
+                  12,
+                  MediaQuery.of(context).viewInsets.bottom + 12,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.outlineVariant,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Feed filters',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                draftGeneralEnabled = true;
+                                draftGeneralScope = 'all';
+                                draftMarketplaceEnabled = true;
+                                draftMarketplaceScope = 'all';
+                                draftMarketplaceIntents
+                                  ..clear()
+                                  ..addAll({'buying', 'selling'});
+                                draftMarketplaceCategories.clear();
+                                draftGigsEnabled = true;
+                                draftGigsScope = 'all';
+                                draftGigTypes
+                                  ..clear()
+                                  ..addAll({'service_offer', 'service_request'});
+                                draftGigCategories.clear();
+                                draftLostFoundEnabled = true;
+                                draftLostFoundScope = 'all';
+                                draftFoodAdsEnabled = true;
+                                draftFoodAdsScope = 'all';
+                                draftFoodCategories.clear();
+                                draftOrganizationsEnabled = false;
+                                draftOrganizationsScope = 'all';
+                                draftOrganizationKinds.clear();
+                                draftPublicDistanceLimitKm = null;
+                              });
+                            },
+                            child: const Text('Reset'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      _buildFilterSectionCard(
+                        title: 'General posts',
+                        subtitle: 'Normal feed posts only.',
+                        enabled: draftGeneralEnabled,
+                        onEnabledChanged: (value) {
+                          setSheetState(() => draftGeneralEnabled = value);
+                        },
+                        child: _buildScopeChips(
+                          selected: draftGeneralScope,
+                          onSelected: (value) {
+                            setSheetState(() => draftGeneralScope = value);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildFilterSectionCard(
+                        title: 'Marketplace posts',
+                        subtitle: 'Buying, selling, and product categories.',
+                        enabled: draftMarketplaceEnabled,
+                        onEnabledChanged: (value) {
+                          setSheetState(() => draftMarketplaceEnabled = value);
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildScopeChips(
+                              selected: draftMarketplaceScope,
+                              onSelected: (value) {
+                                setSheetState(() => draftMarketplaceScope = value);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _buildMultiSelectSection(
+                              title: 'Marketplace type',
+                              options: const [
+                                ('buying', 'Buying'),
+                                ('selling', 'Selling'),
+                              ],
+                              selected: draftMarketplaceIntents,
+                              setSheetState: setSheetState,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildMultiSelectSection(
+                              title: 'Marketplace categories',
+                              options: marketMainCategories
+                                  .map((c) => (c, marketCategoryLabel(c)))
+                                  .toList(),
+                              selected: draftMarketplaceCategories,
+                              setSheetState: setSheetState,
+                            ),
+                            if (draftMarketplaceCategories.isEmpty) ...[
+                              const SizedBox(height: 8),
+                              _buildFilterWarning('Select at least one category.'),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildFilterSectionCard(
+                        title: 'Gig posts',
+                        subtitle: 'Service offers, requests, and service categories.',
+                        enabled: draftGigsEnabled,
+                        onEnabledChanged: (value) {
+                          setSheetState(() => draftGigsEnabled = value);
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildScopeChips(
+                              selected: draftGigsScope,
+                              onSelected: (value) {
+                                setSheetState(() => draftGigsScope = value);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _buildMultiSelectSection(
+                              title: 'Gig type',
+                              options: const [
+                                ('service_offer', 'Offering'),
+                                ('service_request', 'Requesting'),
+                              ],
+                              selected: draftGigTypes,
+                              setSheetState: setSheetState,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildMultiSelectSection(
+                              title: 'Service categories',
+                              options: serviceMainCategories
+                                  .map((c) => (c, serviceCategoryLabel(c)))
+                                  .toList(),
+                              selected: draftGigCategories,
+                              setSheetState: setSheetState,
+                            ),
+                            if (draftGigCategories.isEmpty) ...[
+                              const SizedBox(height: 8),
+                              _buildFilterWarning('Select at least one category.'),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildFilterSectionCard(
+                        title: 'Lost & found',
+                        subtitle: 'Show or hide lost-and-found posts.',
+                        enabled: draftLostFoundEnabled,
+                        onEnabledChanged: (value) {
+                          setSheetState(() => draftLostFoundEnabled = value);
+                        },
+                        child: _buildScopeChips(
+                          selected: draftLostFoundScope,
+                          onSelected: (value) {
+                            setSheetState(() => draftLostFoundScope = value);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildFilterSectionCard(
+                        title: 'Food ads',
+                        subtitle: 'Food posts with separate food categories.',
+                        enabled: draftFoodAdsEnabled,
+                        onEnabledChanged: (value) {
+                          setSheetState(() => draftFoodAdsEnabled = value);
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildScopeChips(
+                              selected: draftFoodAdsScope,
+                              onSelected: (value) {
+                                setSheetState(() => draftFoodAdsScope = value);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _buildMultiSelectSection(
+                              title: 'Food categories',
+                              options: foodMainCategories
+                                  .map((c) => (c, foodCategoryLabel(c)))
+                                  .toList(),
+                              selected: draftFoodCategories,
+                              setSheetState: setSheetState,
+                            ),
+                            if (draftFoodCategories.isEmpty) ...[
+                              const SizedBox(height: 8),
+                              _buildFilterWarning('Select at least one category.'),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildFilterSectionCard(
+                        title: 'Organizations',
+                        subtitle: 'Show organization posts by subtype.',
+                        enabled: draftOrganizationsEnabled,
+                        onEnabledChanged: (value) {
+                          setSheetState(() => draftOrganizationsEnabled = value);
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildScopeChips(
+                              selected: draftOrganizationsScope,
+                              onSelected: (value) {
+                                setSheetState(() => draftOrganizationsScope = value);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _buildMultiSelectSection(
+                              title: 'Organization types',
+                              options: const [
+                                ('government', 'Government'),
+                                ('nonprofit', 'Non-profit'),
+                                ('news_agency', 'News agency'),
+                              ],
+                              selected: draftOrganizationKinds,
+                              setSheetState: setSheetState,
+                            ),
+                            if (draftOrganizationKinds.isEmpty) ...[
+                              const SizedBox(height: 8),
+                              _buildFilterWarning('Select at least one type.'),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: const Color(0xFFE6DDCE)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Public distance',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'This only limits public posts. Local posts keep using their own visibility rules.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildDistanceChip(
+                                  label: 'Any distance',
+                                  selected: draftPublicDistanceLimitKm == null,
+                                  onTap: () => setSheetState(() => draftPublicDistanceLimitKm = null),
+                                ),
+                                for (final km in const [5, 10, 20, 50, 100])
+                                  _buildDistanceChip(
+                                    label: '$km km',
+                                    selected: draftPublicDistanceLimitKm == km,
+                                    onTap: () => setSheetState(() => draftPublicDistanceLimitKm = km),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: hasInvalidRequiredSelections()
+                              ? null
+                              : () {
+                            Navigator.of(context).pop();
+                            setState(() {
+                              _generalPostsEnabled = draftGeneralEnabled;
+                              _generalPostsScope = draftGeneralScope;
+                              _marketplaceEnabled = draftMarketplaceEnabled;
+                              _marketplaceScope = draftMarketplaceScope;
+                              _selectedMarketplaceIntents
+                                ..clear()
+                                ..addAll(draftMarketplaceIntents);
+                              _selectedMarketplaceCategories
+                                ..clear()
+                                ..addAll(draftMarketplaceCategories);
+                              _gigsEnabled = draftGigsEnabled;
+                              _gigsScope = draftGigsScope;
+                              _selectedGigTypes
+                                ..clear()
+                                ..addAll(draftGigTypes);
+                              _selectedGigCategories
+                                ..clear()
+                                ..addAll(draftGigCategories);
+                              _lostFoundEnabled = draftLostFoundEnabled;
+                              _lostFoundScope = draftLostFoundScope;
+                              _foodAdsEnabled = draftFoodAdsEnabled;
+                              _foodAdsScope = draftFoodAdsScope;
+                              _selectedFoodCategories
+                                ..clear()
+                                ..addAll(draftFoodCategories);
+                              _organizationsEnabled = draftOrganizationsEnabled;
+                              _organizationsScope = draftOrganizationsScope;
+                              _selectedOrganizationKinds
+                                ..clear()
+                                ..addAll(draftOrganizationKinds);
+                              _publicDistanceLimitKm = draftPublicDistanceLimitKm;
+                            });
+                            _saveFilters();
+                            _load(reset: true);
+                          },
+                          child: const Text('Apply filters'),
+                        ),
+                      ),
+                    ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _sectionScopeLabel(String value) {
+    switch (value) {
+      case 'public':
+        return 'Public';
+      case 'following':
+        return 'Following';
+      case 'all':
+      default:
+        return 'Public + Following';
+    }
+  }
+
+  String _feedWhatShowing() {
+    final sections = <String>[];
+    if (_generalPostsEnabled) {
+      sections.add('general posts (${_sectionScopeLabel(_generalPostsScope).toLowerCase()})');
+    }
+    if (_marketplaceEnabled) {
+      final intentText = _selectedMarketplaceIntents.isEmpty
+          ? 'all marketplace posts'
+          : _selectedMarketplaceIntents.map(_intentLabel).join(' & ').toLowerCase();
+      final categoryText = _selectedMarketplaceCategories.isEmpty
+          ? 'no categories selected'
+          : _selectedMarketplaceCategories.map(marketCategoryLabel).join(', ');
+      sections.add(
+        '$intentText in $categoryText (${_sectionScopeLabel(_marketplaceScope).toLowerCase()})',
+      );
+    }
+    if (_gigsEnabled) {
+      final gigText = _selectedGigTypes.isEmpty
+          ? 'all gigs'
+          : _selectedGigTypes.map(_postTypeLabel).join(' & ').toLowerCase();
+      final categoryText = _selectedGigCategories.isEmpty
+          ? 'no categories selected'
+          : _selectedGigCategories.map(serviceCategoryLabel).join(', ');
+      sections.add(
+        'gigs $gigText in $categoryText (${_sectionScopeLabel(_gigsScope).toLowerCase()})',
+      );
+    }
+    if (_lostFoundEnabled) {
+      sections.add('lost & found (${_sectionScopeLabel(_lostFoundScope).toLowerCase()})');
+    }
+    if (_foodAdsEnabled) {
+      final categoryText = _selectedFoodCategories.isEmpty
+          ? 'no categories selected'
+          : _selectedFoodCategories.map(foodCategoryLabel).join(', ');
+      sections.add(
+        'food ads in $categoryText (${_sectionScopeLabel(_foodAdsScope).toLowerCase()})',
+      );
+    }
+    if (_organizationsEnabled) {
+      final orgText = _selectedOrganizationKinds.isEmpty
+          ? 'all organization posts'
+          : _selectedOrganizationKinds.map(_organizationKindLabel).join(', ').toLowerCase();
+      sections.add('$orgText (${_sectionScopeLabel(_organizationsScope).toLowerCase()})');
+    }
+
+    final postText = sections.isEmpty ? 'no sections selected' : sections.join(' • ');
+    if (_publicDistanceLimitKm != null) {
+      sections.add('public posts within ${_publicDistanceLimitKm} km');
+    }
+    return 'You are seeing ${sections.isEmpty ? 'no sections selected' : sections.join(' • ')}';
+  }
+
+  String _postTypeLabel(String value) {
+    switch (value) {
+      case 'service_offer':
+        return 'offering';
+      case 'service_request':
+        return 'requesting';
+      case 'lost_found':
+        return 'Lost & found';
+      case 'food_ad':
+        return 'Food ad';
+      default:
+        return value;
+    }
+  }
+
+  String _organizationKindLabel(String value) {
+    switch (value) {
+      case 'government':
+        return 'Government';
+      case 'nonprofit':
+        return 'Non-profit';
+      case 'news_agency':
+        return 'News agency';
+      default:
+        return value;
+    }
+  }
+
+  Widget _buildDistanceChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      showCheckmark: false,
+      selectedColor: const Color(0xFF0F766E).withValues(alpha: 0.14),
+      side: BorderSide(
+        color: selected ? const Color(0xFF0F766E) : const Color(0xFFE6DDCE),
+      ),
+      labelStyle: TextStyle(
+        fontWeight: FontWeight.w700,
+        color: selected ? const Color(0xFF0F766E) : null,
+      ),
+    );
+  }
+
+  Widget _buildFilterWarning(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF5C26B)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF9A6700),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterSectionCard({
+    required String title,
+    required String subtitle,
+    required bool enabled,
+    required ValueChanged<bool> onEnabledChanged,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE6DDCE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DropdownButton<String>(
-            value: _selectedScope,
-            items: const [
-              DropdownMenuItem(value: 'all', child: Text('Public (All)')),
-              DropdownMenuItem(value: 'following', child: Text('Following')),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: enabled,
+                onChanged: onEnabledChanged,
+              ),
             ],
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => _selectedScope = v);
-              _load(reset: true);
-            },
           ),
-          DropdownButton<String>(
-            value: _selectedPostType,
-            items: const [
-              DropdownMenuItem(value: 'all', child: Text('All posts')),
-              DropdownMenuItem(value: 'post', child: Text('General')),
-              DropdownMenuItem(value: 'buying', child: Text('Buying')),
-              DropdownMenuItem(value: 'selling', child: Text('Selling')),
-              DropdownMenuItem(value: 'service_offer', child: Text('Service offer')),
-              DropdownMenuItem(value: 'service_request', child: Text('Service request')),
-              DropdownMenuItem(value: 'lost_found', child: Text('Lost & found')),
-              DropdownMenuItem(value: 'food_ad', child: Text('Food ad')),
-            ],
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => _selectedPostType = v);
-              _load(reset: true);
-            },
+          if (enabled) ...[
+            const SizedBox(height: 12),
+            child,
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopeChips({
+    required String selected,
+    required ValueChanged<String> onSelected,
+  }) {
+    const options = [
+      ('all', 'Public + Following'),
+      ('public', 'Public'),
+      ('following', 'Following'),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 6),
+          child: Text(
+            'Visibility',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
-          DropdownButton<String>(
-            value: _selectedAuthorType,
-            items: const [
-              DropdownMenuItem(value: 'all', child: Text('All authors')),
-              DropdownMenuItem(value: 'person', child: Text('People')),
-              DropdownMenuItem(value: 'business', child: Text('Businesses')),
-              DropdownMenuItem(value: 'org', child: Text('Organizations')),
-            ],
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => _selectedAuthorType = v);
-              _load(reset: true);
-            },
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options.map((entry) {
+            return ChoiceChip(
+              selected: selected == entry.$1,
+              label: Text(entry.$2),
+              onSelected: (_) => onSelected(entry.$1),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMultiSelectSection({
+    required String title,
+    required List<(String, String)> options,
+    required Set<String> selected,
+    required void Function(void Function()) setSheetState,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
-          OutlinedButton.icon(
-            onPressed: () => context.push('/marketplace'),
-            icon: const Icon(Icons.storefront_outlined),
-            label: const Text('Marketplace'),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options.map((entry) {
+            final value = entry.$1;
+            final label = entry.$2;
+            final isSelected = selected.contains(value);
+            return FilterChip(
+              selected: isSelected,
+              label: Text(label),
+              onSelected: (_) {
+                setSheetState(() {
+                  if (isSelected) {
+                    selected.remove(value);
+                  } else {
+                    selected.add(value);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickLinkButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+      ),
+    );
+  }
+
+  Widget _buildSidebarQuickLink({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, size: 18),
+          label: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(label),
           ),
-          OutlinedButton.icon(
-            onPressed: () => context.push('/gigs'),
-            icon: const Icon(Icons.miscellaneous_services_outlined),
-            label: const Text('Gigs'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSidebar() {
+    final theme = Theme.of(context);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFFCF7), Color(0xFFF1E9D8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: const Color(0xFFE6DDCE)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Feed controls',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _openFilterSheet,
+                    icon: const Icon(Icons.tune_rounded),
+                    label: const Text('Open filters'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      final res = await context.push('/create-post');
+                      if (!mounted) return;
+                      if (res == true) _load(reset: true);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Post to feed'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _generalPostsEnabled = true;
+                          _generalPostsScope = 'all';
+                          _marketplaceEnabled = true;
+                          _marketplaceScope = 'all';
+                          _selectedMarketplaceIntents
+                            ..clear()
+                            ..addAll({'buying', 'selling'});
+                          _selectedMarketplaceCategories.clear();
+                          _gigsEnabled = true;
+                          _gigsScope = 'all';
+                          _selectedGigTypes
+                            ..clear()
+                            ..addAll({'service_offer', 'service_request'});
+                          _selectedGigCategories.clear();
+                          _lostFoundEnabled = true;
+                          _lostFoundScope = 'all';
+                          _foodAdsEnabled = true;
+                          _foodAdsScope = 'all';
+                          _selectedFoodCategories.clear();
+                          _organizationsEnabled = false;
+                          _organizationsScope = 'all';
+                          _selectedOrganizationKinds.clear();
+                        });
+                        _saveFilters();
+                        _load(reset: true);
+                      },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reset feed'),
+                  ),
+                ),
+              ],
+            ),
           ),
-          OutlinedButton.icon(
-            onPressed: () => context.push('/restaurants'),
-            icon: const Icon(Icons.restaurant_menu),
-            label: const Text('Restaurants'),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: const Color(0xFFE6DDCE)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Browse sections',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _buildSidebarQuickLink(
+                  icon: Icons.storefront_outlined,
+                  label: 'Marketplace',
+                  onPressed: () => context.push('/marketplace'),
+                ),
+                _buildSidebarQuickLink(
+                  icon: Icons.miscellaneous_services_outlined,
+                  label: 'Gigs',
+                  onPressed: () => context.push('/gigs'),
+                ),
+                _buildSidebarQuickLink(
+                  icon: Icons.fastfood,
+                  label: 'Foods',
+                  onPressed: () => context.push('/foods'),
+                ),
+              ],
+            ),
           ),
-          OutlinedButton.icon(
-            onPressed: () => context.push('/businesses'),
-            icon: const Icon(Icons.business),
-            label: const Text('Businesses'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => context.push('/foods'),
-            icon: const Icon(Icons.fastfood),
-            label: const Text('Foods'),
-          ),
-          TextButton.icon(
-            onPressed: () {
-              setState(() {
-                _selectedScope = 'all';
-                _selectedPostType = 'all';
-                _selectedAuthorType = 'all';
-              });
-              _load(reset: true);
-            },
-            icon: const Icon(Icons.refresh),
-            label: const Text('Reset'),
+          const SizedBox(height: 18),
+          _buildInfoCard(
+            title: 'Local directory',
+            child: Column(
+              children: [
+                _buildTaskRow(
+                  icon: Icons.restaurant_menu,
+                  title: 'Restaurants',
+                  subtitle: 'Browse nearby places to eat.',
+                  onTap: () => context.push('/restaurants'),
+                ),
+                _buildTaskRow(
+                  icon: Icons.business,
+                  title: 'Businesses',
+                  subtitle: 'Explore nearby local businesses.',
+                  onTap: () => context.push('/businesses'),
+                ),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard({
+    required String title,
+    required Widget child,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0xFFE6DDCE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.45),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+                child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRightSidebar() {
+    final profileName = (_myProfileSummary?['full_name'] ?? 'Your profile')
+        .toString();
+    final incompleteProfile = _profileCompleteness < 100;
+    final unreadChats = unreadBadgeController.unread.value;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(12, 18, 20, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInfoCard(
+            title: 'Top Trending',
+            child: SizedBox(
+              height: 420,
+              child: _topPosts.isEmpty
+                  ? const Center(child: Text('No top posts yet'))
+                  : ListView.separated(
+                      itemCount: _topPosts.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final post = _topPosts[index];
+                        final title = ((post['market_title'] ?? '').toString().trim().isNotEmpty
+                                ? post['market_title']
+                                : post['content'] ?? 'Post')
+                            .toString()
+                            .trim();
+                        final imageUrl = (post['image_url'] ?? '').toString();
+                        final engagement = (post['engagement'] as int?) ?? 0;
+                        return InkWell(
+                          onTap: () => context.push('/post/${post['id']}'),
+                          borderRadius: BorderRadius.circular(18),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withOpacity(0.45),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    width: 52,
+                                    height: 52,
+                                    color: Colors.grey.shade200,
+                                    padding: const EdgeInsets.all(4),
+                                    child: imageUrl.isNotEmpty
+                                        ? Image.network(
+                                            imageUrl,
+                                            fit: BoxFit.contain,
+                                            alignment: Alignment.center,
+                                          )
+                                        : const Icon(Icons.image_outlined, size: 22),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        title.isEmpty ? 'Post' : title,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontWeight: FontWeight.w700),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '$engagement engagement',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          _buildInfoCard(
+            title: 'To do',
+            child: Column(
+              children: [
+                if (_pendingOfferConversations > 0)
+                  _buildTaskRow(
+                    icon: Icons.local_offer_outlined,
+                    title: 'Review offers',
+                    subtitle: '$_pendingOfferConversations conversations need attention.',
+                    onTap: () => context.push('/chats'),
+                  ),
+                if (_unreadOfferMessages > 0)
+                  _buildTaskRow(
+                    icon: Icons.forum_outlined,
+                    title: 'Unread offer messages',
+                    subtitle: '$_unreadOfferMessages unread messages in offer chats.',
+                    onTap: () => context.push('/chats'),
+                  ),
+                if (_unreadNotifs > 0)
+                  _buildTaskRow(
+                    icon: Icons.notifications_active_outlined,
+                    title: 'Notifications',
+                    subtitle: '$_unreadNotifs unread notifications.',
+                    onTap: () => context.push('/notifications'),
+                  ),
+                if (unreadChats > 0)
+                  _buildTaskRow(
+                    icon: Icons.chat_bubble_outline,
+                    title: 'Unread chats',
+                    subtitle: '$unreadChats unread conversations.',
+                    onTap: () => context.push('/chats'),
+                  ),
+                if (_pendingOfferConversations == 0 &&
+                    _unreadOfferMessages == 0 &&
+                    _unreadNotifs == 0 &&
+                    unreadChats == 0 &&
+                    !incompleteProfile)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.45),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Text(
+                      'Nothing pending right now.',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (incompleteProfile) ...[
+            const SizedBox(height: 18),
+            _buildInfoCard(
+              title: 'Profile completeness',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    profileName,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      minHeight: 10,
+                      value: (_profileCompleteness.clamp(0, 100)) / 100,
+                      backgroundColor: const Color(0xFFE8E0D1),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$_profileCompleteness% complete',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Add the missing profile details to improve trust and discovery.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => context.push('/profile'),
+                      icon: const Icon(Icons.person_outline, size: 18),
+                      label: const Text('Open profile'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeedList({required bool showTopFilters}) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _load(reset: true);
+        await _refreshUnreadNotifs();
+      },
+      child: ListView.builder(
+        controller: _scroll,
+        itemCount: _posts.length + (showTopFilters ? 2 : 2),
+        itemBuilder: (_, i) {
+          if (showTopFilters) {
+            if (i == 0) return _buildFilters();
+            if (i == _posts.length + 1) return _buildFooter();
+          } else {
+            if (i == 0) return _buildFeedSummaryBanner();
+            if (i == _posts.length + 1) return _buildFooter();
+          }
+
+          final postIndex = showTopFilters ? i - 1 : i - 1;
+          final p = _posts[postIndex];
+          final badgeText = _getAuthorBadgeType(p);
+          final isPrivateListing = _isPrivateListing(p);
+          final detailRoute = _detailRouteForPost(p);
+
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  InkWell(
+                    onTap: isPrivateListing
+                        ? null
+                        : () => context.push('/p/${p.userId}'),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundImage: (p.authorAvatarUrl != null &&
+                                    p.authorAvatarUrl!.isNotEmpty)
+                                ? NetworkImage(p.authorAvatarUrl!)
+                                : null,
+                            child: (p.authorAvatarUrl == null ||
+                                    p.authorAvatarUrl!.isEmpty)
+                                ? const Icon(Icons.person, size: 18)
+                                : null,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _feedHeaderLabel(p),
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          if (p.distanceKm != null) ...[
+                            Text(
+                              '${p.distanceKm!.toStringAsFixed(1)} km',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          if (_locationLabel(p) != null) ...[
+                            Text(
+                              _locationLabel(p)!,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          _buildVisibilityBadge(p.visibility),
+                          const SizedBox(width: 6),
+                          if (badgeText != null) ...[
+                            _buildAuthorBadge(badgeText),
+                            const SizedBox(width: 6),
+                          ],
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) async {
+                              if (value == 'report') {
+                                final reported = await showModalBottomSheet<bool>(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  builder: (_) => ReportPostSheet(postId: p.id),
+                                );
+
+                                if (reported == true && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Thanks â€” weâ€™ll review it.'),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              if (Supabase.instance.client.auth.currentUser?.id != p.userId)
+                                const PopupMenuItem(
+                                  value: 'report',
+                                  child: Text('Report'),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    p.content,
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                  if ((p.marketTitle ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      p.marketTitle!.trim(),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                  if (p.imageUrl != null && p.imageUrl!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: () => _openImagePreview(p.imageUrl!),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: double.infinity,
+                          constraints: const BoxConstraints(maxHeight: 360),
+                          color: Colors.black.withOpacity(0.04),
+                          child: Image.network(
+                            p.imageUrl!,
+                            width: double.infinity,
+                            fit: BoxFit.contain,
+                            alignment: Alignment.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (p.videoUrl != null && p.videoUrl!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    YoutubePreview(videoUrl: p.videoUrl!),
+                  ],
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        _formatFeedTimestamp(p.createdAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).hintColor,
+                        ),
+                      ),
+                      if (p.locationName != null && p.locationName!.trim().isNotEmpty)
+                        Text(
+                          p.locationName!.trim(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).hintColor,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (detailRoute != null)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => context.push(detailRoute),
+                          icon: Icon(
+                            p.postType == 'market'
+                                ? Icons.open_in_new
+                                : p.postType == 'food' || p.postType == 'food_ad'
+                                ? Icons.restaurant
+                                : Icons.work_outline,
+                            size: 18,
+                          ),
+                          label: Text(
+                            p.postType == 'market'
+                                ? 'Open product'
+                                : p.postType == 'food' || p.postType == 'food_ad'
+                                ? 'Open food'
+                                : 'Open gig',
+                          ),
+                        ),
+                      ],
+                    ),
+                  _buildReactionsRow(p),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -608,6 +2469,32 @@ class _FeedScreenState extends State<FeedScreen> {
             fontWeight: FontWeight.w700,
             height: 1.1,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVisibilityBadge(String visibility) {
+    final isLocal = visibility == 'followers';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: isLocal
+            ? const Color(0xFF0F766E).withOpacity(0.12)
+            : const Color(0xFFCC7A00).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isLocal
+              ? const Color(0xFF0F766E).withOpacity(0.28)
+              : const Color(0xFFCC7A00).withOpacity(0.28),
+        ),
+      ),
+      child: Text(
+        isLocal ? 'LOCAL' : 'PUBLIC',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: isLocal ? const Color(0xFF0F766E) : const Color(0xFF8B5A12),
         ),
       ),
     );
@@ -669,11 +2556,107 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  Widget _buildResponsiveFeedBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('Feed error:\n$_error'),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 1100;
+        if (!isWide) {
+          return _buildFeedList(showTopFilters: true);
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 300,
+              child: _buildDesktopSidebar(),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 820),
+                  child: _buildFeedList(showTopFilters: false),
+                ),
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            SizedBox(
+              width: 320,
+              child: _buildRightSidebar(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: GlobalAppBar(
-        title: 'Local Feed ✅',
+        title: 'Local Feed',
+        notifBell: _notifBell(),
+        showBackIfPossible: false,
+        homeRoute: '/feed',
+        onBeforeLogout: _onBeforeLogout,
+      ),
+      body: _buildResponsiveFeedBody(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(
+          right: MediaQuery.of(context).size.width >= 1100 ? 340 : 0,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (_showScrollTop)
+              FloatingActionButton.small(
+                heroTag: 'feed-top',
+                onPressed: () {
+                  _scroll.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOut,
+                  );
+                },
+                child: const Icon(Icons.keyboard_arrow_up),
+              ),
+            if (_showScrollTop) const SizedBox(height: 10),
+            FloatingActionButton.extended(
+              heroTag: 'feed-post',
+              onPressed: () async {
+                final res = await context.push('/create-post');
+                if (!mounted) return;
+                if (res == true) _load(reset: true);
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Post'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    /*
+    return Scaffold(
+      appBar: GlobalAppBar(
+        title: 'Local Feed',
         notifBell: _notifBell(),
         showBackIfPossible: false,
         homeRoute: '/feed',
@@ -872,6 +2855,6 @@ class _FeedScreenState extends State<FeedScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Post'),
       ),
-    );
+    );*/
   }
 }

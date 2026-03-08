@@ -68,14 +68,15 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
                   : ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
-                        AspectRatio(
-                          aspectRatio: 1.2,
+                        SizedBox(
+                          height: 280,
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: Container(
                               color: Colors.grey.shade200,
+                              padding: const EdgeInsets.all(8),
                               child: p.imageUrl != null && p.imageUrl!.isNotEmpty
-                                  ? Image.network(p.imageUrl!, fit: BoxFit.cover)
+                                  ? Image.network(p.imageUrl!, fit: BoxFit.contain)
                                   : const Icon(Icons.fastfood, size: 64),
                             ),
                           ),

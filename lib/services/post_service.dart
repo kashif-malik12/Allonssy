@@ -99,10 +99,12 @@ class PostService {
         (profile?['account_type'] as String?) ??
         'person';
 
+    final normalizedVisibility = visibility == 'local' ? 'followers' : visibility;
+
     final payload = <String, dynamic>{
       'user_id': user.id,
       'content': content,
-      'visibility': visibility,
+      'visibility': normalizedVisibility,
       'latitude': latitude,
       'longitude': longitude,
       'location_name': locationName,
@@ -134,7 +136,7 @@ class PostService {
       await _db.from('posts').insert({
         'user_id': user.id,
         'content': content,
-        'visibility': visibility,
+        'visibility': normalizedVisibility,
         'latitude': latitude,
         'longitude': longitude,
         'location_name': locationName,
@@ -203,7 +205,7 @@ class PostService {
         // PUBLIC scope: only public posts (server-side filters + cursor)
         var q = _db
             .from('posts')
-            .select('*, profiles(full_name, avatar_url, city, zipcode)')
+            .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
             .eq('visibility', 'public');
 
         if (postType != 'all') {
@@ -252,7 +254,7 @@ class PostService {
 
       var q = _db
           .from('posts')
-          .select('*, profiles(full_name, avatar_url, city, zipcode)')
+          .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
           .inFilter('user_id', ids.toList());
 
       if (postType != 'all') {
@@ -292,7 +294,11 @@ class PostService {
       'p_limit': limit,
       'p_post_type': postType,
       'p_author_type': authorType,
-      'p_scope': scope == 'following' ? 'following' : 'public',
+      'p_scope': scope == 'following'
+          ? 'following'
+          : scope == 'all'
+              ? 'all'
+              : 'public',
       'p_viewer_id': user.id,
       'p_before_created_at': beforeCreatedAt?.toIso8601String(),
       'p_before_id': beforeId,

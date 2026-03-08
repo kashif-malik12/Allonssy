@@ -25,6 +25,12 @@ class _GigsScreenState extends State<GigsScreen> {
   double? _meLat;
   double? _meLng;
 
+  int _gridCount(double width) {
+    if (width >= 1200) return 4;
+    if (width >= 800) return 3;
+    return 2;
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -54,6 +60,12 @@ class _GigsScreenState extends State<GigsScreen> {
             math.sin(dLng / 2);
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return earth * c;
+  }
+
+  String _formatCreatedDate(DateTime dt) {
+    final d = dt.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)}/${d.year}';
   }
 
   @override
@@ -239,17 +251,19 @@ class _GigsScreenState extends State<GigsScreen> {
                         ? const Center(child: Text('No service posts found'))
                         : RefreshIndicator(
                             onRefresh: _load,
-                            child: GridView.builder(
-                              padding: const EdgeInsets.all(12),
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.72,
-                                crossAxisSpacing: 10,
-                                mainAxisSpacing: 10,
-                              ),
-                              itemCount: _posts.length,
-                              itemBuilder: (context, index) {
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return GridView.builder(
+                                  padding: const EdgeInsets.all(12),
+                                  gridDelegate:
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: _gridCount(constraints.maxWidth),
+                                    childAspectRatio: 0.92,
+                                    crossAxisSpacing: 10,
+                                    mainAxisSpacing: 10,
+                                  ),
+                                  itemCount: _posts.length,
+                                  itemBuilder: (context, index) {
                                 final p = _posts[index];
                                 final myId = Supabase.instance.client.auth.currentUser?.id;
                                 final canSendOffer = myId != null && p.userId != myId;
@@ -275,7 +289,8 @@ class _GigsScreenState extends State<GigsScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Expanded(
+                                        SizedBox(
+                                          height: 112,
                                           child: ClipRRect(
                                             borderRadius: const BorderRadius.vertical(
                                               top: Radius.circular(12),
@@ -283,22 +298,24 @@ class _GigsScreenState extends State<GigsScreen> {
                                             child: Container(
                                               width: double.infinity,
                                               color: Colors.grey.shade200,
+                                              padding: const EdgeInsets.all(6),
                                               child: p.imageUrl != null &&
                                                       p.imageUrl!.isNotEmpty
                                                   ? Image.network(
                                                       p.imageUrl!,
-                                                      fit: BoxFit.cover,
+                                                      fit: BoxFit.contain,
+                                                      alignment: Alignment.center,
                                                     )
                                                   : const Icon(
                                                       Icons.miscellaneous_services_outlined,
-                                                      size: 46,
+                                                      size: 40,
                                                       color: Colors.black45,
                                                     ),
                                             ),
                                           ),
                                         ),
                                         Padding(
-                                          padding: const EdgeInsets.all(10),
+                                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
                                           child: Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
@@ -321,6 +338,25 @@ class _GigsScreenState extends State<GigsScreen> {
                                                   fontWeight: FontWeight.bold,
                                                 ),
                                               ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                serviceCategoryLabel(p.marketCategory ?? ''),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade700,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _formatCreatedDate(p.createdAt),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
                                               Text(
                                                 _typeLabel(p.postType),
                                                 style: TextStyle(
@@ -350,6 +386,13 @@ class _GigsScreenState extends State<GigsScreen> {
                                               SizedBox(
                                                 width: double.infinity,
                                                 child: OutlinedButton.icon(
+                                                  style: OutlinedButton.styleFrom(
+                                                    visualDensity: VisualDensity.compact,
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 10,
+                                                    ),
+                                                  ),
                                                   onPressed: canSendOffer
                                                       ? () => context.push(
                                                             '/offer-chat/post/${p.id}/user/${p.userId}',
@@ -368,6 +411,8 @@ class _GigsScreenState extends State<GigsScreen> {
                                       ],
                                     ),
                                   ),
+                                );
+                                  },
                                 );
                               },
                             ),

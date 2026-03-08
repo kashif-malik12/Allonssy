@@ -30,7 +30,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   String? _city;
 
   String _accountType = 'person'; // person | business | org
-  String? _orgKind; // government | nonprofit (only when org)
+  String? _orgKind; // government | nonprofit | news_agency (only when org)
   bool _isRestaurant = false;
   String? _restaurantType;
   String? _businessType;
@@ -326,7 +326,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       }
 
       if (_accountType == 'org' && _orgKind == null) {
-        throw 'Please select Government or Non-profit';
+        throw 'Please select Government, Non-profit, or News agency';
       }
 
       if (_accountType == 'business') {
@@ -408,10 +408,52 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         homeRoute: '/feed',
       ),
 
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE6DDCE)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Edit profile',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Update your identity, categories, location, and feed settings in one place.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE6DDCE)),
+              ),
+              child: Column(
+                children: [
             Center(
               child: Column(
                 children: [
@@ -462,6 +504,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 16),
 
             DropdownButtonFormField<String>(
               value: _accountType,
@@ -494,6 +538,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 items: const [
                   DropdownMenuItem(value: 'government', child: Text('Government')),
                   DropdownMenuItem(value: 'nonprofit', child: Text('Non-profit')),
+                  DropdownMenuItem(value: 'news_agency', child: Text('News agency')),
                 ],
                 onChanged: (v) => setState(() => _orgKind = v),
                 decoration: const InputDecoration(
@@ -639,8 +684,12 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 child: Text(_loading ? 'Saving...' : 'Save'),
               ),
             ),
+                ],
+              ),
+            ),
           ],
         ),
+      ),
       ),
     );
   }

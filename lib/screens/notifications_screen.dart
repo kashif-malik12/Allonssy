@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../services/follow_service.dart';
+import '../widgets/global_app_bar.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -346,102 +347,200 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return CircleAvatar(backgroundImage: NetworkImage(url));
   }
 
+  Widget _buildNotificationCard(AppNotification n) {
+    final isActing = _actingIds.contains(n.id);
+    final isActionableRequest = n.type == 'follow_request' && n.readAt == null;
+    final isUnread = n.readAt == null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: isUnread ? const Color(0xFF0F766E).withOpacity(0.22) : const Color(0xFFE6DDCE),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: isActionableRequest ? null : () => _onTap(n),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  _avatar(n.actorAvatarUrl),
+                  if (isUnread)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Theme.of(context).colorScheme.primary,
+                          border: Border.all(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _titleFor(n),
+                      style: TextStyle(
+                        fontWeight: isUnread ? FontWeight.w700 : FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _formatTime(n.createdAt),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (isActionableRequest) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton(
+                            onPressed: isActing ? null : () => _declineRequest(n),
+                            child: const Text('Decline'),
+                          ),
+                          FilledButton(
+                            onPressed: isActing ? null : () => _acceptRequest(n),
+                            child: isActing
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Text('Accept'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (!isActionableRequest)
+                const Padding(
+                  padding: EdgeInsets.only(left: 8, top: 4),
+                  child: Icon(Icons.chevron_right),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final unread = _items.where((e) => e.readAt == null).length;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(unread > 0 ? 'Notifications ($unread)' : 'Notifications'),
+      appBar: GlobalAppBar(
+        title: unread > 0 ? 'Notifications ($unread)' : 'Notifications',
+        showBackIfPossible: true,
+        homeRoute: '/feed',
         actions: [
           if (_items.isNotEmpty && unread > 0)
             TextButton(onPressed: _markAllRead, child: const Text('Mark all read')),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Padding(padding: const EdgeInsets.all(16), child: Text(_error!)))
-              : RefreshIndicator(
-                  onRefresh: () => _refreshFirstPage(),
-                  child: ListView.separated(
-                    controller: _scrollCtrl,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: _items.length + 1,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index == _items.length) {
-                        if (!_hasMore) return const SizedBox(height: 80);
-                        return Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Center(
-                            child: _loadingMore
-                                ? const CircularProgressIndicator()
-                                : const Text('Pull or scroll to load more'),
-                          ),
-                        );
-                      }
-
-                      final n = _items[index];
-                      final isActing = _actingIds.contains(n.id);
-                      final isActionableRequest = n.type == 'follow_request' && n.readAt == null;
-                      final isUnread = n.readAt == null;
-
-                      return ListTile(
-                        leading: Stack(
-                          children: [
-                            _avatar(n.actorAvatarUrl),
-                            if (isUnread)
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Theme.of(context).colorScheme.primary,
-                                    border: Border.all(
-                                      color: Theme.of(context).scaffoldBackgroundColor,
-                                      width: 2,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
+      body: RefreshIndicator(
+        onRefresh: () => _refreshFirstPage(),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 920),
+            child: ListView(
+              controller: _scrollCtrl,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE6DDCE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        unread > 0 ? 'Notifications ($unread)' : 'Notifications',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Stay on top of follows, messages, offers, and updates.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                        title: Text(
-                          _titleFor(n),
-                          style: isUnread ? const TextStyle(fontWeight: FontWeight.w600) : null,
-                        ),
-                        subtitle: Text(_formatTime(n.createdAt)),
-                        trailing: isActionableRequest
-                            ? Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  TextButton(
-                                    onPressed: isActing ? null : () => _declineRequest(n),
-                                    child: const Text('Decline'),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  ElevatedButton(
-                                    onPressed: isActing ? null : () => _acceptRequest(n),
-                                    child: isActing
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
-                                          )
-                                        : const Text('Accept'),
-                                  ),
-                                ],
-                              )
-                            : const Icon(Icons.chevron_right),
-                        onTap: isActionableRequest ? null : () => _onTap(n),
-                      );
-                    },
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                if (_loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(_error!),
+                  )
+                else if (_items.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE6DDCE)),
+                    ),
+                    child: const Center(child: Text('No notifications yet')),
+                  )
+                else
+                  ..._items.map(_buildNotificationCard),
+                if (_items.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 24),
+                    child: Center(
+                      child: !_hasMore
+                          ? const SizedBox.shrink()
+                          : _loadingMore
+                              ? const CircularProgressIndicator()
+                              : const Text('Scroll down to load more'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

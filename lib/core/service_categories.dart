@@ -1,4 +1,7 @@
 const List<String> serviceMainCategories = [
+  'marketing',
+  'finance',
+  'business_services',
   'home_services',
   'tech',
   'design',
@@ -11,6 +14,12 @@ const List<String> serviceMainCategories = [
 
 String serviceCategoryLabel(String value) {
   switch (value) {
+    case 'marketing':
+      return 'Marketing';
+    case 'finance':
+      return 'Finance';
+    case 'business_services':
+      return 'Business Services';
     case 'home_services':
       return 'Home Services';
     case 'tech':

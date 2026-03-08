@@ -1,4 +1,7 @@
 const List<String> foodMainCategories = [
+  'indian',
+  'high_protein',
+  'starters',
   'pizza',
   'burger',
   'pasta',
@@ -12,6 +15,12 @@ const List<String> foodMainCategories = [
 
 String foodCategoryLabel(String value) {
   switch (value) {
+    case 'indian':
+      return 'Indian';
+    case 'high_protein':
+      return 'High Protein';
+    case 'starters':
+      return 'Starters';
     case 'pizza':
       return 'Pizza';
     case 'burger':

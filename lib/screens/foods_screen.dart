@@ -24,6 +24,12 @@ class _FoodsScreenState extends State<FoodsScreen> {
   double? _meLat;
   double? _meLng;
 
+  int _gridCount(double width) {
+    if (width >= 1200) return 4;
+    if (width >= 800) return 3;
+    return 2;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -170,16 +176,18 @@ class _FoodsScreenState extends State<FoodsScreen> {
                     ? Center(child: Text('Error: $_error'))
                     : _posts.isEmpty
                         ? const Center(child: Text('No food ads found'))
-                        : GridView.builder(
-                            padding: const EdgeInsets.all(12),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 0.72,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                            ),
-                            itemCount: _posts.length,
-                            itemBuilder: (context, index) {
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              return GridView.builder(
+                                padding: const EdgeInsets.all(12),
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: _gridCount(constraints.maxWidth),
+                                  childAspectRatio: 0.92,
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                ),
+                                itemCount: _posts.length,
+                                itemBuilder: (context, index) {
                               final p = _posts[index];
                               final distanceKm = _distanceKm(p);
                               final title = (p.marketTitle ?? '').trim().isNotEmpty
@@ -200,7 +208,8 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Expanded(
+                                      SizedBox(
+                                        height: 112,
                                         child: ClipRRect(
                                           borderRadius: const BorderRadius.vertical(
                                             top: Radius.circular(12),
@@ -208,14 +217,19 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                           child: Container(
                                             width: double.infinity,
                                             color: Colors.grey.shade200,
+                                            padding: const EdgeInsets.all(6),
                                             child: p.imageUrl != null && p.imageUrl!.isNotEmpty
-                                                ? Image.network(p.imageUrl!, fit: BoxFit.cover)
-                                                : const Icon(Icons.fastfood, size: 44),
+                                                ? Image.network(
+                                                    p.imageUrl!,
+                                                    fit: BoxFit.contain,
+                                                    alignment: Alignment.center,
+                                                  )
+                                                : const Icon(Icons.fastfood, size: 40),
                                           ),
                                         ),
                                       ),
                                       Padding(
-                                        padding: const EdgeInsets.all(10),
+                                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
@@ -225,6 +239,19 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                               overflow: TextOverflow.ellipsis,
                                               style: const TextStyle(fontWeight: FontWeight.w600),
                                             ),
+                                            if ((p.authorName ?? '').trim().isNotEmpty) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                p.authorName!.trim(),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade700,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
                                             const SizedBox(height: 4),
                                             Text(
                                               price,
@@ -264,6 +291,8 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                     ],
                                   ),
                                 ),
+                              );
+                                },
                               );
                             },
                           ),

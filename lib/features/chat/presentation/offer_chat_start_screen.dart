@@ -62,12 +62,28 @@ class _OfferChatStartScreenState extends State<OfferChatStartScreen> {
         ],
       ),
       body: Center(
-        child: _error == null
-            ? const CircularProgressIndicator()
-            : Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(_error!, textAlign: TextAlign.center),
-              ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Card(
+            margin: const EdgeInsets.all(16),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: _error == null
+                  ? const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text(
+                          'Preparing your offer chat...',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    )
+                  : Text(_error!, textAlign: TextAlign.center),
+            ),
+          ),
+        ),
       ),
     );
   }

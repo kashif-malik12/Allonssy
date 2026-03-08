@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../services/follow_service.dart';
+import '../../../widgets/global_app_bar.dart';
 
 class FollowRequestsScreen extends StatefulWidget {
   const FollowRequestsScreen({super.key});
@@ -71,62 +72,144 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Follow requests')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Padding(padding: const EdgeInsets.all(16), child: Text(_error!)))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: _items.isEmpty
-                      ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: const [
-                            SizedBox(height: 120),
-                            Center(child: Text('No follow requests')),
-                          ],
-                        )
-                      : ListView.separated(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          itemCount: _items.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final row = _items[index];
-                            final followerId = row['follower_id'] as String;
+      appBar: const GlobalAppBar(
+        title: 'Follow Requests',
+        showBackIfPossible: true,
+        homeRoute: '/feed',
+      ),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE6DDCE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Incoming requests',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${_items.length} pending request${_items.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (_loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(_error!),
+                  )
+                else if (_items.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE6DDCE)),
+                    ),
+                    child: const Center(child: Text('No follow requests')),
+                  )
+                else
+                  ..._items.map((row) {
+                    final followerId = row['follower_id'] as String;
+                    final p = row['profiles'] as Map<String, dynamic>?;
+                    final name = (p?['full_name'] ?? 'Unknown').toString();
+                    final avatarUrl = (p?['avatar_url'] as String?)?.trim();
 
-                            final p = row['profiles'] as Map<String, dynamic>?;
-                            final name = (p?['full_name'] ?? 'Unknown').toString();
-                            final avatarUrl = (p?['avatar_url'] as String?)?.trim();
-
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                                    ? NetworkImage(avatarUrl)
-                                    : null,
-                                child: (avatarUrl == null || avatarUrl.isEmpty)
-                                    ? const Icon(Icons.person)
-                                    : null,
-                              ),
-                              title: Text(name),
-                              subtitle: const Text('Requested to follow you'),
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(color: const Color(0xFFE6DDCE)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 24,
+                            backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                                ? NetworkImage(avatarUrl)
+                                : null,
+                            child: (avatarUrl == null || avatarUrl.isEmpty)
+                                ? const Icon(Icons.person)
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
                               onTap: () => context.push('/p/$followerId'),
-                              trailing: Wrap(
-                                spacing: 8,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  OutlinedButton(
-                                    onPressed: () => _decline(followerId),
-                                    child: const Text('Decline'),
+                                  Text(
+                                    name,
+                                    style: const TextStyle(fontWeight: FontWeight.w700),
                                   ),
-                                  ElevatedButton(
-                                    onPressed: () => _accept(followerId),
-                                    child: const Text('Accept'),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Requested to follow you',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    ),
                                   ),
                                 ],
                               ),
-                            );
-                          },
-                        ),
-                ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton(
+                                onPressed: () => _decline(followerId),
+                                child: const Text('Decline'),
+                              ),
+                              FilledButton(
+                                onPressed: () => _accept(followerId),
+                                child: const Text('Accept'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

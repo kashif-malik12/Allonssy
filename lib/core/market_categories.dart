@@ -1,4 +1,9 @@
 const List<String> marketMainCategories = [
+  'house_sale',
+  'house_rent',
+  'mobile_phone',
+  'computers',
+  'bikes',
   'electronics',
   'fashion',
   'home_garden',
@@ -11,6 +16,16 @@ const List<String> marketMainCategories = [
 
 String marketCategoryLabel(String value) {
   switch (value) {
+    case 'house_sale':
+      return 'House for Sale';
+    case 'house_rent':
+      return 'House for Rent';
+    case 'mobile_phone':
+      return 'Mobile Phone';
+    case 'computers':
+      return 'Computers';
+    case 'bikes':
+      return 'Bikes';
     case 'electronics':
       return 'Electronics';
     case 'fashion':

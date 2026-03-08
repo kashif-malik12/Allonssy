@@ -370,7 +370,7 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
     final who = _currentOfferBy == _buyerId
         ? (_isBuyer ? 'You' : 'Buyer')
         : (_isSeller ? 'You' : 'Seller');
-    return 'Current offer: EUR ${_currentOfferAmount!.toStringAsFixed(2)} - ${_currentOfferStatus.toUpperCase()} - $who';
+    return 'Current offer: EUR ${_currentOfferAmount!.toStringAsFixed(2)} • ${_currentOfferStatus.toUpperCase()} • $who';
   }
 
   String _offerActionTitle() {
@@ -423,143 +423,187 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
                 )
               : Column(
                   children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        border: Border(
-                          bottom: BorderSide(color: Theme.of(context).dividerColor),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            [
-                              _postTypeLabel(),
-                              if (_priceLabel.isNotEmpty) _priceLabel,
-                            ].join(' - '),
-                            style: TextStyle(
-                              color: Theme.of(context).hintColor,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _offerActionTitle(),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _offerStatusLabel(),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                    Expanded(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 920),
+                          child: Column(
                             children: [
-                              OutlinedButton.icon(
-                                onPressed: _busy ? null : _submitOfferFlow,
-                                icon: const Icon(Icons.local_offer_outlined),
-                                label: Text(
-                                  _canCounterOffer ? 'Counter offer' : 'Make offer',
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                                    borderRadius: BorderRadius.circular(22),
+                                    border: Border.all(color: const Color(0xFFE6DDCE)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          _HeaderPill(label: _postTypeLabel()),
+                                          if (_priceLabel.isNotEmpty) _HeaderPill(label: _priceLabel),
+                                          _HeaderPill(label: _offerActionTitle()),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        _offerStatusLabel(),
+                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          FilledButton.icon(
+                                            onPressed: _busy ? null : _submitOfferFlow,
+                                            icon: const Icon(Icons.local_offer_outlined),
+                                            label: Text(
+                                              _canCounterOffer ? 'Counter offer' : 'Make offer',
+                                            ),
+                                          ),
+                                          if (_canAcceptReject)
+                                            FilledButton(
+                                              onPressed:
+                                                  _busy ? null : () => _respondToOffer('accepted'),
+                                              child: const Text('Accept'),
+                                            ),
+                                          if (_canAcceptReject)
+                                            OutlinedButton(
+                                              onPressed:
+                                                  _busy ? null : () => _respondToOffer('rejected'),
+                                              child: const Text('Reject'),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              if (_canAcceptReject)
-                                ElevatedButton(
-                                  onPressed:
-                                      _busy ? null : () => _respondToOffer('accepted'),
-                                  child: const Text('Accept'),
+                              Expanded(
+                                child: ListView.builder(
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: _messages.length,
+                                  itemBuilder: (context, i) {
+                                    final m = _messages[i];
+                                    final senderId = m['sender_id'] as String?;
+                                    final isMe = senderId != null && senderId == myId;
+                                    final kind = (m['message_type'] as String?) ?? 'text';
+                                    final amount = (m['offer_amount'] as num?)?.toDouble();
+                                    final content = (m['content'] as String?) ?? '';
+
+                                    final text = switch (kind) {
+                                      'offer' => 'Made offer: EUR ${amount?.toStringAsFixed(2) ?? '--'}',
+                                      'counter' => 'Counter offer: EUR ${amount?.toStringAsFixed(2) ?? '--'}',
+                                      'accepted' => 'Offer accepted',
+                                      'rejected' => 'Offer rejected',
+                                      _ => content,
+                                    };
+
+                                    return Align(
+                                      alignment:
+                                          isMe ? Alignment.centerRight : Alignment.centerLeft,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 620),
+                                        child: Container(
+                                          margin: const EdgeInsets.symmetric(vertical: 5),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 11,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isMe
+                                                ? const Color(0xFFF4EBDD)
+                                                : Colors.white,
+                                            borderRadius: BorderRadius.circular(18),
+                                            border: Border.all(
+                                              color: const Color(0xFFE6DDCE),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            text,
+                                            style: const TextStyle(height: 1.35),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
-                              if (_canAcceptReject)
-                                OutlinedButton(
-                                  onPressed:
-                                      _busy ? null : () => _respondToOffer('rejected'),
-                                  child: const Text('Reject'),
-                                ),
+                              ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _messages.length,
-                        itemBuilder: (context, i) {
-                          final m = _messages[i];
-                          final senderId = m['sender_id'] as String?;
-                          final isMe = senderId != null && senderId == myId;
-                          final kind = (m['message_type'] as String?) ?? 'text';
-                          final amount = (m['offer_amount'] as num?)?.toDouble();
-                          final content = (m['content'] as String?) ?? '';
-
-                          final text = switch (kind) {
-                            'offer' => 'Made offer: EUR ${amount?.toStringAsFixed(2) ?? '--'}',
-                            'counter' => 'Counter offer: EUR ${amount?.toStringAsFixed(2) ?? '--'}',
-                            'accepted' => 'Offer accepted',
-                            'rejected' => 'Offer rejected',
-                            _ => content,
-                          };
-
-                          return Align(
-                            alignment:
-                                isMe ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isMe
-                                    ? Colors.green.withOpacity(0.15)
-                                    : Colors.grey.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Text(text),
-                            ),
-                          );
-                        },
+                        ),
                       ),
                     ),
                     SafeArea(
                       top: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _textCtrl,
-                                textInputAction: TextInputAction.send,
-                                onSubmitted: (_) => _send(),
-                                decoration: const InputDecoration(
-                                  hintText: 'Message about this listing...',
-                                  border: OutlineInputBorder(),
-                                  isDense: true,
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 920),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _textCtrl,
+                                    textInputAction: TextInputAction.send,
+                                    minLines: 1,
+                                    maxLines: 4,
+                                    onSubmitted: (_) => _send(),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Message about this listing...',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(width: 10),
+                                FilledButton.icon(
+                                  onPressed: _busy ? null : _send,
+                                  icon: const Icon(Icons.send),
+                                  label: const Text('Send'),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: _busy ? null : _send,
-                              icon: const Icon(Icons.send),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
+    );
+  }
+}
+
+class _HeaderPill extends StatelessWidget {
+  final String label;
+
+  const _HeaderPill({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4EBDD),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE6DDCE)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }

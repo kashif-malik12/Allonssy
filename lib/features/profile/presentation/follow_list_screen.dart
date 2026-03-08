@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../widgets/global_app_bar.dart';
 
 enum FollowListMode { followers, following }
 
@@ -118,42 +119,147 @@ class _FollowListScreenState extends State<FollowListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_title)),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('Error:\n$_error'),
-                )
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.separated(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: _profiles.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      final p = _profiles[i];
-                      final id = p['id']?.toString();
-                      final name = (p['full_name'] ?? 'Unknown').toString();
-                      final type = (p['profile_type'] ?? p['account_type'] ?? '').toString();
-
-                      return ListTile(
-                        onTap: id == null ? null : () => context.push('/p/$id'),
-                        title: Text(name),
-                        subtitle: type.isEmpty ? null : Text(type),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Theme.of(context).dividerColor),
-                          ),
-                          child: Text(_badge(type), style: const TextStyle(fontSize: 12)),
+      appBar: GlobalAppBar(
+        title: _title,
+        showBackIfPossible: true,
+        homeRoute: '/feed',
+      ),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE6DDCE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _title,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${_profiles.length} profile${_profiles.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                if (_loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text('Error:\n$_error'),
+                  )
+                else if (_profiles.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE6DDCE)),
+                    ),
+                    child: Center(child: Text('No ${_title.toLowerCase()} yet')),
+                  )
+                else
+                  ..._profiles.map((p) {
+                    final id = p['id']?.toString();
+                    final name = (p['full_name'] ?? 'Unknown').toString();
+                    final type = (p['profile_type'] ?? p['account_type'] ?? '').toString();
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Material(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(22),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(22),
+                          onTap: id == null ? null : () => context.push('/p/$id'),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(color: const Color(0xFFE6DDCE)),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 22,
+                                  child: Text(
+                                    name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase(),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(fontWeight: FontWeight.w700),
+                                      ),
+                                      if (type.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          type,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(999),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest
+                                        .withOpacity(0.55),
+                                  ),
+                                  child: Text(
+                                    _badge(type),
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

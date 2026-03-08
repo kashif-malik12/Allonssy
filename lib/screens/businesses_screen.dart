@@ -250,21 +250,32 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
 
                               final id = (b['id'] ?? '').toString();
 
-                              return ListTile(
+                              return Card(
+                                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                child: ListTile(
                                 onTap: id.isEmpty ? null : () => context.push('/p/$id'),
-                                leading: CircleAvatar(
-                                  backgroundImage: (b['avatar_url'] ?? '').toString().isNotEmpty
-                                      ? NetworkImage((b['avatar_url'] ?? '').toString())
-                                      : null,
-                                  child: (b['avatar_url'] ?? '').toString().isEmpty
-                                      ? const Icon(Icons.business)
-                                      : null,
+                                contentPadding: const EdgeInsets.all(12),
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    width: 64,
+                                    height: 64,
+                                    color: Colors.grey.shade200,
+                                    padding: const EdgeInsets.all(6),
+                                    child: (b['avatar_url'] ?? '').toString().isNotEmpty
+                                        ? Image.network(
+                                            (b['avatar_url'] ?? '').toString(),
+                                            fit: BoxFit.contain,
+                                          )
+                                        : const Icon(Icons.business),
+                                  ),
                                 ),
                                 title: Text((b['full_name'] ?? 'Business').toString()),
                                 subtitle: Text(
                                   '${(b['business_type'] ?? '').toString().isNotEmpty ? businessCategoryLabel((b['business_type'] ?? '').toString()) : 'Business'}'
                                   '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
                                   '${(b['city'] ?? '').toString().isNotEmpty ? ' • ${(b['city'] ?? '').toString()}' : ''}',
+                                ),
                                 ),
                               );
                             },

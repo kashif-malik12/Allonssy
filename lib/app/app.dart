@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app/chat_singletons.dart';
-import 'router.dart' show appRouterProvider;
+import 'router.dart' show appRouterNavigatorKey, appRouterProvider;
 
 class App extends ConsumerStatefulWidget {
   const App({super.key});
@@ -31,6 +32,13 @@ class _AppState extends ConsumerState<App> {
     // Listen for login/logout and init/dispose badge controller
     _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
       final session = event.session;
+
+      if (event.event == AuthChangeEvent.passwordRecovery) {
+        final context = appRouterNavigatorKey.currentContext;
+        if (context != null) {
+          context.go('/reset-password');
+        }
+      }
 
       if (session != null) {
         // logged in
@@ -60,10 +68,88 @@ class _AppState extends ConsumerState<App> {
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(appRouterProvider);
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF0F766E),
+      primary: const Color(0xFF0F766E),
+      secondary: const Color(0xFFCC7A00),
+      surface: const Color(0xFFFFFCF7),
+      brightness: Brightness.light,
+    );
+    final baseTheme = ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: const Color(0xFFF5F1E8),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: const Color(0xFFFFFCF7),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        margin: EdgeInsets.zero,
+      ),
+      appBarTheme: AppBarTheme(
+        centerTitle: false,
+        elevation: 0,
+        backgroundColor: const Color(0xFFF5F1E8),
+        foregroundColor: const Color(0xFF12211D),
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF12211D),
+          letterSpacing: -0.4,
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: const Color(0xFFF0E6D5),
+        selectedColor: const Color(0xFF0F766E).withOpacity(0.16),
+        disabledColor: const Color(0xFFE7E0D2),
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          side: BorderSide(color: colorScheme.outlineVariant),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFFFFCF7),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: colorScheme.primary, width: 1.4),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF1F2937),
+        contentTextStyle: const TextStyle(color: Colors.white),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      dividerColor: const Color(0xFFE6DDCE),
+    );
 
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       routerConfig: router,
+      theme: baseTheme,
     );
   }
 }

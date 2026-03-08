@@ -240,15 +240,25 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
 
                               final id = (r['id'] ?? '').toString();
                               
-                              return ListTile(
+                              return Card(
+                                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                child: ListTile(
                                 onTap: id.isEmpty ? null : () => context.push('/p/$id'),
-                                leading: CircleAvatar(
-                                  backgroundImage: (r['avatar_url'] ?? '').toString().isNotEmpty
-                                      ? NetworkImage((r['avatar_url'] ?? '').toString())
-                                      : null,
-                                  child: (r['avatar_url'] ?? '').toString().isEmpty
-                                      ? const Icon(Icons.storefront_outlined)
-                                      : null,
+                                contentPadding: const EdgeInsets.all(12),
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    width: 64,
+                                    height: 64,
+                                    color: Colors.grey.shade200,
+                                    padding: const EdgeInsets.all(6),
+                                    child: (r['avatar_url'] ?? '').toString().isNotEmpty
+                                        ? Image.network(
+                                            (r['avatar_url'] ?? '').toString(),
+                                            fit: BoxFit.contain,
+                                          )
+                                        : const Icon(Icons.storefront_outlined),
+                                  ),
                                 ),
                                 title: Row(
                                   children: [
@@ -260,6 +270,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                   '${(r['restaurant_type'] ?? '').toString().isNotEmpty ? restaurantCategoryLabel((r['restaurant_type'] ?? '').toString()) : 'Restaurant'}'
                                   '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
                                   '${(r['city'] ?? '').toString().isNotEmpty ? ' • ${(r['city'] ?? '').toString()}' : ''}',
+                                ),
                                 ),
                               );
                             },

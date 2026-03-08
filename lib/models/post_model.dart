@@ -20,6 +20,7 @@ class Post {
   final String? authorName;
   final String? authorAvatarUrl;
   final String? authorType;
+  final String? authorOrgKind;
   final String? authorCity;
   final String? authorZipcode;
 
@@ -45,6 +46,7 @@ class Post {
     this.authorName,
     this.authorAvatarUrl,
     this.authorType,
+    this.authorOrgKind,
     this.authorCity,
     this.authorZipcode,
     this.postType,
@@ -75,6 +77,10 @@ class Post {
         (map['author_city'] as String?) ??
         (profile is Map ? profile['city'] as String? : null);
 
+    final String? authorOrgKind =
+        (map['author_org_kind'] as String?) ??
+        (profile is Map ? profile['org_kind'] as String? : null);
+
     final String? authorZipcode =
         (map['author_zipcode'] as String?) ??
         (profile is Map ? profile['zipcode'] as String? : null);
@@ -98,6 +104,7 @@ class Post {
       authorName: authorName,
       authorAvatarUrl: authorAvatarUrl,
       authorType: map['author_profile_type'] as String?,
+      authorOrgKind: authorOrgKind,
       authorCity: authorCity,
       authorZipcode: authorZipcode,
 

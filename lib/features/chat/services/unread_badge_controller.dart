@@ -24,14 +24,28 @@ class UnreadBadgeController {
         .order('created_at')
         .listen((_) => refresh());
 
-    // Also refresh when read_at changes (same stream covers updates too in most setups)
-    // If your setup doesn't fire updates, uncomment below and use postgres_changes instead.
+    _sub2 = _db
+        .from('offer_messages')
+        .stream(primaryKey: ['id'])
+        .order('created_at')
+        .listen((_) => refresh());
   }
 
   Future<void> refresh() async {
     try {
-      final res = await _db.rpc('get_unread_total');
-      unread.value = (res as num).toInt();
+      final results = await Future.wait([
+        _db.rpc('get_unread_total'),
+        _db.rpc('get_offer_chat_list'),
+      ]);
+
+      final dmUnread = (results[0] as num).toInt();
+      final offerRows = (results[1] as List).cast<Map<String, dynamic>>();
+      final offerUnread = offerRows.fold<int>(
+        0,
+        (sum, row) => sum + (((row['unread_count'] as num?)?.toInt()) ?? 0),
+      );
+
+      unread.value = dmUnread + offerUnread;
     } catch (_) {
       // ignore; keep last value
     }
@@ -40,6 +54,6 @@ class UnreadBadgeController {
   void dispose() {
     _sub1?.cancel();
     _sub2?.cancel();
-    unread.dispose();
+    unread.value = 0;
   }
 }
