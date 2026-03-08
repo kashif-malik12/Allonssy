@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../widgets/global_app_bar.dart';
+import '../../../widgets/global_bottom_nav.dart';
 
 enum FollowListMode { followers, following }
 
@@ -124,6 +125,7 @@ class _FollowListScreenState extends State<FollowListScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: RefreshIndicator(
         onRefresh: _load,
         child: Center(

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../widgets/global_app_bar.dart';
+import '../../../widgets/global_bottom_nav.dart';
 import '../services/chat_service.dart';
 import '../services/offer_chat_service.dart';
 
@@ -278,6 +279,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             ),
           ],
         ),
+        bottomNavigationBar: const GlobalBottomNav(),
         body: Column(
           children: [
             const TabBar(

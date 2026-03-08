@@ -6,6 +6,7 @@ import '../../../core/food_categories.dart';
 import '../../../core/market_categories.dart';
 import '../../../core/service_categories.dart';
 import '../../../widgets/global_app_bar.dart';
+import '../../../widgets/global_bottom_nav.dart';
 
 enum ManagedAdsMode { products, gigs, foods }
 
@@ -354,6 +355,7 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 980),

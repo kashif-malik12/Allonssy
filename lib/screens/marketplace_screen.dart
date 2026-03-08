@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import '../core/market_categories.dart';
 import '../models/post_model.dart';
 import '../widgets/global_app_bar.dart';
+import '../widgets/global_bottom_nav.dart';
 
 class MarketplaceScreen extends StatefulWidget {
   const MarketplaceScreen({super.key});
@@ -29,6 +30,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     if (width >= 1200) return 4;
     if (width >= 800) return 3;
     return 2;
+  }
+
+  double _gridAspectRatio(double width) {
+    final count = _gridCount(width);
+    if (count == 2) return 0.58;
+    if (count == 3) return 0.74;
+    return 0.92;
   }
 
   @override
@@ -196,6 +204,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/create-post'),
         icon: const Icon(Icons.add),
@@ -303,7 +312,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                   gridDelegate:
                                       SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: _gridCount(constraints.maxWidth),
-                                    childAspectRatio: 0.92,
+                                    childAspectRatio: _gridAspectRatio(constraints.maxWidth),
                                     crossAxisSpacing: 10,
                                     mainAxisSpacing: 10,
                                   ),

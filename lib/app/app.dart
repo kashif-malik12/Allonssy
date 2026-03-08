@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app/chat_singletons.dart';
+import '../features/notifications/providers/notification_unread_provider.dart';
 import 'router.dart' show appRouterNavigatorKey, appRouterProvider;
 
 class App extends ConsumerStatefulWidget {
@@ -18,6 +19,7 @@ class App extends ConsumerStatefulWidget {
 class _AppState extends ConsumerState<App> {
   StreamSubscription<AuthState>? _authSub;
   bool _badgeInitialized = false;
+  bool _notificationBadgeInitialized = false;
 
   @override
   void initState() {
@@ -26,7 +28,9 @@ class _AppState extends ConsumerState<App> {
     // If app restarts while already logged in, init immediately
     if (Supabase.instance.client.auth.currentUser != null) {
       unreadBadgeController.init();
+      ref.read(notificationUnreadProvider.notifier).init();
       _badgeInitialized = true;
+      _notificationBadgeInitialized = true;
     }
 
     // Listen for login/logout and init/dispose badge controller
@@ -49,11 +53,22 @@ class _AppState extends ConsumerState<App> {
           // already initialized: just refresh once
           await unreadBadgeController.refresh();
         }
+
+        if (!_notificationBadgeInitialized) {
+          await ref.read(notificationUnreadProvider.notifier).init();
+          _notificationBadgeInitialized = true;
+        } else {
+          await ref.read(notificationUnreadProvider.notifier).refresh();
+        }
       } else {
         // logged out
         if (_badgeInitialized) {
           unreadBadgeController.dispose();
           _badgeInitialized = false;
+        }
+        if (_notificationBadgeInitialized) {
+          await ref.read(notificationUnreadProvider.notifier).disposeRealtime();
+          _notificationBadgeInitialized = false;
         }
       }
     });
@@ -62,6 +77,10 @@ class _AppState extends ConsumerState<App> {
   @override
   void dispose() {
     _authSub?.cancel();
+    if (_notificationBadgeInitialized) {
+      ref.read(notificationUnreadProvider.notifier).disposeRealtime();
+      _notificationBadgeInitialized = false;
+    }
     super.dispose();
   }
 

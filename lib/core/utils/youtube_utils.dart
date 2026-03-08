@@ -29,3 +29,7 @@ String? youtubeThumbnailUrlFromId(String videoId) {
   // Best quality often available (not always), fallback handled by Image errorBuilder if needed.
   return 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
 }
+
+String youtubeWatchUrlFromId(String videoId) {
+  return 'https://www.youtube.com/watch?v=$videoId';
+}

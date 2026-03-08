@@ -10,7 +10,10 @@ import '../core/food_categories.dart';
 import '../core/market_categories.dart';
 import '../core/post_types.dart';
 import '../core/service_categories.dart';
+import '../services/mention_service.dart';
 import '../services/post_service.dart';
+import '../widgets/global_bottom_nav.dart';
+import '../widgets/mention_picker_sheet.dart';
 
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
@@ -31,12 +34,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _selectedMarketIntent = 'selling';
   String _selectedServiceCategory = serviceMainCategories.first;
   String _selectedFoodCategory = foodMainCategories.first;
+  String _shareScope = 'none';
   bool _isRestaurantAuthor = false;
+  List<MentionCandidate> _selectedMentions = const [];
 
   XFile? _imageXFile;
   bool _loading = false;
 
   final _picker = ImagePicker();
+  final _mentionService = MentionService(Supabase.instance.client);
 
   bool get _isMarketPost => _selectedPostType == PostType.market;
   bool get _isServicePost =>
@@ -106,8 +112,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _submit() async {
-    final content = _contentCtrl.text.trim();
-    if (content.isEmpty) {
+    final rawContent = _contentCtrl.text.trim();
+    if (rawContent.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Write something')),
       );
@@ -178,6 +184,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       final supabase = Supabase.instance.client;
       final service = PostService(supabase);
+      final allowedTagIds =
+          await _mentionService.filterAllowedUserIds(_selectedMentions.map((e) => e.id).toList());
+      final content = _mentionService.composeTaggedContent(rawContent, _selectedMentions);
 
       final profile = await _loadProfileLocation(supabase);
       final city = profile?['city'] as String?;
@@ -239,6 +248,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         marketIntent: _isMarketPost ? _selectedMarketIntent : null,
         marketTitle: (_isMarketPost || _isServicePost || _isFoodAdPost) ? marketTitle : null,
         marketPrice: (_isMarketPost || _isServicePost || _isFoodAdPost) ? marketPrice : null,
+        shareScope: _shareScope,
+        taggedUserIds: allowedTagIds,
       );
 
       if (mounted) Navigator.pop(context, true);
@@ -253,10 +264,40 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
+  Future<void> _pickMentions() async {
+    try {
+      final connections = await _mentionService.fetchMutualConnections();
+      if (!mounted) return;
+      if (connections.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No mutual connections available to tag')),
+        );
+        return;
+      }
+
+      final selected = await showMentionPickerSheet(
+        context: context,
+        available: connections,
+        initialSelection: _selectedMentions,
+        title: 'Tag connections',
+      );
+
+      if (selected != null && mounted) {
+        setState(() => _selectedMentions = selected);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Tag loading failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Create Post')),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
@@ -275,6 +316,50 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _pickMentions,
+                  icon: const Icon(Icons.alternate_email),
+                  label: const Text('Tag connections'),
+                ),
+                if (_selectedMentions.isNotEmpty) ...[
+                  const SizedBox(width: 10),
+                  Text(
+                    '${_selectedMentions.length} selected',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+            if (_selectedMentions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _selectedMentions
+                    .map(
+                      (mention) => InputChip(
+                        label: Text(mention.name),
+                        backgroundColor: const Color(0xFFF4EBDD),
+                        side: const BorderSide(color: Color(0xFFD8C8AF)),
+                        labelStyle: const TextStyle(
+                          color: Color(0xFF12211D),
+                          fontWeight: FontWeight.w700,
+                        ),
+                        deleteIconColor: const Color(0xFF7A5C2E),
+                        onDeleted: () {
+                          setState(() {
+                            _selectedMentions =
+                                _selectedMentions.where((item) => item.id != mention.id).toList();
+                          });
+                        },
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
             DropdownButtonFormField<PostType>(
               initialValue: _selectedPostType,
               items: PostType.values
@@ -430,6 +515,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'Visibility',
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _shareScope,
+              items: const [
+                DropdownMenuItem(value: 'none', child: Text('No sharing')),
+                DropdownMenuItem(value: 'followers', child: Text('Followers can share')),
+                DropdownMenuItem(value: 'connections', child: Text('Connections can share')),
+                DropdownMenuItem(value: 'public', child: Text('Public can share')),
+              ],
+              onChanged: (v) => setState(() => _shareScope = v ?? 'none'),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Allow sharing',
               ),
             ),
             const SizedBox(height: 12),

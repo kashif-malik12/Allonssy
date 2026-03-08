@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/food_categories.dart';
 import '../models/post_model.dart';
 import '../widgets/global_app_bar.dart';
+import '../widgets/global_bottom_nav.dart';
+import '../widgets/tagged_content.dart';
 
 class FoodAdDetailScreen extends StatefulWidget {
   final String postId;
@@ -59,6 +61,7 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -105,7 +108,7 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
                         const SizedBox(height: 16),
                         const Text('Details', style: TextStyle(fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
-                        Text(p.content),
+                        TaggedContent(content: p.content),
                       ],
                     ),
     );

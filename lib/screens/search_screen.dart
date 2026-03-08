@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../widgets/global_app_bar.dart'; // ✅ NEW
+import '../widgets/global_bottom_nav.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -58,6 +59,18 @@ class _SearchScreenState extends State<SearchScreen> {
 
   List<Map<String, dynamic>> _profiles = [];
   List<Map<String, dynamic>> _posts = [];
+
+  String _visibilityLabel(String raw) {
+    switch (raw.trim()) {
+      case 'followers':
+      case 'following':
+        return 'Following';
+      case 'public':
+        return 'Public';
+      default:
+        return raw;
+    }
+  }
 
   SupabaseClient get _db => Supabase.instance.client;
 
@@ -227,6 +240,7 @@ class _SearchScreenState extends State<SearchScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: Column(
         children: [
           Padding(
@@ -503,6 +517,7 @@ class _SearchScreenState extends State<SearchScreen> {
         final authorType = (p['author_profile_type'] ?? '').toString();
         final visibility = (p['visibility'] ?? '').toString();
         final dist = (p['distance_km'] as num?)?.toDouble();
+        final id = (p['id'] ?? '').toString();
 
         return ListTile(
           title: Text(
@@ -514,15 +529,14 @@ class _SearchScreenState extends State<SearchScreen> {
             [
               if (postType.isNotEmpty) postType,
               if (authorType.isNotEmpty) authorType,
-              if (visibility.isNotEmpty) visibility,
+              if (visibility.isNotEmpty) _visibilityLabel(visibility),
               if (dist != null) '${dist.toStringAsFixed(1)} km',
               if (location.isNotEmpty) location,
             ].join(' • '),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          // Optional: open post detail if you want
-          // onTap: () => context.push('/post/${(p['id'] ?? '').toString()}'),
+          onTap: id.isEmpty ? null : () => context.push('/post/$id'),
         );
       },
     );

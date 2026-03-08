@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../widgets/global_bottom_nav.dart';
 
 import '../services/offer_chat_service.dart';
 
@@ -412,6 +413,7 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null

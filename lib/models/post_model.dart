@@ -1,12 +1,13 @@
-// lib/models/post_model.dart
-
 class Post {
   final String id;
   final String userId;
   final String content;
 
   final String? imageUrl;
-  final String? videoUrl; // ✅ NEW
+  final String? videoUrl;
+  final String shareScope;
+  final String? sharedPostId;
+  final Post? sharedPost;
 
   final String visibility;
   final String? locationName;
@@ -16,7 +17,6 @@ class Post {
 
   final DateTime createdAt;
 
-  // Author info (can come from joined select OR RPC)
   final String? authorName;
   final String? authorAvatarUrl;
   final String? authorType;
@@ -24,7 +24,6 @@ class Post {
   final String? authorCity;
   final String? authorZipcode;
 
-  // Post type + distance (distance comes from RPC)
   final String? postType;
   final String? marketCategory;
   final String? marketIntent;
@@ -41,7 +40,10 @@ class Post {
     required this.longitude,
     required this.createdAt,
     this.imageUrl,
-    this.videoUrl, // ✅ NEW
+    this.videoUrl,
+    this.shareScope = 'none',
+    this.sharedPostId,
+    this.sharedPost,
     this.locationName,
     this.authorName,
     this.authorAvatarUrl,
@@ -58,13 +60,9 @@ class Post {
   });
 
   factory Post.fromMap(Map<String, dynamic> map) {
-    // When using: select('*, profiles(full_name, avatar_url)')
-    // Supabase returns a nested "profiles" object.
     final profile = map['profiles'];
+    final nestedSharedPost = map['shared_post'];
 
-    // ✅ Works for BOTH:
-    // - RPC: author_name / author_avatar_url
-    // - Join: profiles.full_name / profiles.avatar_url
     final String? authorName =
         (map['author_name'] as String?) ??
         (profile is Map ? profile['full_name'] as String? : null);
@@ -89,32 +87,29 @@ class Post {
       id: map['id'] as String,
       userId: map['user_id'] as String,
       content: (map['content'] ?? '') as String,
-
       imageUrl: map['image_url'] as String?,
-      videoUrl: map['video_url'] as String?, // ✅ NEW
-
+      videoUrl: map['video_url'] as String?,
+      shareScope: (map['share_scope'] as String?) ?? 'none',
+      sharedPostId: map['shared_post_id'] as String?,
+      sharedPost: nestedSharedPost is Map
+          ? Post.fromMap(Map<String, dynamic>.from(nestedSharedPost))
+          : null,
       visibility: (map['visibility'] as String?) ?? 'public',
       locationName: map['location_name'] as String?,
-
       latitude: ((map['latitude'] as num?) ?? 0).toDouble(),
       longitude: ((map['longitude'] as num?) ?? 0).toDouble(),
-
       createdAt: DateTime.parse(map['created_at'] as String),
-
       authorName: authorName,
       authorAvatarUrl: authorAvatarUrl,
       authorType: map['author_profile_type'] as String?,
       authorOrgKind: authorOrgKind,
       authorCity: authorCity,
       authorZipcode: authorZipcode,
-
       postType: map['post_type'] as String?,
       marketCategory: map['market_category'] as String?,
       marketIntent: map['market_intent'] as String?,
       marketTitle: map['market_title'] as String?,
       marketPrice: (map['market_price'] as num?)?.toDouble(),
-      
-      // RPC returns distance_km; joined select usually doesn't
       distanceKm: (map['distance_km'] as num?)?.toDouble(),
     );
   }

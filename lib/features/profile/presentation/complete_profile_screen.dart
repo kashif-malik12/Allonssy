@@ -12,6 +12,7 @@ import '../../../core/business_categories.dart';
 import '../../../core/restaurant_categories.dart';
 import '../../../services/profile_service.dart';
 import '../../../widgets/global_app_bar.dart'; // ✅ NEW
+import '../../../widgets/global_bottom_nav.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
   const CompleteProfileScreen({super.key});
@@ -408,6 +409,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         homeRoute: '/feed',
       ),
 
+      bottomNavigationBar: const GlobalBottomNav(),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 860),

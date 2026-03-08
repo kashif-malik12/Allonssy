@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../core/utils/youtube_utils.dart';
@@ -7,12 +8,29 @@ class YoutubePreview extends StatelessWidget {
   final String videoUrl;
   const YoutubePreview({super.key, required this.videoUrl});
 
+  Future<void> _openVideoExternally(BuildContext context, String videoId) async {
+    final uri = Uri.parse(youtubeWatchUrlFromId(videoId));
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open YouTube video.')),
+      );
+    }
+  }
+
   void _openPlayer(BuildContext context, String videoId) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _YoutubePlayerSheet(videoId: videoId),
+      builder: (_) => _YoutubePlayerSheet(
+        videoId: videoId,
+        onOpenYoutube: () => _openVideoExternally(context, videoId),
+      ),
     );
   }
 
@@ -64,7 +82,12 @@ class YoutubePreview extends StatelessWidget {
 
 class _YoutubePlayerSheet extends StatefulWidget {
   final String videoId;
-  const _YoutubePlayerSheet({required this.videoId});
+  final Future<void> Function() onOpenYoutube;
+
+  const _YoutubePlayerSheet({
+    required this.videoId,
+    required this.onOpenYoutube,
+  });
 
   @override
   State<_YoutubePlayerSheet> createState() => _YoutubePlayerSheetState();
@@ -80,10 +103,10 @@ class _YoutubePlayerSheetState extends State<_YoutubePlayerSheet> {
       params: const YoutubePlayerParams(
         showFullscreenButton: true,
         mute: false,
+        strictRelatedVideos: true,
       ),
     );
-       _controller.loadVideoById(videoId: widget.videoId);
-
+    _controller.loadVideoById(videoId: widget.videoId);
   }
 
   @override
@@ -125,13 +148,32 @@ class _YoutubePlayerSheetState extends State<_YoutubePlayerSheet> {
                 );
               },
             ),
-            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: TextButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close, color: Colors.white),
-                label: const Text('Close', style: TextStyle(color: Colors.white)),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      label: const Text(
+                        'Close',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white24),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: widget.onOpenYoutube,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Open on YouTube'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

@@ -27,7 +27,9 @@ import '../core/service_categories.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/youtube_preview.dart';
+import '../widgets/global_bottom_nav.dart';
 import '../widgets/global_app_bar.dart';
+import '../widgets/tagged_content.dart';
 import '../widgets/report_post_sheet.dart'; // ✅ NEW
 
 class FeedScreen extends StatefulWidget {
@@ -47,6 +49,9 @@ class _FeedScreenState extends State<FeedScreen> {
   final Map<String, String> _authorBadgeLabels = {};
   final Map<String, String> _authorLocationLabels = {};
   final Map<String, String> _authorOrgKinds = {};
+  final Set<String> _followingIds = {};
+  final Set<String> _followerIds = {};
+  final Set<String> _mutualConnectionIds = {};
 
   // ✅ Pagination state
   static const int _pageSize = 20;
@@ -521,10 +526,13 @@ class _FeedScreenState extends State<FeedScreen> {
       List<Map<String, dynamic>> ownRows = const [];
       List<Map<String, dynamic>> followedRows = const [];
       List<Map<String, dynamic>> orgRows = const [];
+      _followingIds.clear();
+      _followerIds.clear();
+      _mutualConnectionIds.clear();
       if (me != null) {
         var ownQuery = Supabase.instance.client
             .from('posts')
-            .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
+            .select(PostService.postSelect)
             .eq('user_id', me);
 
         if (_cursorCreatedAt != null) {
@@ -555,11 +563,32 @@ class _FeedScreenState extends State<FeedScreen> {
             .whereType<String>()
             .toSet()
             .toList();
+        _followingIds
+          ..clear()
+          ..addAll(followedIds);
+
+        final followers = await Supabase.instance.client
+            .from('follows')
+            .select('follower_id')
+            .eq('followed_profile_id', me)
+            .eq('status', 'accepted');
+
+        final followerIds = (followers as List)
+            .map((e) => e['follower_id'] as String?)
+            .whereType<String>()
+            .toSet();
+
+        _followerIds
+          ..clear()
+          ..addAll(followerIds);
+        _mutualConnectionIds
+          ..clear()
+          ..addAll(_followingIds.intersection(_followerIds));
 
         if (followedIds.isNotEmpty) {
           var followedQuery = Supabase.instance.client
               .from('posts')
-              .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
+              .select(PostService.postSelect)
               .inFilter('user_id', followedIds);
 
           if (_cursorCreatedAt != null) {
@@ -584,7 +613,7 @@ class _FeedScreenState extends State<FeedScreen> {
       if (_organizationsEnabled) {
         dynamic orgQuery = Supabase.instance.client
             .from('posts')
-            .select('*, profiles!inner(full_name, avatar_url, city, zipcode, org_kind)')
+            .select(PostService.postSelect)
             .eq('author_profile_type', 'org');
 
         if (_organizationsScope == 'public') {
@@ -651,7 +680,8 @@ class _FeedScreenState extends State<FeedScreen> {
         return ((b['id'] ?? '').toString()).compareTo((a['id'] ?? '').toString());
       });
 
-      final fetchedPosts = mergedRaw.map((e) => Post.fromMap(e)).toList();
+      final hydratedRows = await service.attachSharedPosts(mergedRaw);
+      final fetchedPosts = hydratedRows.map((e) => Post.fromMap(e)).toList();
       await _loadAuthorBadges(fetchedPosts);
       final incoming = fetchedPosts.where(_matchesSelectedFilters).toList();
 
@@ -700,7 +730,48 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // ✅ Likes + comments row
   Widget _buildReactionsRow(Post p) {
+    final type = (p.postType ?? '').trim();
+    final isMarketplacePost = type == 'market';
+    final isGigPost = type == 'service_offer' || type == 'service_request';
     final react = ReactionService(Supabase.instance.client);
+    final postService = PostService(Supabase.instance.client);
+
+    if (isMarketplacePost || isGigPost) {
+      if (_canSharePost(p)) {
+        return Row(
+          children: [
+            TextButton.icon(
+              onPressed: () async {
+                try {
+                  await postService.sharePost(
+                    originalPostId: p.id,
+                    originalAuthorId: p.userId,
+                    originalVisibility: p.visibility,
+                    originalLatitude: p.latitude,
+                    originalLongitude: p.longitude,
+                    originalLocationName: p.locationName,
+                  );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Post shared')),
+                  );
+                  await _load(reset: true);
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Share error: $e')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Share'),
+            ),
+          ],
+        );
+      }
+
+      return const SizedBox.shrink();
+    }
 
     return FutureBuilder<List<dynamic>>(
       future: Future.wait([
@@ -740,10 +811,57 @@ class _FeedScreenState extends State<FeedScreen> {
               icon: const Icon(Icons.comment_outlined),
               label: Text('$commentCount'),
             ),
+            if (_canSharePost(p)) ...[
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () async {
+                  try {
+                    await postService.sharePost(
+                      originalPostId: p.id,
+                      originalAuthorId: p.userId,
+                      originalVisibility: p.visibility,
+                      originalLatitude: p.latitude,
+                      originalLongitude: p.longitude,
+                      originalLocationName: p.locationName,
+                    );
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Post shared')),
+                    );
+                    await _load(reset: true);
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Share error: $e')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.share_outlined),
+                label: const Text('Share'),
+              ),
+            ],
           ],
         );
       },
     );
+  }
+
+  bool _canSharePost(Post post) {
+    final me = Supabase.instance.client.auth.currentUser?.id;
+    if (me == null) return false;
+    if ((post.sharedPostId ?? '').isNotEmpty) return false;
+    if (post.userId == me) return false;
+
+    switch (post.shareScope) {
+      case 'public':
+        return true;
+      case 'followers':
+        return _followingIds.contains(post.userId);
+      case 'connections':
+        return _mutualConnectionIds.contains(post.userId);
+      default:
+        return false;
+    }
   }
 
   String? _getAuthorBadgeType(Post post) {
@@ -965,34 +1083,29 @@ class _FeedScreenState extends State<FeedScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Text(
+              'Discover nearby',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _feedWhatShowing(),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Discover nearby',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _feedWhatShowing(),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
                 FilledButton.tonalIcon(
                   onPressed: _openFilterSheet,
                   icon: const Icon(Icons.tune_rounded, size: 18),
                   label: const Text('Filters'),
                 ),
-                const SizedBox(width: 8),
                 FilledButton.icon(
                   onPressed: () async {
                     final res = await context.push('/create-post');
@@ -1005,38 +1118,43 @@ class _FeedScreenState extends State<FeedScreen> {
               ],
             ),
             const SizedBox(height: 14),
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  _buildQuickLinkButton(
-                    icon: Icons.storefront_outlined,
-                    label: 'Marketplace',
-                    onPressed: () => context.push('/marketplace'),
-                  ),
-                  _buildQuickLinkButton(
-                    icon: Icons.miscellaneous_services_outlined,
-                    label: 'Gigs',
-                    onPressed: () => context.push('/gigs'),
-                  ),
-                  _buildQuickLinkButton(
-                    icon: Icons.restaurant_menu,
-                    label: 'Restaurants',
-                    onPressed: () => context.push('/restaurants'),
-                  ),
-                  _buildQuickLinkButton(
-                    icon: Icons.business,
-                    label: 'Businesses',
-                    onPressed: () => context.push('/businesses'),
-                  ),
-                  _buildQuickLinkButton(
-                    icon: Icons.fastfood,
-                    label: 'Foods',
-                    onPressed: () => context.push('/foods'),
-                  ),
-                ],
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildQuickLinkButton(
+                  icon: Icons.storefront_outlined,
+                  label: 'Marketplace',
+                  onPressed: () => context.push('/marketplace'),
+                ),
+                _buildQuickLinkButton(
+                  icon: Icons.miscellaneous_services_outlined,
+                  label: 'Gigs',
+                  onPressed: () => context.push('/gigs'),
+                ),
+                _buildQuickLinkButton(
+                  icon: Icons.fastfood,
+                  label: 'Foods',
+                  onPressed: () => context.push('/foods'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildQuickLinkButton(
+                  icon: Icons.business,
+                  label: 'Businesses',
+                  onPressed: () => context.push('/businesses'),
+                ),
+                _buildQuickLinkButton(
+                  icon: Icons.restaurant_menu,
+                  label: 'Restaurants',
+                  onPressed: () => context.push('/restaurants'),
+                ),
+              ],
             ),
           ],
         ),
@@ -1213,6 +1331,11 @@ class _FeedScreenState extends State<FeedScreen> {
                               });
                             },
                             child: const Text('Reset'),
+                          ),
+                          IconButton(
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close),
                           ),
                         ],
                       ),
@@ -1716,10 +1839,21 @@ class _FeedScreenState extends State<FeedScreen> {
           spacing: 8,
           runSpacing: 8,
           children: options.map((entry) {
+            final isSelected = selected == entry.$1;
             return ChoiceChip(
-              selected: selected == entry.$1,
+              selected: isSelected,
               label: Text(entry.$2),
               onSelected: (_) => onSelected(entry.$1),
+              showCheckmark: false,
+              backgroundColor: const Color(0xFFF8F3E8),
+              selectedColor: const Color(0xFFE7F4EF),
+              side: BorderSide(
+                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFE0D5C2),
+              ),
+              labelStyle: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF3F3426),
+              ),
             );
           }).toList(),
         ),
@@ -1753,6 +1887,16 @@ class _FeedScreenState extends State<FeedScreen> {
             return FilterChip(
               selected: isSelected,
               label: Text(label),
+              showCheckmark: false,
+              backgroundColor: const Color(0xFFF8F3E8),
+              selectedColor: const Color(0xFFE7F4EF),
+              side: BorderSide(
+                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFE0D5C2),
+              ),
+              labelStyle: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF3F3426),
+              ),
               onSelected: (_) {
                 setSheetState(() {
                   if (isSelected) {
@@ -1774,12 +1918,19 @@ class _FeedScreenState extends State<FeedScreen> {
     required String label,
     required VoidCallback onPressed,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: OutlinedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18),
-        label: Text(label),
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+    );
+  }
+
+  Widget _buildFeedMetaText(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 12,
+        color: Theme.of(context).hintColor,
       ),
     );
   }
@@ -2233,7 +2384,10 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  Widget _buildFeedList({required bool showTopFilters}) {
+  Widget _buildFeedList({
+    required bool showTopFilters,
+    required bool showSummaryBanner,
+  }) {
     return RefreshIndicator(
       onRefresh: () async {
         await _load(reset: true);
@@ -2241,21 +2395,25 @@ class _FeedScreenState extends State<FeedScreen> {
       },
       child: ListView.builder(
         controller: _scroll,
-        itemCount: _posts.length + (showTopFilters ? 2 : 2),
+        itemCount: _posts.length + 2,
         itemBuilder: (_, i) {
           if (showTopFilters) {
             if (i == 0) return _buildFilters();
             if (i == _posts.length + 1) return _buildFooter();
-          } else {
+          } else if (showSummaryBanner) {
             if (i == 0) return _buildFeedSummaryBanner();
+            if (i == _posts.length + 1) return _buildFooter();
+          } else {
+            if (i == 0) return const SizedBox(height: 6);
             if (i == _posts.length + 1) return _buildFooter();
           }
 
-          final postIndex = showTopFilters ? i - 1 : i - 1;
+          final postIndex = i - 1;
           final p = _posts[postIndex];
           final badgeText = _getAuthorBadgeType(p);
           final isPrivateListing = _isPrivateListing(p);
-          final detailRoute = _detailRouteForPost(p);
+          final displayPost = _displayPost(p);
+          final detailRoute = _detailRouteForPost(displayPost);
 
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -2286,31 +2444,38 @@ class _FeedScreenState extends State<FeedScreen> {
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: Text(
-                              _feedHeaderLabel(p),
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  (p.sharedPostId ?? '').isNotEmpty
+                                      ? '${_feedHeaderLabel(p)} shared a post'
+                                      : _feedHeaderLabel(p),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    if (p.distanceKm != null)
+                                      _buildFeedMetaText(
+                                        '${p.distanceKm!.toStringAsFixed(1)} km',
+                                      ),
+                                    if (_locationLabel(p) != null)
+                                      _buildFeedMetaText(_locationLabel(p)!),
+                                    _buildVisibilityBadge(p.visibility),
+                                    if (p.shareScope != 'none' && (p.sharedPostId ?? '').isEmpty)
+                                      _buildAuthorBadge(_shareScopeLabel(p.shareScope)),
+                                    if (badgeText != null) _buildAuthorBadge(badgeText),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
-                          if (p.distanceKm != null) ...[
-                            Text(
-                              '${p.distanceKm!.toStringAsFixed(1)} km',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          if (_locationLabel(p) != null) ...[
-                            Text(
-                              _locationLabel(p)!,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          _buildVisibilityBadge(p.visibility),
-                          const SizedBox(width: 6),
-                          if (badgeText != null) ...[
-                            _buildAuthorBadge(badgeText),
-                            const SizedBox(width: 6),
-                          ],
                           PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert),
                             onSelected: (value) async {
@@ -2343,21 +2508,26 @@ class _FeedScreenState extends State<FeedScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    p.content,
-                    style: const TextStyle(fontSize: 15),
-                  ),
-                  if ((p.marketTitle ?? '').trim().isNotEmpty) ...[
+                  if (p.content.trim().isNotEmpty) ...[
+                    TaggedContent(
+                      content: p.content,
+                      textStyle: const TextStyle(fontSize: 15),
+                    ),
+                  ],
+                  if ((displayPost.marketTitle ?? '').trim().isNotEmpty &&
+                      (p.sharedPostId ?? '').isEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
-                      p.marketTitle!.trim(),
+                      displayPost.marketTitle!.trim(),
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ],
-                  if (p.imageUrl != null && p.imageUrl!.isNotEmpty) ...[
+                  if ((p.sharedPostId ?? '').isNotEmpty) ...[
+                    _buildSharedPostSection(p),
+                  ] else if (displayPost.imageUrl != null && displayPost.imageUrl!.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     GestureDetector(
-                      onTap: () => _openImagePreview(p.imageUrl!),
+                      onTap: () => _openImagePreview(displayPost.imageUrl!),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
@@ -2365,7 +2535,7 @@ class _FeedScreenState extends State<FeedScreen> {
                           constraints: const BoxConstraints(maxHeight: 360),
                           color: Colors.black.withOpacity(0.04),
                           child: Image.network(
-                            p.imageUrl!,
+                            displayPost.imageUrl!,
                             width: double.infinity,
                             fit: BoxFit.contain,
                             alignment: Alignment.center,
@@ -2374,9 +2544,11 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                     ),
                   ],
-                  if (p.videoUrl != null && p.videoUrl!.isNotEmpty) ...[
+                  if ((p.sharedPostId ?? '').isEmpty &&
+                      displayPost.videoUrl != null &&
+                      displayPost.videoUrl!.isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    YoutubePreview(videoUrl: p.videoUrl!),
+                    YoutubePreview(videoUrl: displayPost.videoUrl!),
                   ],
                   const SizedBox(height: 8),
                   Wrap(
@@ -2391,9 +2563,10 @@ class _FeedScreenState extends State<FeedScreen> {
                           color: Theme.of(context).hintColor,
                         ),
                       ),
-                      if (p.locationName != null && p.locationName!.trim().isNotEmpty)
+                      if (displayPost.locationName != null &&
+                          displayPost.locationName!.trim().isNotEmpty)
                         Text(
-                          p.locationName!.trim(),
+                          displayPost.locationName!.trim(),
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context).hintColor,
@@ -2451,7 +2624,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildAuthorBadge(String text) {
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 140),
+      constraints: const BoxConstraints(maxWidth: 180),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -2461,7 +2634,7 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
         child: Text(
           text,
-          maxLines: 2,
+          maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
           style: const TextStyle(
@@ -2527,6 +2700,190 @@ class _FeedScreenState extends State<FeedScreen> {
     return null;
   }
 
+  Post _displayPost(Post post) => post.sharedPost ?? post;
+
+  Widget _buildSharedPostSection(Post wrapperPost) {
+    final shared = wrapperPost.sharedPost;
+    if (shared != null) {
+      return _buildSharedPostPreview(shared);
+    }
+
+    final sharedPostId = wrapperPost.sharedPostId;
+    if (sharedPostId == null || sharedPostId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: Supabase.instance.client
+          .from('posts')
+          .select(PostService.postSelect)
+          .eq('id', sharedPostId)
+          .maybeSingle(),
+      builder: (context, snapshot) {
+        final row = snapshot.data;
+        if (row == null) {
+          return Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.72),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE6DDCE)),
+            ),
+            child: const Text(
+              'Original post unavailable',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          );
+        }
+
+        return _buildSharedPostPreview(Post.fromMap(row));
+      },
+    );
+  }
+
+  String _shareScopeLabel(String scope) {
+    switch (scope) {
+      case 'followers':
+        return 'Followers can share';
+      case 'connections':
+        return 'Connections can share';
+      case 'public':
+        return 'Public can share';
+      default:
+        return 'Sharing off';
+    }
+  }
+
+  Widget _buildSharedPostPreview(Post sharedPost) {
+    final badgeText = _getAuthorBadgeType(sharedPost);
+    final detailRoute = _detailRouteForPost(sharedPost);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE6DDCE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => context.push('/p/${sharedPost.userId}'),
+            borderRadius: BorderRadius.circular(10),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundImage: sharedPost.authorAvatarUrl != null &&
+                          sharedPost.authorAvatarUrl!.isNotEmpty
+                      ? NetworkImage(sharedPost.authorAvatarUrl!)
+                      : null,
+                  child: sharedPost.authorAvatarUrl == null || sharedPost.authorAvatarUrl!.isEmpty
+                      ? const Icon(Icons.person, size: 16)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _feedHeaderLabel(sharedPost),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildVisibilityBadge(sharedPost.visibility),
+                          if (badgeText != null) _buildAuthorBadge(badgeText),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (sharedPost.content.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            TaggedContent(
+              content: sharedPost.content,
+              textStyle: const TextStyle(fontSize: 14),
+            ),
+          ],
+          if ((sharedPost.marketTitle ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              sharedPost.marketTitle!.trim(),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ],
+          if (sharedPost.imageUrl != null && sharedPost.imageUrl!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => _openImagePreview(sharedPost.imageUrl!),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  color: Colors.black.withOpacity(0.04),
+                  child: Image.network(
+                    sharedPost.imageUrl!,
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.center,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (sharedPost.videoUrl != null && sharedPost.videoUrl!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            YoutubePreview(videoUrl: sharedPost.videoUrl!),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Text(
+                _formatFeedTimestamp(sharedPost.createdAt),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+              if (sharedPost.locationName != null && sharedPost.locationName!.trim().isNotEmpty)
+                Text(
+                  sharedPost.locationName!.trim(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).hintColor,
+                  ),
+                ),
+            ],
+          ),
+          if (detailRoute != null) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => context.push(detailRoute),
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('Open original'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   void _openImagePreview(String imageUrl) {
     showDialog<void>(
       context: context,
@@ -2574,7 +2931,10 @@ class _FeedScreenState extends State<FeedScreen> {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 1100;
         if (!isWide) {
-          return _buildFeedList(showTopFilters: true);
+          return _buildFeedList(
+            showTopFilters: false,
+            showSummaryBanner: false,
+          );
         }
 
         return Row(
@@ -2590,7 +2950,10 @@ class _FeedScreenState extends State<FeedScreen> {
                 alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 820),
-                  child: _buildFeedList(showTopFilters: false),
+                  child: _buildFeedList(
+                    showTopFilters: false,
+                    showSummaryBanner: true,
+                  ),
                 ),
               ),
             ),
@@ -2616,6 +2979,10 @@ class _FeedScreenState extends State<FeedScreen> {
         onBeforeLogout: _onBeforeLogout,
       ),
       body: _buildResponsiveFeedBody(),
+      bottomNavigationBar: GlobalBottomNav(
+        onOpenFilters: _openFilterSheet,
+        onBeforeLogout: _onBeforeLogout,
+      ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
         padding: EdgeInsets.only(

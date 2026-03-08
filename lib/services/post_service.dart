@@ -20,6 +20,9 @@ class PostService {
   final SupabaseClient _db;
   PostService(this._db);
 
+  static const String postSelect =
+      '*, profiles(full_name, avatar_url, city, zipcode, org_kind)';
+
   Future<String> uploadPostImage({
     required XFile image,
     required String userId,
@@ -72,7 +75,7 @@ class PostService {
     }
   }
 
-  Future<void> createPost({
+  Future<String?> createPost({
     required String content,
     required String visibility,
     required double latitude,
@@ -85,6 +88,8 @@ class PostService {
     String? marketIntent,
     String? marketTitle,
     double? marketPrice,
+    String shareScope = 'none',
+    List<String> taggedUserIds = const [],
   }) async {
     final user = _db.auth.currentUser;
     if (user == null) throw Exception('Not logged in');
@@ -116,24 +121,36 @@ class PostService {
       'market_intent': marketIntent,
       'market_title': marketTitle,
       'market_price': marketPrice,
+      'share_scope': shareScope,
     };
 
     try {
-      await _db.from('posts').insert(payload);
+      final inserted = await _db.from('posts').insert(payload).select('id').single();
+      final postId = (inserted['id'] ?? '').toString();
+      if (postId.isNotEmpty) {
+        await _notifyTaggedUsers(postId: postId, taggedUserIds: taggedUserIds);
+        return postId;
+      }
+      return null;
     } on PostgrestException catch (e) {
        // Some deployments still enforce an older post_type CHECK that uses
       // 'food' instead of 'food_ad'. Retry with legacy value.
       if (_isPostTypeConstraintError(e) && postType == 'food_ad') {
         final legacy = Map<String, dynamic>.from(payload)..['post_type'] = 'food';
-        await _db.from('posts').insert(legacy);
-        return;
+        final inserted = await _db.from('posts').insert(legacy).select('id').single();
+        final postId = (inserted['id'] ?? '').toString();
+        if (postId.isNotEmpty) {
+          await _notifyTaggedUsers(postId: postId, taggedUserIds: taggedUserIds);
+          return postId;
+        }
+        return null;
       }
 
       // Backward-compatible fallback for deployments where optional columns
       // (video_url / post_type / author_profile_type / market_category / market_intent) are not migrated yet.
       if (!_isMissingColumnError(e)) rethrow;
 
-      await _db.from('posts').insert({
+      final inserted = await _db.from('posts').insert({
         'user_id': user.id,
         'content': content,
         'visibility': normalizedVisibility,
@@ -141,8 +158,168 @@ class PostService {
         'longitude': longitude,
         'location_name': locationName,
         'image_url': imageUrl,
-      });
+      }).select('id').single();
+      final postId = (inserted['id'] ?? '').toString();
+      if (postId.isNotEmpty) {
+        await _notifyTaggedUsers(postId: postId, taggedUserIds: taggedUserIds);
+        return postId;
+      }
+      return null;
     }
+  }
+
+  Future<void> _notifyTaggedUsers({
+    required String postId,
+    required List<String> taggedUserIds,
+  }) async {
+    final actorId = _db.auth.currentUser?.id;
+    if (actorId == null) return;
+
+    for (final recipientId in taggedUserIds.toSet()) {
+      if (recipientId.isEmpty || recipientId == actorId) continue;
+      try {
+        await _db.rpc('create_mention_notification', params: {
+          'p_recipient_id': recipientId,
+          'p_actor_id': actorId,
+          'p_post_id': postId,
+          'p_comment_id': null,
+        });
+      } catch (_) {
+        try {
+          await _db.from('notifications').insert({
+            'recipient_id': recipientId,
+            'actor_id': actorId,
+            'post_id': postId,
+            'comment_id': null,
+            'type': 'mention',
+          });
+        } catch (_) {
+          // Mentions are best-effort.
+        }
+      }
+    }
+  }
+
+  Future<void> sharePost({
+    required String originalPostId,
+    required String originalAuthorId,
+    required String originalVisibility,
+    required double originalLatitude,
+    required double originalLongitude,
+    String? originalLocationName,
+  }) async {
+    final user = _db.auth.currentUser;
+    if (user == null) throw Exception('Not logged in');
+    if (originalAuthorId == user.id) {
+      throw Exception('You cannot share your own post');
+    }
+
+    final profile = await _db
+        .from('profiles')
+        .select('profile_type, account_type, city, latitude, longitude')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    final authorType = (profile?['profile_type'] as String?) ??
+        (profile?['account_type'] as String?) ??
+        'person';
+
+    final existing = await _db
+        .from('posts')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('shared_post_id', originalPostId)
+        .maybeSingle();
+    if (existing != null) {
+      throw Exception('You already shared this post');
+    }
+
+    final inserted = await _db.from('posts').insert({
+      'user_id': user.id,
+      'content': '',
+      'visibility': originalVisibility,
+      'latitude': ((profile?['latitude'] as num?) ?? originalLatitude).toDouble(),
+      'longitude': ((profile?['longitude'] as num?) ?? originalLongitude).toDouble(),
+      'location_name': (profile?['city'] as String?) ?? originalLocationName,
+      'post_type': 'post',
+      'author_profile_type': authorType,
+      'share_scope': 'none',
+      'shared_post_id': originalPostId,
+    }).select('id').single();
+
+    final shareId = (inserted['id'] ?? '').toString();
+    if (shareId.isEmpty) return;
+
+    try {
+      await _db.rpc('create_share_notification', params: {
+        'p_recipient_id': originalAuthorId,
+        'p_actor_id': user.id,
+        'p_post_id': originalPostId,
+      });
+    } catch (_) {
+      // Share notifications are best-effort.
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> attachSharedPosts(List<Map<String, dynamic>> rows) async {
+    final rowIds = rows
+        .map((row) => row['id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    final sharedIds = rows
+        .map((row) => row['shared_post_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (rowIds.isEmpty && sharedIds.isEmpty) return rows;
+
+    final baseRows = rowIds.isEmpty
+        ? const <Map<String, dynamic>>[]
+        : (await _db
+                .from('posts')
+                .select(postSelect)
+                .inFilter('id', rowIds)) as List;
+
+    final sharedRows = sharedIds.isEmpty
+        ? const <Map<String, dynamic>>[]
+        : (await _db
+                .from('posts')
+                .select(postSelect)
+                .inFilter('id', sharedIds)) as List;
+
+    final baseById = <String, Map<String, dynamic>>{};
+    for (final row in baseRows.cast<Map<String, dynamic>>()) {
+      final id = (row['id'] ?? '').toString();
+      if (id.isNotEmpty) {
+        baseById[id] = row;
+      }
+    }
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in sharedRows.cast<Map<String, dynamic>>()) {
+      final id = (row['id'] ?? '').toString();
+      if (id.isNotEmpty) {
+        byId[id] = row;
+      }
+    }
+
+    return rows.map((row) {
+      final rowId = row['id']?.toString();
+      final sharedId = row['shared_post_id']?.toString();
+      final base = rowId == null || rowId.isEmpty ? null : baseById[rowId];
+      final mergedBase = base == null ? row : {...row, ...base};
+      if (sharedId == null || sharedId.isEmpty) return mergedBase;
+      final shared = byId[sharedId];
+      if (shared == null) return mergedBase;
+      return {
+        ...mergedBase,
+        'shared_post': shared,
+      };
+    }).toList();
   }
 
   bool _isPostTypeConstraintError(PostgrestException e) {
@@ -167,6 +344,8 @@ class PostService {
             msg.contains('author_profile_type') ||
             msg.contains('market_category') ||
             msg.contains('market_intent') ||
+            msg.contains('share_scope') ||
+            msg.contains('shared_post_id') ||
             msg.contains('market_title') ||
             msg.contains('market_price'));
   }
@@ -205,7 +384,7 @@ class PostService {
         // PUBLIC scope: only public posts (server-side filters + cursor)
         var q = _db
             .from('posts')
-            .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
+            .select(postSelect)
             .eq('visibility', 'public');
 
         if (postType != 'all') {
@@ -254,7 +433,7 @@ class PostService {
 
       var q = _db
           .from('posts')
-          .select('*, profiles(full_name, avatar_url, city, zipcode, org_kind)')
+          .select(postSelect)
           .inFilter('user_id', ids.toList());
 
       if (postType != 'all') {

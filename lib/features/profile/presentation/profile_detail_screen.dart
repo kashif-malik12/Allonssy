@@ -12,6 +12,8 @@ import '../../../services/follow_service.dart';
 import '../../../services/portfolio_service.dart';
 import '../../../widgets/youtube_preview.dart';
 import '../../../widgets/global_app_bar.dart';
+import '../../../widgets/global_bottom_nav.dart';
+import '../../../widgets/tagged_content.dart';
 import '../../../widgets/report_post_sheet.dart'; // ✅ NEW
 import '../../../widgets/report_user_sheet.dart'; // ✅ NEW
 
@@ -54,6 +56,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   String? _portfolioError;
   List<PortfolioItem> _portfolio = [];
   bool _portfolioActionLoading = false;
+  bool _showMyProfileActions = false;
 
   @override
   void initState() {
@@ -286,6 +289,56 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     );
   }
 
+  List<PopupMenuEntry<String>> _buildProfileMenuItems() {
+    if (_isMe) {
+      return [
+        const PopupMenuItem(value: 'follow_requests', child: Text('Follow requests')),
+        const PopupMenuItem(value: 'edit_profile', child: Text('Edit profile')),
+        const PopupMenuItem(value: 'followers', child: Text('Followers')),
+        const PopupMenuItem(value: 'following', child: Text('Following')),
+        const PopupMenuItem(value: 'my_products', child: Text('My products')),
+        const PopupMenuItem(value: 'my_gigs', child: Text('My gigs')),
+        if ((_profile?['is_restaurant'] == true))
+          const PopupMenuItem(value: 'my_foods', child: Text('My foods')),
+      ];
+    }
+
+    return const [
+      PopupMenuItem(value: 'report_user', child: Text('Report user')),
+    ];
+  }
+
+  Future<void> _handleProfileMenuAction(String value) async {
+    switch (value) {
+      case 'follow_requests':
+        await context.push('/follow-requests');
+        return;
+      case 'edit_profile':
+        await context.push('/profile/edit');
+        if (!mounted) return;
+        await _loadAll();
+        return;
+      case 'followers':
+        await context.push('/p/${widget.profileId}/followers');
+        return;
+      case 'following':
+        await context.push('/p/${widget.profileId}/following');
+        return;
+      case 'my_products':
+        await context.push('/profile/my-products');
+        return;
+      case 'my_gigs':
+        await context.push('/profile/my-gigs');
+        return;
+      case 'my_foods':
+        await context.push('/profile/my-foods');
+        return;
+      case 'report_user':
+        await _reportUser();
+        return;
+    }
+  }
+
   Widget _buildProfileLeftSidebar({
     required BuildContext context,
     required String name,
@@ -462,6 +515,111 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
               textAlign: TextAlign.center,
             ),
           ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE6DDCE)),
+            ),
+            child: Column(
+              children: [
+                InkWell(
+                  onTap: () {
+                    setState(() => _showMyProfileActions = !_showMyProfileActions);
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.tune_rounded),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Profile actions',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Icon(
+                          _showMyProfileActions
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_showMyProfileActions) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        _buildSidebarAction(
+                          context: context,
+                          icon: Icons.person_add_alt_1_outlined,
+                          title: 'Follow requests',
+                          subtitle: _pendingRequests > 0
+                              ? '$_pendingRequests pending requests'
+                              : 'Review incoming requests',
+                          onTap: () => context.push('/follow-requests'),
+                        ),
+                        _buildSidebarAction(
+                          context: context,
+                          icon: Icons.edit_outlined,
+                          title: 'Edit profile',
+                          subtitle: 'Update your details and location',
+                          onTap: () async {
+                            await context.push('/profile/edit');
+                            if (!mounted) return;
+                            await _loadAll();
+                          },
+                        ),
+                        _buildSidebarAction(
+                          context: context,
+                          icon: Icons.groups_outlined,
+                          title: 'Followers',
+                          subtitle: '$_followersCount people follow you',
+                          onTap: () => context.push('/p/${widget.profileId}/followers'),
+                        ),
+                        _buildSidebarAction(
+                          context: context,
+                          icon: Icons.group_outlined,
+                          title: 'Following',
+                          subtitle: '$_followingCount profiles you follow',
+                          onTap: () => context.push('/p/${widget.profileId}/following'),
+                        ),
+                        _buildSidebarAction(
+                          context: context,
+                          icon: Icons.inventory_2_outlined,
+                          title: 'My products',
+                          subtitle: 'Edit or delete your marketplace ads',
+                          onTap: () => context.push('/profile/my-products'),
+                        ),
+                        _buildSidebarAction(
+                          context: context,
+                          icon: Icons.work_outline,
+                          title: 'My gigs',
+                          subtitle: 'Edit or delete your service ads',
+                          onTap: () => context.push('/profile/my-gigs'),
+                        ),
+                        if ((_profile?['is_restaurant'] == true))
+                          _buildSidebarAction(
+                            context: context,
+                            icon: Icons.restaurant_menu_outlined,
+                            title: 'My foods',
+                            subtitle: 'Edit or delete your food ads',
+                            onTap: () => context.push('/profile/my-foods'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
         const SizedBox(height: 24),
         const Divider(),
@@ -530,7 +688,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(p.content),
+                    TaggedContent(content: p.content),
                     if (p.videoUrl != null && p.videoUrl!.isNotEmpty) ...[
                       YoutubePreview(videoUrl: p.videoUrl!),
                     ],
@@ -1276,6 +1434,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     if (_error != null) {
       return Scaffold(
         appBar: const GlobalAppBar(title: 'Local Feed ✅'),
+        bottomNavigationBar: const GlobalBottomNav(),
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: Text('Profile error:\n$_error'),
@@ -1301,17 +1460,8 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           if (!_isMe)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
-              onSelected: (value) async {
-                if (value == 'report_user') {
-                  await _reportUser();
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'report_user',
-                  child: Text('Report user'),
-                ),
-              ],
+              onSelected: _handleProfileMenuAction,
+              itemBuilder: (_) => _buildProfileMenuItems(),
             ),
         ],
       ),
@@ -1325,13 +1475,6 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  _buildProfileLeftSidebar(
-                    context: context,
-                    name: name,
-                    type: type,
-                    location: location,
-                  ),
-                  const SizedBox(height: 16),
                   _buildProfileMainContent(
                     context: context,
                     name: name,
@@ -1340,8 +1483,6 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                     bio: bio,
                     canOpenLists: canOpenLists,
                   ),
-                  const SizedBox(height: 16),
-                  _buildProfileSidebar(context),
                 ],
               );
             }
@@ -1386,6 +1527,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           },
         ),
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
     );
   }
 

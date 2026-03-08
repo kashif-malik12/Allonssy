@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import '../core/food_categories.dart';
 import '../models/post_model.dart';
 import '../widgets/global_app_bar.dart';
+import '../widgets/global_bottom_nav.dart';
 
 class FoodsScreen extends StatefulWidget {
   const FoodsScreen({super.key});
@@ -28,6 +29,13 @@ class _FoodsScreenState extends State<FoodsScreen> {
     if (width >= 1200) return 4;
     if (width >= 800) return 3;
     return 2;
+  }
+
+  double _gridAspectRatio(double width) {
+    final count = _gridCount(width);
+    if (count == 2) return 0.64;
+    if (count == 3) return 0.8;
+    return 0.98;
   }
 
   @override
@@ -119,6 +127,7 @@ class _FoodsScreenState extends State<FoodsScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: Column(
         children: [
           Padding(
@@ -182,7 +191,9 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                 padding: const EdgeInsets.all(12),
                                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: _gridCount(constraints.maxWidth),
-                                  childAspectRatio: 0.92,
+                                  childAspectRatio: _gridAspectRatio(
+                                    constraints.maxWidth,
+                                  ),
                                   crossAxisSpacing: 10,
                                   mainAxisSpacing: 10,
                                 ),

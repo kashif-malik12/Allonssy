@@ -3,7 +3,10 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/post_model.dart';
+import '../services/post_service.dart';
 import '../services/reaction_service.dart';
+import '../widgets/global_bottom_nav.dart';
+import '../widgets/tagged_content.dart';
 import '../widgets/youtube_preview.dart';
 import '../widgets/report_post_sheet.dart'; // ✅ NEW
 
@@ -33,9 +36,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
 
     try {
+      final postService = PostService(Supabase.instance.client);
       final row = await Supabase.instance.client
           .from('posts')
-          .select('*, profiles(full_name, avatar_url)')
+          .select(PostService.postSelect)
           .eq('id', widget.postId)
           .maybeSingle();
 
@@ -43,7 +47,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         throw Exception('Post not found');
       }
 
-      _post = Post.fromMap(row);
+      final hydrated = await postService.attachSharedPosts([Map<String, dynamic>.from(row)]);
+      _post = Post.fromMap(hydrated.first);
     } catch (e) {
       _error = e.toString();
       _post = null;
@@ -109,6 +114,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
         ],
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -162,7 +168,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             ),
 
                             const SizedBox(height: 12),
-                            Text(_post!.content),
+                            TaggedContent(content: _post!.content),
 
                             // ✅ YouTube preview
                             if (_post!.videoUrl != null &&

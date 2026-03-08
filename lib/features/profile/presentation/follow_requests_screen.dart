@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../services/follow_service.dart';
 import '../../../widgets/global_app_bar.dart';
+import '../../../widgets/global_bottom_nav.dart';
 
 class FollowRequestsScreen extends StatefulWidget {
   const FollowRequestsScreen({super.key});
@@ -77,6 +78,7 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: RefreshIndicator(
         onRefresh: _load,
         child: Center(

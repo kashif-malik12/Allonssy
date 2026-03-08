@@ -2,22 +2,25 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../features/notifications/providers/notification_unread_provider.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../services/follow_service.dart';
 import '../widgets/global_app_bar.dart';
+import '../widgets/global_bottom_nav.dart';
 
-class NotificationsScreen extends StatefulWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
+  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   final _db = Supabase.instance.client;
   late final NotificationService _svc;
   late final FollowService _followSvc;
@@ -133,6 +136,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _markAllRead() async {
     try {
       await _svc.markAllRead();
+      ref.read(notificationUnreadProvider.notifier).clear();
       final now = DateTime.now();
       setState(() {
         _items = _items
@@ -165,6 +169,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (n.readAt == null) {
       try {
         await _svc.markRead(n.id);
+        ref.read(notificationUnreadProvider.notifier).decrement();
         if (mounted) {
           setState(() {
             _items = _items.map((x) {
@@ -195,9 +200,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return;
     }
 
-    if ((n.type == 'like' || n.type == 'comment') && n.postId != null) {
+    if ((n.type == 'like' || n.type == 'comment' || n.type == 'share') && n.postId != null) {
       if (!mounted) return;
       context.push('/post/${n.postId}');
+      return;
+    }
+
+    if ((n.type == 'comment_like' || n.type == 'comment_reply') && n.postId != null) {
+      if (!mounted) return;
+      context.push('/post/${n.postId}/comments');
+      return;
+    }
+
+    if (n.type == 'mention' && n.postId != null) {
+      if (!mounted) return;
+      if (n.commentId != null && n.commentId!.isNotEmpty) {
+        context.push('/post/${n.postId}/comments');
+      } else {
+        context.push('/post/${n.postId}');
+      }
       return;
     }
 
@@ -244,6 +265,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       // mark read (best effort)
       try {
         await _svc.markRead(n.id);
+        ref.read(notificationUnreadProvider.notifier).decrement();
       } catch (_) {}
 
       // remove immediately
@@ -282,6 +304,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       // mark read (best effort)
       try {
         await _svc.markRead(n.id);
+        ref.read(notificationUnreadProvider.notifier).decrement();
       } catch (_) {}
 
       // remove immediately
@@ -321,6 +344,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         return '$name liked your post';
       case 'comment':
         return '$name commented on your post';
+      case 'comment_like':
+        return '$name liked your comment';
+      case 'comment_reply':
+        return '$name replied to your comment';
+      case 'share':
+        return '$name shared your post';
+      case 'mention':
+        return n.commentId != null && n.commentId!.isNotEmpty
+            ? '$name mentioned you in a comment'
+            : '$name mentioned you in a post';
       case 'offer_message':
         return '$name sent a message about your listing';
       case 'offer_sent':
@@ -351,27 +384,42 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final isActing = _actingIds.contains(n.id);
     final isActionableRequest = n.type == 'follow_request' && n.readAt == null;
     final isUnread = n.readAt == null;
+    final statusColor = isUnread ? const Color(0xFF0B5D56) : const Color(0xFF6B7280);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: isUnread ? const Color(0xFFEAF7F3) : Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: isUnread ? const Color(0xFF0F766E).withOpacity(0.22) : const Color(0xFFE6DDCE),
+          color: isUnread ? const Color(0xFF0F766E).withOpacity(0.55) : const Color(0xFFE6DDCE),
+          width: isUnread ? 1.4 : 1,
         ),
+        boxShadow: isUnread
+            ? [
+                BoxShadow(
+                  color: const Color(0xFF0F766E).withOpacity(0.08),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ]
+            : null,
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
         onTap: isActionableRequest ? null : () => _onTap(n),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Stack(
                 children: [
-                  _avatar(n.actorAvatarUrl),
+                  SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: _avatar(n.actorAvatarUrl),
+                  ),
                   if (isUnread)
                     Positioned(
                       right: 0,
@@ -396,20 +444,73 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _titleFor(n),
-                      style: TextStyle(
-                        fontWeight: isUnread ? FontWeight.w700 : FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _titleFor(n),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isUnread ? const Color(0xFF0B5D56) : const Color(0xFF12211D),
+                              fontWeight: isUnread ? FontWeight.w700 : FontWeight.w600,
+                              fontSize: 14,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                        if (isUnread) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD8EFE8),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: const Color(0xFF8EC5B7)),
+                            ),
+                            child: const Text(
+                              'Unread',
+                              style: TextStyle(
+                                color: Color(0xFF0B5D56),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _formatTime(n.createdAt),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    const SizedBox(height: 7),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.schedule_rounded,
+                          size: 14,
+                          color: statusColor,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          _formatTime(n.createdAt),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isUnread ? FontWeight.w600 : FontWeight.w500,
+                            color: statusColor,
+                          ),
+                        ),
+                      ],
                     ),
+                    if (isUnread && !isActionableRequest) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Tap to open',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: statusColor,
+                        ),
+                      ),
+                    ],
                     if (isActionableRequest) ...[
                       const SizedBox(height: 12),
                       Wrap(
@@ -438,7 +539,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
               if (!isActionableRequest)
                 const Padding(
-                  padding: EdgeInsets.only(left: 8, top: 4),
+                  padding: EdgeInsets.only(left: 8),
                   child: Icon(Icons.chevron_right),
                 ),
             ],
@@ -462,6 +563,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             TextButton(onPressed: _markAllRead, child: const Text('Mark all read')),
         ],
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: RefreshIndicator(
         onRefresh: () => _refreshFirstPage(),
         child: Center(

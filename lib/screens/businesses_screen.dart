@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/business_categories.dart';
 import '../widgets/global_app_bar.dart';
+import '../widgets/global_bottom_nav.dart';
 
 class BusinessesScreen extends StatefulWidget {
   const BusinessesScreen({super.key});
@@ -158,6 +159,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: Column(
         children: [
           Padding(

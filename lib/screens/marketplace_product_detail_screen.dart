@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/market_categories.dart';
 import '../models/post_model.dart';
 import '../widgets/global_app_bar.dart';
+import '../widgets/global_bottom_nav.dart';
+import '../widgets/tagged_content.dart';
 
 class MarketplaceProductDetailScreen extends StatefulWidget {
   final String postId;
@@ -104,6 +106,7 @@ class _MarketplaceProductDetailScreenState
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -176,7 +179,7 @@ class _MarketplaceProductDetailScreenState
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
-                        Text(p.content),
+                        TaggedContent(content: p.content),
                         if (canSendOffer) ...[
                           const SizedBox(height: 20),
                           SizedBox(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../widgets/global_bottom_nav.dart';
 import '../services/chat_service.dart';
 
 class ChatStartScreen extends StatefulWidget {
@@ -35,6 +36,7 @@ class _ChatStartScreenState extends State<ChatStartScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Chat')),
+      bottomNavigationBar: const GlobalBottomNav(),
       body: Center(
         child: _error == null
             ? const CircularProgressIndicator()
