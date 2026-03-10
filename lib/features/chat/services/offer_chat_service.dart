@@ -4,6 +4,27 @@ class OfferChatService {
   final SupabaseClient _db;
   OfferChatService(this._db);
 
+  Future<String?> findConversationId({
+    required String postId,
+    required String otherUserId,
+  }) async {
+    final me = _db.auth.currentUser?.id;
+    if (me == null) return null;
+
+    final row = await _db
+        .from('offer_conversations')
+        .select('id')
+        .eq('post_id', postId)
+        .or(
+          'and(buyer_id.eq.$me,seller_id.eq.$otherUserId),and(buyer_id.eq.$otherUserId,seller_id.eq.$me)',
+        )
+        .maybeSingle();
+
+    final id = row?['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    return id;
+  }
+
   Future<String> getOrCreateConversation({
     required String postId,
     required String otherUserId,

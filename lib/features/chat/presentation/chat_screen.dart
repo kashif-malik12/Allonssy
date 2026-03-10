@@ -1,14 +1,22 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../services/media_limits.dart';
+import '../../../services/user_block_service.dart';
+import '../../../widgets/chat_user_actions.dart';
 import '../../../widgets/global_app_bar.dart';
 import '../../../widgets/global_bottom_nav.dart';
-import '../../../widgets/chat_user_actions.dart';
+import '../services/chat_attachment_service.dart';
+import '../services/chat_message_codec.dart';
 import '../services/chat_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
+
   const ChatScreen({super.key, required this.conversationId});
 
   @override
@@ -18,17 +26,21 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _db = Supabase.instance.client;
   late final ChatService _service = ChatService(_db);
-
+  late final ChatAttachmentService _attachmentService =
+      ChatAttachmentService(_db);
   final _textCtrl = TextEditingController();
+  final _imagePicker = ImagePicker();
 
   bool _loading = true;
+  bool _sending = false;
   String? _error;
 
   List<Map<String, dynamic>> _messages = [];
 
-  // ✅ Header (other user)
   String _otherName = 'Chat';
   String? _otherUserId;
+  XFile? _selectedImage;
+  PlatformFile? _selectedFile;
 
   RealtimeChannel? _msgChannel;
 
@@ -51,11 +63,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _init() async {
     try {
-      await _loadChatHeader(); // ✅ get other name
+      await _loadChatHeader();
       await _reloadMessages();
       await _service.markConversationRead(widget.conversationId);
       _subscribeMessagesRealtime();
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -66,7 +79,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final me = _db.auth.currentUser?.id;
     if (me == null) throw Exception('Not logged in');
 
-    // 1) Fetch conversation
     final conv = await _db
         .from('conversations')
         .select('user1, user2')
@@ -75,16 +87,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final user1 = conv['user1'] as String;
     final user2 = conv['user2'] as String;
+    final other = user1 == me ? user2 : user1;
 
-    // 2) Determine other user
-    final other = (user1 == me) ? user2 : user1;
-
-    // 3) Fetch other user profile name
     final prof = await _db
         .from('profiles')
         .select('full_name')
         .eq('id', other)
         .maybeSingle();
+
+    final blocked = await UserBlockService(_db).isBlockedEitherWay(other);
+    if (blocked) {
+      throw Exception('Messaging is unavailable for this user.');
+    }
 
     final fullName = (prof?['full_name'] as String?)?.trim();
     if (!mounted) return;
@@ -99,14 +113,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final rows = await _service.getMessages(
       conversationId: widget.conversationId,
       limit: 200,
-      beforeIso: null,
     );
 
-    // RPC returns DESC; UI wants ASC
-    final asc = rows.reversed.toList();
-
     if (!mounted) return;
-    setState(() => _messages = asc);
+    setState(() => _messages = rows.reversed.toList());
   }
 
   void _subscribeMessagesRealtime() {
@@ -143,25 +153,98 @@ class _ChatScreenState extends State<ChatScreen> {
       ..subscribe();
   }
 
+  Future<void> _pickImage() async {
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: MediaLimits.postImageQuality,
+    );
+    if (picked == null || !mounted) return;
+
+    final size = await picked.length();
+    if (size > ChatAttachmentService.maxImageBytes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Photo must be 10 MB or smaller.')),
+      );
+      return;
+    }
+
+    setState(() => _selectedImage = picked);
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty || !mounted) return;
+
+    final picked = result.files.first;
+    if (picked.size > ChatAttachmentService.maxFileBytes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('File must be 10 MB or smaller.')),
+      );
+      return;
+    }
+
+    setState(() => _selectedFile = picked);
+  }
+
   Future<void> _send() async {
+    if (_otherUserId != null) {
+      final blocked = await UserBlockService(_db).isBlockedEitherWay(_otherUserId!);
+      if (blocked) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Messaging is unavailable for this user.')),
+        );
+        return;
+      }
+    }
+
     final text = _textCtrl.text.trim();
-    if (text.isEmpty) return;
+    if ((text.isEmpty && _selectedImage == null && _selectedFile == null) ||
+        _sending) {
+      return;
+    }
+
+    setState(() => _sending = true);
+    final image = _selectedImage;
+    final file = _selectedFile;
 
     _textCtrl.clear();
+    setState(() {
+      _selectedImage = null;
+      _selectedFile = null;
+    });
 
     try {
+      String? imageUrl;
+      String? fileUrl;
+      String? fileName;
+
+      if (image != null) {
+        imageUrl = await _attachmentService.uploadImage(image);
+      }
+      if (file != null) {
+        fileUrl = await _attachmentService.uploadFile(file);
+        fileName = file.name;
+      }
+
       await _service.sendMessage(
         conversationId: widget.conversationId,
-        content: text,
+        content: ChatMessageCodec.encode(
+          text: text,
+          imageUrl: imageUrl,
+          fileUrl: fileUrl,
+          fileName: fileName,
+        ),
       );
 
-      // fallback (if realtime delayed)
       await _reloadMessages();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Send error: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -181,12 +264,97 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _openExternal(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Widget _buildAttachmentComposerPreview() {
+    if (_selectedImage == null && _selectedFile == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          if (_selectedImage != null)
+            Chip(
+              label: Text(_selectedImage!.name),
+              avatar: const Icon(Icons.photo_outlined, size: 18),
+              onDeleted: () => setState(() => _selectedImage = null),
+            ),
+          if (_selectedFile != null)
+            Chip(
+              label: Text(_selectedFile!.name),
+              avatar: const Icon(Icons.attach_file, size: 18),
+              onDeleted: () => setState(() => _selectedFile = null),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(bool isMe, ChatMessagePayload payload) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isMe ? Colors.blue.withOpacity(0.15) : Colors.grey.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (payload.text.trim().isNotEmpty) Text(payload.text.trim()),
+          if (payload.hasImage) ...[
+            if (payload.text.trim().isNotEmpty) const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(payload.imageUrl!, width: 220, fit: BoxFit.cover),
+            ),
+          ],
+          if (payload.hasFile) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () => _openExternal(payload.fileUrl!),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.attach_file, size: 18),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        payload.fileName?.trim().isNotEmpty == true
+                            ? payload.fileName!.trim()
+                            : 'Open file',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final myId = _db.auth.currentUser?.id;
 
     return Scaffold(
-      // ✅ Show other user's name on top
       appBar: GlobalAppBar(
         title: _otherName,
         showBackIfPossible: true,
@@ -223,52 +391,65 @@ class _ChatScreenState extends State<ChatScreen> {
                           final m = _messages[i];
                           final senderId = m['sender_id'] as String?;
                           final isMe = senderId != null && senderId == myId;
-                          final content = (m['content'] as String?) ?? '';
+                          final payload = ChatMessageCodec.decode(
+                            (m['content'] as String?) ?? '',
+                          );
 
                           return Align(
                             alignment:
                                 isMe ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: isMe
-                                    ? Colors.blue.withOpacity(0.15)
-                                    : Colors.grey.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Text(content),
-                            ),
+                            child: _buildMessageBubble(isMe, payload),
                           );
                         },
                       ),
                     ),
                     SafeArea(
                       top: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _textCtrl,
-                                textInputAction: TextInputAction.send,
-                                onSubmitted: (_) => _send(),
-                                decoration: const InputDecoration(
-                                  hintText: 'Message…',
-                                  border: OutlineInputBorder(),
-                                  isDense: true,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildAttachmentComposerPreview(),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  tooltip: 'Add photo',
+                                  onPressed: _sending ? null : _pickImage,
+                                  icon: const Icon(Icons.photo_outlined),
                                 ),
-                              ),
+                                IconButton(
+                                  tooltip: 'Add file',
+                                  onPressed: _sending ? null : _pickFile,
+                                  icon: const Icon(Icons.attach_file),
+                                ),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _textCtrl,
+                                    textInputAction: TextInputAction.send,
+                                    onSubmitted: (_) => _send(),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Message...',
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  onPressed: _sending ? null : _send,
+                                  icon: _sending
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.send),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: _send,
-                              icon: const Icon(Icons.send),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

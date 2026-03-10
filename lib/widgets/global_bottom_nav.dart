@@ -112,113 +112,120 @@ class GlobalBottomNav extends ConsumerWidget {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheetContext) {
+        final maxHeight = MediaQuery.of(sheetContext).size.height * 0.82;
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Options',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: () {
-                      Navigator.of(sheetContext).pop();
-                      if (onOpenFilters != null && currentPath == '/feed') {
-                        onOpenFilters!();
-                      } else {
-                        context.go('/feed');
-                      }
-                    },
-                    icon: const Icon(Icons.tune_rounded),
-                    label: const Text('Filters'),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _quickLinkButton(
-                      icon: Icons.storefront_outlined,
-                      label: 'Marketplace',
-                      onPressed: () {
+                    Text(
+                      'Options',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed: () {
+                          Navigator.of(sheetContext).pop();
+                          if (onOpenFilters != null && currentPath == '/feed') {
+                            onOpenFilters!();
+                          } else {
+                            context.go('/feed');
+                          }
+                        },
+                        icon: const Icon(Icons.tune_rounded),
+                        label: const Text('Filters'),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _quickLinkButton(
+                          icon: Icons.storefront_outlined,
+                          label: 'Marketplace',
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            context.push('/marketplace');
+                          },
+                        ),
+                        _quickLinkButton(
+                          icon: Icons.miscellaneous_services_outlined,
+                          label: 'Gigs',
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            context.push('/gigs');
+                          },
+                        ),
+                        _quickLinkButton(
+                          icon: Icons.fastfood,
+                          label: 'Foods',
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            context.push('/foods');
+                          },
+                        ),
+                        _quickLinkButton(
+                          icon: Icons.business,
+                          label: 'Businesses',
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            context.push('/businesses');
+                          },
+                        ),
+                        _quickLinkButton(
+                          icon: Icons.restaurant_menu,
+                          label: 'Restaurants',
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            context.push('/restaurants');
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.person_outline),
+                      title: const Text('My profile'),
+                      onTap: () {
                         Navigator.of(sheetContext).pop();
-                        context.push('/marketplace');
+                        context.push('/profile');
                       },
                     ),
-                    _quickLinkButton(
-                      icon: Icons.miscellaneous_services_outlined,
-                      label: 'Gigs',
-                      onPressed: () {
+                    if (isAdmin)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.admin_panel_settings_outlined),
+                        title: const Text('Admin portal'),
+                        onTap: () {
+                          Navigator.of(sheetContext).pop();
+                          context.push('/adminlive');
+                        },
+                      ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.logout),
+                      title: const Text('Logout'),
+                      onTap: () {
                         Navigator.of(sheetContext).pop();
-                        context.push('/gigs');
-                      },
-                    ),
-                    _quickLinkButton(
-                      icon: Icons.fastfood,
-                      label: 'Foods',
-                      onPressed: () {
-                        Navigator.of(sheetContext).pop();
-                        context.push('/foods');
-                      },
-                    ),
-                    _quickLinkButton(
-                      icon: Icons.business,
-                      label: 'Businesses',
-                      onPressed: () {
-                        Navigator.of(sheetContext).pop();
-                        context.push('/businesses');
-                      },
-                    ),
-                    _quickLinkButton(
-                      icon: Icons.restaurant_menu,
-                      label: 'Restaurants',
-                      onPressed: () {
-                        Navigator.of(sheetContext).pop();
-                        context.push('/restaurants');
+                        _logout(context);
                       },
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.person_outline),
-                  title: const Text('My profile'),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    context.push('/profile');
-                  },
-                ),
-                if (isAdmin)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.admin_panel_settings_outlined),
-                    title: const Text('Admin portal'),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      context.push('/adminlive');
-                    },
-                  ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Logout'),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    _logout(context);
-                  },
-                ),
-              ],
+              ),
             ),
           ),
         );

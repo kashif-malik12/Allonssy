@@ -5,6 +5,8 @@ import 'dart:math' as math;
 
 import '../core/market_categories.dart';
 import '../models/post_model.dart';
+import '../services/mention_service.dart';
+import '../services/post_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 
@@ -20,6 +22,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   String? _error;
   String _selectedCategory = 'all';
   String _selectedIntent = 'all';
+  String _sortBy = 'date_desc';
   String _search = '';
   final TextEditingController _searchCtrl = TextEditingController();
   List<Post> _posts = [];
@@ -35,8 +38,44 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   double _gridAspectRatio(double width) {
     final count = _gridCount(width);
     if (count == 2) return 0.58;
-    if (count == 3) return 0.74;
-    return 0.92;
+    if (count == 3) return 0.70;
+    return 0.88;
+  }
+
+  String _plainListingText(String raw) {
+    return MentionService.parseTaggedContent(raw).body;
+  }
+
+  Widget _buildResponsiveDropdownRow({
+    required String label,
+    required Widget child,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 360;
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label),
+              const SizedBox(height: 8),
+              child,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            SizedBox(
+              width: 72,
+              child: Text(label),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: child),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -118,6 +157,32 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     return '${two(d.day)}/${two(d.month)}/${d.year}';
   }
 
+  void _sortItems(List<Post> items) {
+    switch (_sortBy) {
+      case 'date_asc':
+        items.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        break;
+      case 'price_asc':
+        items.sort((a, b) {
+          final aPrice = a.marketPrice ?? _priceFromContent(a.content) ?? double.infinity;
+          final bPrice = b.marketPrice ?? _priceFromContent(b.content) ?? double.infinity;
+          return aPrice.compareTo(bPrice);
+        });
+        break;
+      case 'price_desc':
+        items.sort((a, b) {
+          final aPrice = a.marketPrice ?? _priceFromContent(a.content) ?? -1;
+          final bPrice = b.marketPrice ?? _priceFromContent(b.content) ?? -1;
+          return bPrice.compareTo(aPrice);
+        });
+        break;
+      case 'date_desc':
+      default:
+        items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        break;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -144,12 +209,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
       final data = await Supabase.instance.client
           .from('posts')
-          .select('*, profiles(full_name, avatar_url, city, zipcode)')
+          .select(PostService.postSelect)
           .eq('post_type', 'market')
           .order('created_at', ascending: false)
           .limit(120);
 
-      final rows = (data as List).cast<Map<String, dynamic>>();
+      final rows = await PostService(Supabase.instance.client)
+          .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
 
       var items = rows.map((e) => Post.fromMap(e)).toList();
 
@@ -182,6 +248,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               category.contains(q);
         }).toList();
       }
+
+      _sortItems(items);
 
       if (!mounted) return;
       setState(() {
@@ -240,59 +308,70 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Row(
-              children: [
-                const Text('Category:'),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButton<String>(
-                    value: _selectedCategory,
-                    isExpanded: true,
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'all',
-                        child: Text('All categories'),
-                      ),
-                      ...marketMainCategories.map(
-                        (c) => DropdownMenuItem(
-                          value: c,
-                          child: Text(marketCategoryLabel(c)),
-                        ),
-                      ),
-                    ],
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() => _selectedCategory = v);
-                      _load();
-                    },
+            child: _buildResponsiveDropdownRow(
+              label: 'Category:',
+              child: DropdownButton<String>(
+                value: _selectedCategory,
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem(
+                    value: 'all',
+                    child: Text('All categories'),
                   ),
-                ),
-              ],
+                  ...marketMainCategories.map(
+                    (c) => DropdownMenuItem(
+                      value: c,
+                      child: Text(marketCategoryLabel(c)),
+                    ),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedCategory = v);
+                  _load();
+                },
+              ),
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Row(
-              children: [
-                const Text('Type:'),
-                const SizedBox(width: 40),
-                Expanded(
-                  child: DropdownButton<String>(
-                    value: _selectedIntent,
-                    isExpanded: true,
-                    items: const [
-                      DropdownMenuItem(value: 'all', child: Text('All types')),
-                      DropdownMenuItem(value: 'selling', child: Text('Selling')),
-                      DropdownMenuItem(value: 'buying', child: Text('Buying')),
-                    ],
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() => _selectedIntent = v);
-                      _load();
-                    },
-                  ),
-                ),
-              ],
+            child: _buildResponsiveDropdownRow(
+              label: 'Type:',
+              child: DropdownButton<String>(
+                value: _selectedIntent,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('All types')),
+                  DropdownMenuItem(value: 'selling', child: Text('Selling')),
+                  DropdownMenuItem(value: 'buying', child: Text('Buying')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedIntent = v);
+                  _load();
+                },
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: _buildResponsiveDropdownRow(
+              label: 'Sort:',
+              child: DropdownButton<String>(
+                value: _sortBy,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'date_desc', child: Text('Newest first')),
+                  DropdownMenuItem(value: 'date_asc', child: Text('Oldest first')),
+                  DropdownMenuItem(value: 'price_asc', child: Text('Price: low to high')),
+                  DropdownMenuItem(value: 'price_desc', child: Text('Price: high to low')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _sortBy = v);
+                  _load();
+                },
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -323,7 +402,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                 final canSendOffer = myId != null && p.userId != myId;
                                 final title = (p.marketTitle ?? '').trim().isNotEmpty
                                     ? p.marketTitle!.trim()
-                                    : p.content.trim();
+                                    : _plainListingText(p.content);
                                 final intent = p.marketIntent;
                                 final effectivePrice =
                                     p.marketPrice ?? _priceFromContent(p.content);

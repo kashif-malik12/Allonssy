@@ -79,21 +79,22 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
         final data = await db
             .from('profiles')
             .select(
-                'id, full_name, bio, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type')
+                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, is_disabled')
             .eq('account_type', 'business')
             .eq('is_restaurant', false)
-            .order('full_name');
+            .eq('is_disabled', false)
+            .order('business_name');
         rows = (data as List).cast<Map<String, dynamic>>();
       } on PostgrestException {
         final data = await db
             .from('profiles')
-            .select('id, full_name, bio, avatar_url, city, latitude, longitude, account_type')
+            .select('id, full_name, business_name, job_title, bio, avatar_url, city, latitude, longitude, account_type, business_type, is_disabled')
             .eq('account_type', 'business')
-            .order('full_name');
+            .order('business_name');
 
         rows = (data as List)
             .cast<Map<String, dynamic>>()
-            .where((r) => r['is_restaurant'] != true)
+            .where((r) => r['is_restaurant'] != true && r['is_disabled'] != true)
             .toList();
       }
 
@@ -108,8 +109,10 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       if (_search.trim().isNotEmpty) {
         final q = _search.toLowerCase().trim();
         items = items.where((r) {
-          return (r['full_name'] ?? '').toString().toLowerCase().contains(q) ||
+          return (r['business_name'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['full_name'] ?? '').toString().toLowerCase().contains(q) ||
               (r['bio'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['business_profile'] ?? '').toString().toLowerCase().contains(q) ||
               (r['city'] ?? '').toString().toLowerCase().contains(q) ||
               businessCategoryLabel((r['business_type'] ?? '').toString())
                   .toLowerCase()
@@ -252,34 +255,76 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
 
                               final id = (b['id'] ?? '').toString();
 
-                              return Card(
-                                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                child: ListTile(
-                                onTap: id.isEmpty ? null : () => context.push('/p/$id'),
-                                contentPadding: const EdgeInsets.all(12),
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Container(
-                                    width: 64,
-                                    height: 64,
-                                    color: Colors.grey.shade200,
-                                    padding: const EdgeInsets.all(6),
-                                    child: (b['avatar_url'] ?? '').toString().isNotEmpty
-                                        ? Image.network(
-                                            (b['avatar_url'] ?? '').toString(),
-                                            fit: BoxFit.contain,
-                                          )
-                                        : const Icon(Icons.business),
+                                final userName = (b['full_name'] as String?) ?? '';
+                                final bName = (b['business_name'] as String?) ?? userName;
+                                final job = b['job_title'] as String?;
+                                final businessProfile =
+                                    (b['business_profile'] as String?) ?? '';
+
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  child: ListTile(
+                                  onTap: id.isEmpty ? null : () => context.push('/p/$id'),
+                                  contentPadding: const EdgeInsets.all(12),
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      width: 64,
+                                      height: 64,
+                                      color: Colors.grey.shade200,
+                                      padding: const EdgeInsets.all(6),
+                                      child: (b['avatar_url'] ?? '').toString().isNotEmpty
+                                          ? Image.network(
+                                              (b['avatar_url'] ?? '').toString(),
+                                              fit: BoxFit.contain,
+                                            )
+                                          : const Icon(Icons.business),
+                                    ),
                                   ),
-                                ),
-                                title: Text((b['full_name'] ?? 'Business').toString()),
-                                subtitle: Text(
-                                  '${(b['business_type'] ?? '').toString().isNotEmpty ? businessCategoryLabel((b['business_type'] ?? '').toString()) : 'Business'}'
-                                  '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
-                                  '${(b['city'] ?? '').toString().isNotEmpty ? ' • ${(b['city'] ?? '').toString()}' : ''}',
-                                ),
-                                ),
-                              );
+                                  title: Text(userName.isNotEmpty ? userName : bName),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (bName.isNotEmpty && bName != userName)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 2),
+                                          child: Text(
+                                            bName,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      if (job != null && job.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 2),
+                                          child: Text(
+                                            job,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      Text(
+                                        '${(b['business_type'] ?? '').toString().isNotEmpty ? businessCategoryLabel((b['business_type'] ?? '').toString()) : 'Business'}'
+                                        '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
+                                        '${(b['city'] ?? '').toString().isNotEmpty ? ' • ${(b['city'] ?? '').toString()}' : ''}',
+                                      ),
+                                      if (businessProfile.trim().isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            businessProfile.trim(),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  ),
+                                );
                             },
                           ),
           ),

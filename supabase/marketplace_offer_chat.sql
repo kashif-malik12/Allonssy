@@ -269,6 +269,8 @@ as $$
     join public.profiles buyer on buyer.id = c.buyer_id
     join public.profiles seller on seller.id = c.seller_id
     where auth.uid() in (c.buyer_id, c.seller_id)
+      and coalesce(buyer.is_disabled, false) = false
+      and coalesce(seller.is_disabled, false) = false
   ),
   last_msg as (
     select distinct on (m.conversation_id)

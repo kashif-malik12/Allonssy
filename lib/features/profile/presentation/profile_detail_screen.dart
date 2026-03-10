@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/business_categories.dart';
+import '../../../core/restaurant_categories.dart';
 import '../../../models/post_model.dart';
 import '../../../models/portfolio_item.dart';
 import '../../../services/reaction_service.dart';
 import '../../../services/follow_service.dart';
 import '../../../services/portfolio_service.dart';
+import '../../../services/post_service.dart';
 import '../../../widgets/global_app_bar.dart';
 import '../../../widgets/global_bottom_nav.dart';
 import '../../../widgets/post_media_view.dart';
@@ -41,6 +44,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
   int _followersCount = 0;
   int _followingCount = 0;
+  int _connectionsCount = 0;
 
   // ✅ Follow requests badge (only for me)
   int _pendingRequests = 0;
@@ -72,6 +76,10 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     required String bio,
     required bool canOpenLists,
   }) {
+    final entityName = _profileEntityName();
+    final categoryLabel = _profileCategoryLabel();
+    final roleTitle = _profileRoleTitle();
+    final businessDescription = _profileBusinessDescription();
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -92,6 +100,26 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                   fontWeight: FontWeight.w800,
                 ),
           ),
+          if (entityName != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              entityName,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+          if (categoryLabel != null || roleTitle != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (categoryLabel != null) _ProfileMetaChip(label: categoryLabel),
+                if (roleTitle != null) _ProfileMetaChip(label: roleTitle),
+              ],
+            ),
+          ],
           if (type.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Type: $type', style: const TextStyle(fontSize: 12)),
@@ -103,6 +131,15 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           if (bio.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(bio),
+          ],
+          if (businessDescription != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              businessDescription,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
           const SizedBox(height: 16),
           Row(
@@ -124,6 +161,14 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                       ? () => context.push('/p/${widget.profileId}/following')
                       : null,
                   child: _StatTile(label: 'Following', value: _followingCount),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _clickableStat(
+                  enabled: _isMe,
+                  onTap: _isMe ? () => context.push('/p/${widget.profileId}/connections') : null,
+                  child: _StatTile(label: 'Connections', value: _connectionsCount),
                 ),
               ),
             ],
@@ -187,6 +232,56 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     }
   }
 
+  String? _profileEntityName() {
+    final accountType =
+        (_profile?['profile_type'] ?? _profile?['account_type'] ?? '').toString();
+    if (accountType != 'business' && accountType != 'org') return null;
+    final businessName = (_profile?['business_name'] ?? '').toString().trim();
+    return businessName.isEmpty ? null : businessName;
+  }
+
+  String? _profileCategoryLabel() {
+    final accountType =
+        (_profile?['profile_type'] ?? _profile?['account_type'] ?? '').toString();
+    if (accountType == 'business') {
+      if (_profile?['is_restaurant'] == true) {
+        final restaurantType = (_profile?['restaurant_type'] ?? '').toString().trim();
+        return restaurantType.isEmpty ? 'Restaurant' : restaurantCategoryLabel(restaurantType);
+      }
+
+      final businessType = (_profile?['business_type'] ?? '').toString().trim();
+      return businessType.isEmpty ? 'Business' : businessCategoryLabel(businessType);
+    }
+
+    if (accountType == 'org') {
+      switch ((_profile?['org_kind'] ?? '').toString().trim()) {
+        case 'government':
+          return 'Government';
+        case 'nonprofit':
+          return 'Non-profit';
+        case 'news_agency':
+          return 'News agency';
+        default:
+          return 'Organization';
+      }
+    }
+
+    return null;
+  }
+
+  String? _profileRoleTitle() {
+    final role = (_profile?['job_title'] ?? '').toString().trim();
+    return role.isEmpty ? null : role;
+  }
+
+  String? _profileBusinessDescription() {
+    final accountType =
+        (_profile?['profile_type'] ?? _profile?['account_type'] ?? '').toString();
+    if (accountType != 'business' && accountType != 'org') return null;
+    final value = (_profile?['business_profile'] ?? '').toString().trim();
+    return value.isEmpty ? null : value;
+  }
+
   Widget _buildProfileSidebar(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,6 +327,13 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                 ),
                 _buildSidebarAction(
                   context: context,
+                  icon: Icons.settings_outlined,
+                  title: 'Profile settings',
+                  subtitle: 'Manage app preferences like video autoplay',
+                  onTap: () => context.push('/profile/settings'),
+                ),
+                _buildSidebarAction(
+                  context: context,
                   icon: Icons.groups_outlined,
                   title: 'Followers',
                   subtitle: '$_followersCount people follow you',
@@ -243,6 +345,13 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                   title: 'Following',
                   subtitle: '$_followingCount profiles you follow',
                   onTap: () => context.push('/p/${widget.profileId}/following'),
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.hub_outlined,
+                  title: 'Connections',
+                  subtitle: '$_connectionsCount people follow you back',
+                  onTap: () => context.push('/p/${widget.profileId}/connections'),
                 ),
                 _buildSidebarAction(
                   context: context,
@@ -281,6 +390,13 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                   subtitle: 'Visible only on your own profile',
                   onTap: null,
                 ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.hub_outlined,
+                  title: 'Connections',
+                  subtitle: 'Visible only on your own profile',
+                  onTap: null,
+                ),
               ],
             ],
           ),
@@ -294,8 +410,10 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       return [
         const PopupMenuItem(value: 'follow_requests', child: Text('Follow requests')),
         const PopupMenuItem(value: 'edit_profile', child: Text('Edit profile')),
+        const PopupMenuItem(value: 'profile_settings', child: Text('Profile settings')),
         const PopupMenuItem(value: 'followers', child: Text('Followers')),
         const PopupMenuItem(value: 'following', child: Text('Following')),
+        const PopupMenuItem(value: 'connections', child: Text('Connections')),
         const PopupMenuItem(value: 'my_products', child: Text('My products')),
         const PopupMenuItem(value: 'my_gigs', child: Text('My gigs')),
         if ((_profile?['is_restaurant'] == true))
@@ -321,8 +439,14 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       case 'followers':
         await context.push('/p/${widget.profileId}/followers');
         return;
+      case 'profile_settings':
+        await context.push('/profile/settings');
+        return;
       case 'following':
         await context.push('/p/${widget.profileId}/following');
+        return;
+      case 'connections':
+        await context.push('/p/${widget.profileId}/connections');
         return;
       case 'my_products':
         await context.push('/profile/my-products');
@@ -345,6 +469,9 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     required String type,
     required String location,
   }) {
+    final entityName = _profileEntityName();
+    final categoryLabel = _profileCategoryLabel();
+    final roleTitle = _profileRoleTitle();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -371,6 +498,26 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                       fontWeight: FontWeight.w800,
                     ),
               ),
+              if (entityName != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  entityName,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+              if (categoryLabel != null || roleTitle != null) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (categoryLabel != null) _ProfileMetaChip(label: categoryLabel),
+                    if (roleTitle != null) _ProfileMetaChip(label: roleTitle),
+                  ],
+                ),
+              ],
               if (type.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -422,6 +569,12 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                 enabled: _isMe,
                 onTap: _isMe ? () => context.push('/p/${widget.profileId}/following') : null,
                 child: _StatTile(label: 'Following', value: _followingCount),
+              ),
+              const SizedBox(height: 10),
+              _clickableStat(
+                enabled: _isMe,
+                onTap: _isMe ? () => context.push('/p/${widget.profileId}/connections') : null,
+                child: _StatTile(label: 'Connections', value: _connectionsCount),
               ),
             ],
           ),
@@ -579,6 +732,13 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                         ),
                         _buildSidebarAction(
                           context: context,
+                          icon: Icons.settings_outlined,
+                          title: 'Profile settings',
+                          subtitle: 'Manage app preferences like video autoplay',
+                          onTap: () => context.push('/profile/settings'),
+                        ),
+                        _buildSidebarAction(
+                          context: context,
                           icon: Icons.groups_outlined,
                           title: 'Followers',
                           subtitle: '$_followersCount people follow you',
@@ -670,7 +830,22 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        if (_db.auth.currentUser?.id != p.userId)
+                        if (_db.auth.currentUser?.id == p.userId)
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) async {
+                              if (value == 'delete_post') {
+                                await _deletePost(p);
+                              }
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'delete_post',
+                                child: Text('Delete post'),
+                              ),
+                            ],
+                          )
+                        else if (_db.auth.currentUser?.id != p.userId)
                           PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert),
                             onSelected: (value) async {
@@ -842,6 +1017,15 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       return;
     }
 
+    if (_profile?['is_disabled'] == true) {
+      if (!mounted) return;
+      setState(() {
+        _canMessage = false;
+        _canMessageLoading = false;
+      });
+      return;
+    }
+
     try {
       final res = await _db.rpc('can_message_me', params: {
         'p_other_user_id': widget.profileId,
@@ -921,8 +1105,14 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     try {
       final myUserId = _db.auth.currentUser!.id;
 
-      final p =
-          await _db.from('profiles').select('*').eq('id', widget.profileId).single();
+      final p = await _db
+          .from('profiles')
+          .select('*')
+          .eq('id', widget.profileId)
+          .maybeSingle();
+      if (p == null || p['is_disabled'] == true) {
+        throw Exception('Profile not available');
+      }
       _profile = p;
 
       _isMe = (widget.profileId == myUserId);
@@ -940,6 +1130,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
       _followersCount = await follow.followersCount(widget.profileId);
       _followingCount = await follow.followingCount(widget.profileId);
+      _connectionsCount = await follow.mutualConnectionsCount(widget.profileId);
 
       if (_isMe) {
         await _refreshPendingRequests();
@@ -956,6 +1147,17 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   // ✅ POSTS
   // =========================
   Future<void> _loadPosts() async {
+    if (_profile?['is_disabled'] == true) {
+      if (mounted) {
+        setState(() {
+          _posts = [];
+          _postsError = null;
+          _postsLoading = false;
+        });
+      }
+      return;
+    }
+
     setState(() {
       _postsLoading = true;
       _postsError = null;
@@ -972,17 +1174,55 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           .map((e) => Post.fromMap(e as Map<String, dynamic>))
           .where((post) {
             final type = (post.postType ?? '').trim();
-            return type != 'market' &&
-                type != 'service_offer' &&
-                type != 'service_request';
+            // ONLY show general posts. Hide marketplace, gigs, food ads, lost/found.
+            return type == 'post' || type == '';
           })
           .toList();
-
       if (mounted) setState(() => _posts = list);
     } catch (e) {
       if (mounted) setState(() => _postsError = e.toString());
     } finally {
       if (mounted) setState(() => _postsLoading = false);
+    }
+  }
+
+  Future<void> _deletePost(Post post) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete post?'),
+        content: const Text('This will remove the post from your profile and feed.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await PostService(_db).deleteOwnPost(post.id);
+      if (!mounted) return;
+
+      setState(() {
+        _posts.removeWhere((item) => item.id == post.id || item.sharedPostId == post.id);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post deleted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete failed: $e')),
+      );
     }
   }
 
@@ -1009,6 +1249,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
       _followersCount = await follow.followersCount(widget.profileId);
       _followingCount = await follow.followingCount(widget.profileId);
+      _connectionsCount = await follow.mutualConnectionsCount(widget.profileId);
 
       await _loadCanMessage();
     } catch (e) {
@@ -1582,6 +1823,32 @@ class _StatTile extends StatelessWidget {
           const SizedBox(height: 4),
           Text(label),
         ],
+      ),
+    );
+  }
+}
+
+class _ProfileMetaChip extends StatelessWidget {
+  final String label;
+
+  const _ProfileMetaChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE6DDCE)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }

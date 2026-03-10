@@ -155,7 +155,7 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
     if (ok != true) return;
 
     try {
-      await _db.from('posts').delete().eq('id', postId).eq('user_id', _db.auth.currentUser!.id);
+      await _db.rpc('delete_own_post', params: {'p_post_id': postId});
       await _load();
     } catch (e) {
       if (!mounted) return;

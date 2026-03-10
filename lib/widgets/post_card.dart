@@ -1,18 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/business_categories.dart';
 import '../models/post_model.dart';
+import '../services/post_service.dart';
 import 'report_post_sheet.dart';
 
 class PostCard extends StatelessWidget {
   final Post post;
   final VoidCallback? onTap;
+  final ValueChanged<String>? onDeleted;
 
   const PostCard({
     super.key,
     required this.post,
     this.onTap,
+    this.onDeleted,
   });
+
+  Future<void> _deletePost(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete post?'),
+        content: const Text('This will remove the post from your profile and feed.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await PostService(Supabase.instance.client).deleteOwnPost(post.id);
+      onDeleted?.call(post.id);
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post deleted.')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete failed: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +69,11 @@ class PostCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _HeaderRow(post: post, isMe: isMe),
+              _HeaderRow(
+                post: post,
+                isMe: isMe,
+                onDelete: isMe ? _deletePost : null,
+              ),
               if (post.locationName != null &&
                   post.locationName!.trim().isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -226,35 +271,93 @@ class _MarketPostData {
 class _HeaderRow extends StatelessWidget {
   final Post post;
   final bool isMe;
+  final Future<void> Function(BuildContext context)? onDelete;
 
-  const _HeaderRow({required this.post, required this.isMe});
+  const _HeaderRow({
+    required this.post,
+    required this.isMe,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isAnonymous = post.postType == 'market' ||
+        post.postType == 'service_offer' ||
+        post.postType == 'service_request';
+
+    String headerName = (post.authorBusinessName != null && post.authorBusinessName!.isNotEmpty)
+        ? post.authorBusinessName!
+        : (post.authorName ?? 'Unknown');
+
+    if (post.postType == 'market') {
+      headerName = 'Marketplace listing';
+    } else if (post.postType == 'service_offer' || post.postType == 'service_request') {
+      headerName = 'Gigs post';
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundImage: (post.authorAvatarUrl != null &&
-                  post.authorAvatarUrl!.isNotEmpty)
-              ? NetworkImage(post.authorAvatarUrl!)
-              : null,
-          child: (post.authorAvatarUrl == null ||
-                  post.authorAvatarUrl!.isEmpty)
-              ? const Icon(Icons.person, size: 18)
-              : null,
-        ),
-        const SizedBox(width: 10),
+        if (!isAnonymous) ...[
+          CircleAvatar(
+            radius: 18,
+            backgroundImage: (post.authorAvatarUrl != null &&
+                    post.authorAvatarUrl!.isNotEmpty)
+                ? NetworkImage(post.authorAvatarUrl!)
+                : null,
+            child: (post.authorAvatarUrl == null ||
+                    post.authorAvatarUrl!.isEmpty)
+                ? const Icon(Icons.person, size: 18)
+                : null,
+          ),
+          const SizedBox(width: 10),
+        ],
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                post.authorName ?? 'Unknown',
-                style:
-                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              Row(
+                children: [
+                  Text(
+                    headerName,
+                    style:
+                        const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  if (!isAnonymous &&
+                      post.authorBusinessType != null &&
+                      (post.authorBusinessType == 'trader' ||
+                          post.authorBusinessType == 'manufacturer')) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Text(
+                        businessCategoryLabel(post.authorBusinessType!),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.blue.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
+              if (!isAnonymous &&
+                  post.authorJobTitle != null &&
+                  post.authorJobTitle!.isNotEmpty)
+                Text(
+                  post.authorJobTitle!,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
               const SizedBox(height: 2),
               Row(
                 children: [
@@ -306,9 +409,7 @@ class _HeaderRow extends StatelessWidget {
             }
 
             if (value == 'delete') {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Delete not wired yet.')),
-              );
+              await onDelete?.call(context);
             }
           },
           itemBuilder: (context) => [

@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../widgets/global_app_bar.dart';
 import '../../../widgets/global_bottom_nav.dart';
 
-enum FollowListMode { followers, following }
+enum FollowListMode { followers, following, connections }
 
 class FollowListScreen extends StatefulWidget {
   final String profileId; // profiles.id == auth.uid in your app
@@ -29,7 +29,16 @@ class _FollowListScreenState extends State<FollowListScreen> {
   // Each item: {id, full_name, profile_type/account_type}
   List<Map<String, dynamic>> _profiles = [];
 
-  String get _title => widget.mode == FollowListMode.followers ? 'Followers' : 'Following';
+  String get _title {
+    switch (widget.mode) {
+      case FollowListMode.followers:
+        return 'Followers';
+      case FollowListMode.following:
+        return 'Following';
+      case FollowListMode.connections:
+        return 'Connections';
+    }
+  }
 
   @override
   void initState() {
@@ -53,22 +62,48 @@ class _FollowListScreenState extends State<FollowListScreen> {
             .from('follows')
             .select('follower_id, created_at')
             .eq('followed_profile_id', widget.profileId)
+            .eq('status', 'accepted')
             .order('created_at', ascending: false);
-      } else {
+      } else if (widget.mode == FollowListMode.following) {
         followRows = await _db
             .from('follows')
             .select('followed_profile_id, created_at')
             .eq('follower_id', widget.profileId)
+            .eq('status', 'accepted')
             .order('created_at', ascending: false);
+      } else {
+        final followers = await _db
+            .from('follows')
+            .select('follower_id, created_at')
+            .eq('followed_profile_id', widget.profileId)
+            .eq('status', 'accepted')
+            .order('created_at', ascending: false);
+
+        final following = await _db
+            .from('follows')
+            .select('followed_profile_id')
+            .eq('follower_id', widget.profileId)
+            .eq('status', 'accepted');
+
+        final followingIds = (following as List)
+            .map((row) => (row['followed_profile_id'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet();
+
+        followRows = (followers as List)
+            .cast<Map<String, dynamic>>()
+            .where((row) => followingIds.contains((row['follower_id'] ?? '').toString()))
+            .toList();
       }
 
       final ids = <String>[];
       for (final r in followRows) {
         final m = r as Map<String, dynamic>;
-        final id = (widget.mode == FollowListMode.followers
-                ? m['follower_id']
-                : m['followed_profile_id'])
-            ?.toString();
+        final id = (widget.mode == FollowListMode.followers ||
+                widget.mode == FollowListMode.connections
+            ? m['follower_id']
+            : m['followed_profile_id'])
+        ?.toString();
         if (id != null) ids.add(id);
       }
 

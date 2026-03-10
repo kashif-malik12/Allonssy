@@ -5,6 +5,8 @@ import 'dart:math' as math;
 
 import '../core/service_categories.dart';
 import '../models/post_model.dart';
+import '../services/mention_service.dart';
+import '../services/post_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 
@@ -20,6 +22,8 @@ class _GigsScreenState extends State<GigsScreen> {
   String? _error;
   String _selectedCategory = 'all';
   String _selectedType = 'all';
+  String _pricingFilter = 'all';
+  String _sortBy = 'date_desc';
   String _search = '';
   final TextEditingController _searchCtrl = TextEditingController();
   List<Post> _posts = [];
@@ -76,6 +80,42 @@ class _GigsScreenState extends State<GigsScreen> {
     return '${two(d.day)}/${two(d.month)}/${d.year}';
   }
 
+  String _plainListingText(String raw) {
+    return MentionService.parseTaggedContent(raw).body;
+  }
+
+  void _sortItems(List<Post> items) {
+    switch (_sortBy) {
+      case 'date_asc':
+        items.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        break;
+      case 'price_asc':
+        items.sort((a, b) {
+          final aPrice = a.marketPrice;
+          final bPrice = b.marketPrice;
+          if (aPrice == null && bPrice == null) return 0;
+          if (aPrice == null) return 1;
+          if (bPrice == null) return -1;
+          return aPrice.compareTo(bPrice);
+        });
+        break;
+      case 'price_desc':
+        items.sort((a, b) {
+          final aPrice = a.marketPrice;
+          final bPrice = b.marketPrice;
+          if (aPrice == null && bPrice == null) return 0;
+          if (aPrice == null) return 1;
+          if (bPrice == null) return -1;
+          return bPrice.compareTo(aPrice);
+        });
+        break;
+      case 'date_desc':
+      default:
+        items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        break;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -102,12 +142,13 @@ class _GigsScreenState extends State<GigsScreen> {
 
       final data = await Supabase.instance.client
           .from('posts')
-          .select('*, profiles(full_name, avatar_url, city, zipcode)')
+          .select(PostService.postSelect)
           .inFilter('post_type', ['service_offer', 'service_request'])
           .order('created_at', ascending: false)
           .limit(120);
 
-      final rows = (data as List).cast<Map<String, dynamic>>();
+      final rows = await PostService(Supabase.instance.client)
+          .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
       var items = rows.map((e) => Post.fromMap(e)).where(_isServicePost).toList();
 
       if (_selectedCategory != 'all') {
@@ -118,6 +159,15 @@ class _GigsScreenState extends State<GigsScreen> {
 
       if (_selectedType != 'all') {
         items = items.where((p) => p.postType == _selectedType).toList();
+      }
+
+      if (_pricingFilter != 'all') {
+        items = items.where((p) {
+          final hasPrice = p.marketPrice != null;
+          if (_pricingFilter == 'priced') return hasPrice;
+          if (_pricingFilter == 'unpriced') return !hasPrice;
+          return true;
+        }).toList();
       }
 
       final q = _search.trim().toLowerCase();
@@ -133,6 +183,8 @@ class _GigsScreenState extends State<GigsScreen> {
               category.contains(q);
         }).toList();
       }
+
+      _sortItems(items);
 
       if (!mounted) return;
       setState(() => _posts = items);
@@ -250,6 +302,57 @@ class _GigsScreenState extends State<GigsScreen> {
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                const Text('Sort:'),
+                const SizedBox(width: 40),
+                Expanded(
+                  child: DropdownButton<String>(
+                    value: _sortBy,
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(value: 'date_desc', child: Text('Newest first')),
+                      DropdownMenuItem(value: 'date_asc', child: Text('Oldest first')),
+                      DropdownMenuItem(value: 'price_asc', child: Text('Price: low to high')),
+                      DropdownMenuItem(value: 'price_desc', child: Text('Price: high to low')),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => _sortBy = v);
+                      _load();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                const Text('Price:'),
+                const SizedBox(width: 34),
+                Expanded(
+                  child: DropdownButton<String>(
+                    value: _pricingFilter,
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All')),
+                      DropdownMenuItem(value: 'priced', child: Text('With price')),
+                      DropdownMenuItem(value: 'unpriced', child: Text('Without price')),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => _pricingFilter = v);
+                      _load();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Divider(height: 1),
           Expanded(
             child: _loading
@@ -281,7 +384,7 @@ class _GigsScreenState extends State<GigsScreen> {
                                 final distanceKm = _distanceKm(p);
                                 final title = (p.marketTitle ?? '').trim().isNotEmpty
                                     ? p.marketTitle!.trim()
-                                    : p.content.trim();
+                                    : _plainListingText(p.content);
                                 final priceText = p.marketPrice != null
                                     ? '€${p.marketPrice!.toStringAsFixed(2)}'
                                     : (p.postType == 'service_request'

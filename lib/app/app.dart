@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app/chat_singletons.dart';
 import '../features/notifications/providers/notification_unread_provider.dart';
+import '../services/presence_service.dart';
 import 'router.dart' show appRouterNavigatorKey, appRouterProvider;
 
 class App extends ConsumerStatefulWidget {
@@ -29,6 +30,7 @@ class _AppState extends ConsumerState<App> {
     if (Supabase.instance.client.auth.currentUser != null) {
       unreadBadgeController.init();
       ref.read(notificationUnreadProvider.notifier).init();
+      PresenceService.instance.start();
       _badgeInitialized = true;
       _notificationBadgeInitialized = true;
     }
@@ -46,6 +48,7 @@ class _AppState extends ConsumerState<App> {
 
       if (session != null) {
         // logged in
+        PresenceService.instance.start();
         if (!_badgeInitialized) {
           await unreadBadgeController.init();
           _badgeInitialized = true;
@@ -62,6 +65,7 @@ class _AppState extends ConsumerState<App> {
         }
       } else {
         // logged out
+        PresenceService.instance.stop();
         if (_badgeInitialized) {
           unreadBadgeController.dispose();
           _badgeInitialized = false;
@@ -77,6 +81,7 @@ class _AppState extends ConsumerState<App> {
   @override
   void dispose() {
     _authSub?.cancel();
+    PresenceService.instance.stop();
     if (_notificationBadgeInitialized) {
       ref.read(notificationUnreadProvider.notifier).disposeRealtime();
       _notificationBadgeInitialized = false;

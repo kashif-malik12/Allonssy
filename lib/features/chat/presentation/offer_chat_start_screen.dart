@@ -32,10 +32,15 @@ class _OfferChatStartScreenState extends State<OfferChatStartScreen> {
   Future<void> _start() async {
     try {
       final service = OfferChatService(Supabase.instance.client);
-      final convId = await service.getOrCreateConversation(
+      final existingId = await service.findConversationId(
         postId: widget.postId,
         otherUserId: widget.otherUserId,
       );
+      final convId = existingId ??
+          await service.getOrCreateConversation(
+            postId: widget.postId,
+            otherUserId: widget.otherUserId,
+          );
       if (!mounted) return;
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;

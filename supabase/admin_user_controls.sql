@@ -47,6 +47,112 @@ $$;
 
 grant execute on function public.admin_set_user_disabled(uuid, boolean) to authenticated;
 
+create or replace function public.delete_post_with_dependencies(
+  p_post_id uuid,
+  p_allow_admin boolean default false
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  select p.user_id
+  into v_owner_id
+  from public.posts p
+  where p.id = p_post_id;
+
+  if v_owner_id is null then
+    raise exception 'Post not found';
+  end if;
+
+  if p_allow_admin then
+    if not exists (
+      select 1
+      from public.profiles admin_profile
+      where admin_profile.id = auth.uid()
+        and admin_profile.is_admin = true
+    ) then
+      raise exception 'Admin access required';
+    end if;
+  elsif v_owner_id <> auth.uid() then
+    raise exception 'You can only delete your own posts';
+  end if;
+
+  delete from public.notifications
+  where post_id = p_post_id
+     or comment_id in (
+       select id
+       from public.post_comments
+       where post_id = p_post_id
+     );
+
+  delete from public.post_reports
+  where post_id = p_post_id;
+
+  delete from public.offer_conversations
+  where post_id = p_post_id;
+
+  delete from public.post_comment_likes
+  where comment_id in (
+    select id
+    from public.post_comments
+    where post_id = p_post_id
+  );
+
+  delete from public.post_comments
+  where post_id = p_post_id;
+
+  delete from public.post_likes
+  where post_id = p_post_id;
+
+  delete from public.posts
+  where id = p_post_id;
+
+  if not found then
+    raise exception 'Post not found';
+  end if;
+end;
+$$;
+
+grant execute on function public.delete_post_with_dependencies(uuid, boolean) to authenticated;
+
+create or replace function public.delete_own_post(
+  p_post_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.delete_post_with_dependencies(p_post_id, false);
+end;
+$$;
+
+grant execute on function public.delete_own_post(uuid) to authenticated;
+
+create or replace function public.admin_soft_delete_post(
+  p_post_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.delete_post_with_dependencies(p_post_id, true);
+end;
+$$;
+
+grant execute on function public.admin_soft_delete_post(uuid) to authenticated;
+
 create or replace function public.admin_delete_user_account(
   p_user_id uuid
 )
@@ -58,6 +164,7 @@ as $$
 declare
   v_avatar_objects text[];
   v_portfolio_objects text[];
+  v_post_media_objects text[];
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -100,6 +207,12 @@ begin
   where bucket_id = 'portfolio-images'
     and name like 'portfolio/' || p_user_id::text || '/%';
 
+  select coalesce(array_agg(name), array[]::text[])
+  into v_post_media_objects
+  from storage.objects
+  where bucket_id = 'post-images'
+    and name like p_user_id::text || '/%';
+
   delete from public.notifications
   where recipient_id = p_user_id
      or actor_id = p_user_id;
@@ -122,7 +235,7 @@ begin
 
   delete from public.follows
   where follower_id = p_user_id
-     or following_id = p_user_id;
+     or followed_profile_id = p_user_id;
 
   delete from public.profile_portfolio
   where profile_id = p_user_id;
@@ -193,6 +306,12 @@ begin
     delete from storage.objects
     where bucket_id = 'portfolio-images'
       and name = any(v_portfolio_objects);
+  end if;
+
+  if array_length(v_post_media_objects, 1) is not null then
+    delete from storage.objects
+    where bucket_id = 'post-images'
+      and name = any(v_post_media_objects);
   end if;
 
   delete from auth.users

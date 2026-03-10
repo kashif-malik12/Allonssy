@@ -343,12 +343,19 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
 
   bool get _isBuyer => _db.auth.currentUser?.id == _buyerId;
   bool get _isSeller => _db.auth.currentUser?.id == _sellerId;
+  String? get _myUserId => _db.auth.currentUser?.id;
   bool get _hasPendingOffer =>
       _currentOfferStatus == 'pending' && _currentOfferAmount != null;
   bool get _canAcceptReject =>
-      _hasPendingOffer && _currentOfferBy != _db.auth.currentUser?.id;
+      _hasPendingOffer && _currentOfferBy != _myUserId;
+  bool get _iSentCurrentPendingOffer =>
+      _hasPendingOffer && _currentOfferBy == _myUserId;
+  bool get _canSendOfferAction =>
+      _currentOfferStatus != 'accepted' && !_iSentCurrentPendingOffer;
   bool get _canCounterOffer =>
-      _currentOfferAmount != null && _currentOfferStatus != 'accepted';
+      _currentOfferAmount != null &&
+      _currentOfferStatus != 'accepted' &&
+      _canSendOfferAction;
 
   String _offerStatusLabel() {
     if (_currentOfferAmount == null) return 'No active offer yet';
@@ -361,12 +368,20 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
 
   String _offerActionTitle() {
     if (!_hasPendingOffer) {
-      return _canCounterOffer ? 'Offer updated' : 'Start an offer';
+      return _currentOfferAmount == null ? 'Start an offer' : 'Offer updated';
     }
     if (_canAcceptReject) {
       return 'Offer received';
     }
     return 'Waiting for response';
+  }
+
+  String _offerPrimaryActionLabel() {
+    if (_iSentCurrentPendingOffer) return 'Waiting for response';
+    if (_currentOfferAmount == null) return 'Make offer';
+    if (_hasPendingOffer && _currentOfferBy != _myUserId) return 'Counter offer';
+    if (_currentOfferStatus == 'rejected') return 'Send new offer';
+    return 'Update offer';
   }
 
   String? _listingRoute() {
@@ -396,19 +411,6 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
               )
             : null,
         actions: [
-          if ((_otherUserId ?? '').isNotEmpty)
-            IconButton(
-              tooltip: 'User options',
-              onPressed: () => openChatUserActions(
-                context: context,
-                otherUserId: _otherUserId!,
-                onBlocked: () async {
-                  if (!mounted) return;
-                  context.go('/chats');
-                },
-              ),
-              icon: const Icon(Icons.more_vert),
-            ),
           IconButton(
             tooltip: 'Home',
             onPressed: () => context.go('/feed'),
@@ -530,10 +532,12 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
                                         runSpacing: 8,
                                         children: [
                                           FilledButton.icon(
-                                            onPressed: _busy ? null : _submitOfferFlow,
+                                            onPressed: (_busy || !_canSendOfferAction)
+                                                ? null
+                                                : _submitOfferFlow,
                                             icon: const Icon(Icons.local_offer_outlined),
                                             label: Text(
-                                              _canCounterOffer ? 'Counter offer' : 'Make offer',
+                                              _offerPrimaryActionLabel(),
                                             ),
                                           ),
                                           if (_canAcceptReject)

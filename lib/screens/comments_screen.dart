@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/post_model.dart';
 import '../services/mention_service.dart';
+import '../services/post_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/global_bottom_nav.dart';
+import '../widgets/post_media_view.dart';
 import '../widgets/mention_picker_sheet.dart';
 import '../widgets/tagged_content.dart';
 
@@ -24,7 +27,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
   final _mentionSvc = MentionService(Supabase.instance.client);
 
   bool _loading = true;
+  bool _isSending = false;
   String? _error;
+  Post? _post;
   List<Map<String, dynamic>> _comments = [];
   String? _replyToCommentId;
   String? _replyToUserId;
@@ -51,8 +56,26 @@ class _CommentsScreenState extends State<CommentsScreen> {
     });
 
     try {
+      final postService = PostService(Supabase.instance.client);
+      final postRow = await Supabase.instance.client
+          .from('posts')
+          .select(PostService.postSelect)
+          .eq('id', widget.postId)
+          .maybeSingle();
       final rows = await _svc.fetchComments(widget.postId);
-      setState(() => _comments = rows);
+
+      Post? hydratedPost;
+      if (postRow != null) {
+        final hydrated = await postService.attachSharedPosts([
+          Map<String, dynamic>.from(postRow),
+        ]);
+        hydratedPost = Post.fromMap(hydrated.first);
+      }
+
+      setState(() {
+        _post = hydratedPost;
+        _comments = rows;
+      });
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -60,10 +83,161 @@ class _CommentsScreenState extends State<CommentsScreen> {
     }
   }
 
+  Widget _buildPostPreview() {
+    final post = _post;
+    if (post == null) return const SizedBox.shrink();
+    final displayPost = post.sharedPost ?? post;
+    final previewText = displayPost.content.trim();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE6DDCE)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: () => context.push('/p/${post.userId}'),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundImage: (post.authorAvatarUrl != null &&
+                              post.authorAvatarUrl!.isNotEmpty)
+                          ? NetworkImage(post.authorAvatarUrl!)
+                          : null,
+                      child: (post.authorAvatarUrl == null ||
+                              post.authorAvatarUrl!.isEmpty)
+                          ? const Icon(Icons.person, size: 18)
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        post.authorName ?? 'Unknown',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (post.sharedPost != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F5EE),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE6DDCE)),
+                ),
+                child: Text(
+                  'Shared post from ${displayPost.authorName ?? 'Unknown'}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+            if (previewText.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              TaggedContent(
+                content: previewText.length > 160
+                    ? '${previewText.substring(0, 160).trim()}...'
+                    : previewText,
+                textStyle: const TextStyle(fontSize: 13),
+              ),
+            ],
+            if ((displayPost.imageUrl ?? '').isNotEmpty ||
+                (displayPost.secondImageUrl ?? '').isNotEmpty ||
+                (displayPost.videoUrl ?? '').isNotEmpty) ...[
+              const SizedBox(height: 8),
+              PostMediaView(
+                imageUrl: displayPost.imageUrl,
+                secondImageUrl: displayPost.secondImageUrl,
+                videoUrl: displayPost.videoUrl,
+                maxHeight: 140,
+                singleImagePreview: true,
+                autoplay: false,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCommentsHeader(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE6DDCE)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F766E).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.forum_outlined,
+                color: Color(0xFF0F766E),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Post comments',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_comments.length} ${_comments.length == 1 ? 'comment' : 'comments'}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _send() async {
     final rawText = _ctrl.text.trim();
-    if (rawText.isEmpty) return;
+    if (rawText.isEmpty || _isSending) return;
 
+    setState(() => _isSending = true);
     try {
       final postOwnerId = _comments.isNotEmpty ? (_comments.first['post_owner_id']?.toString()) : null;
       final allowedTagIds =
@@ -89,6 +263,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Comment error: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -143,24 +319,30 @@ class _CommentsScreenState extends State<CommentsScreen> {
   }
 
   Widget _buildCommentItem(Map<String, dynamic> comment, String? me, int depth) {
+    final postOwnerId = comment['post_owner_id']?.toString();
     final profile = comment['profiles'];
-    final name = (profile is Map ? profile['full_name'] : null) ?? 'Unknown';
-    final avatarUrl = profile is Map ? profile['avatar_url']?.toString() : null;
     final userId = comment['user_id']?.toString();
-    final mine = me != null && comment['user_id']?.toString() == me;
+    final isAnswer = userId != null && postOwnerId != null && userId == postOwnerId;
+    final name = (profile is Map ? profile['full_name'] : null) ?? 'Unknown';
+    final displayName = isAnswer ? 'Author' : name.toString();
+    final avatarUrl = profile is Map ? profile['avatar_url']?.toString() : null;
+    final mine = me != null && userId == me;
+    final isOwner = me != null && me == postOwnerId;
     final likeCount = (comment['like_count'] as num?)?.toInt() ?? 0;
     final likedByMe = comment['liked_by_me'] == true;
     final commentId = (comment['id'] ?? '').toString();
     final postId = (comment['post_id'] ?? widget.postId).toString();
 
     return Padding(
-      padding: EdgeInsets.only(left: depth * 18.0),
+      padding: EdgeInsets.only(left: depth * 14.0),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: mine ? const Color(0xFFF4EBDD) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE6DDCE)),
+          color: isAnswer ? const Color(0xFFF4EBDD) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isAnswer ? const Color(0xFFDCC8AA) : const Color(0xFFE6DDCE),
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,19 +351,19 @@ class _CommentsScreenState extends State<CommentsScreen> {
               onTap: userId == null || userId.isEmpty ? null : () => context.push('/p/$userId'),
               borderRadius: BorderRadius.circular(999),
               child: CircleAvatar(
-                radius: 18,
+                radius: 15,
                 backgroundImage:
                     avatarUrl != null && avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
                 child: avatarUrl == null || avatarUrl.isEmpty
                     ? Text(
-                        name.toString().trim().isEmpty
+                        displayName.trim().isEmpty
                             ? '?'
-                            : name.toString().trim()[0].toUpperCase(),
+                            : displayName.trim()[0].toUpperCase(),
                       )
                     : null,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,17 +375,21 @@ class _CommentsScreenState extends State<CommentsScreen> {
                           onTap: userId == null || userId.isEmpty ? null : () => context.push('/p/$userId'),
                           borderRadius: BorderRadius.circular(8),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            padding: const EdgeInsets.symmetric(vertical: 1),
                             child: Text(
-                              name.toString(),
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              displayName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                                color: isAnswer ? const Color(0xFF7A5C2E) : const Color(0xFF12211D),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                      if (mine)
+                      if (mine && !isAnswer)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
                             color: const Color(0xFF0F766E).withOpacity(0.08),
                             borderRadius: BorderRadius.circular(999),
@@ -219,13 +405,22 @@ class _CommentsScreenState extends State<CommentsScreen> {
                         ),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  TaggedContent(
+                    content: comment['content']?.toString() ?? '',
+                    textStyle: const TextStyle(fontSize: 13),
+                  ),
                   const SizedBox(height: 6),
-                  TaggedContent(content: comment['content']?.toString() ?? ''),
-                  const SizedBox(height: 10),
                   Wrap(
-                    spacing: 6,
+                    spacing: 2,
                     children: [
                       TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                          minimumSize: const Size(0, 32),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         onPressed: commentId.isEmpty || userId == null || userId.isEmpty
                             ? null
                             : () async {
@@ -249,22 +444,28 @@ class _CommentsScreenState extends State<CommentsScreen> {
                               },
                         icon: Icon(
                           likedByMe ? Icons.favorite : Icons.favorite_border,
-                          size: 18,
+                          size: 16,
                         ),
                         label: Text('$likeCount'),
                       ),
                       TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                          minimumSize: const Size(0, 32),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         onPressed: commentId.isEmpty || userId == null || userId.isEmpty
                             ? null
                             : () {
                                 setState(() {
                                   _replyToCommentId = commentId;
                                   _replyToUserId = userId;
-                                  _replyToName = name.toString();
+                                  _replyToName = displayName;
                                 });
                                 _inputFocus.requestFocus();
                               },
-                        icon: const Icon(Icons.reply_outlined, size: 18),
+                        icon: const Icon(Icons.reply_outlined, size: 16),
                         label: const Text('Reply'),
                       ),
                     ],
@@ -273,10 +474,13 @@ class _CommentsScreenState extends State<CommentsScreen> {
               ),
             ),
             if (mine) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               IconButton(
                 tooltip: 'Delete comment',
-                icon: const Icon(Icons.delete_outline, size: 20),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                icon: const Icon(Icons.delete_outline, size: 18),
                 onPressed: () async {
                   await _svc.deleteComment(comment['id'].toString());
                   await _load();
@@ -294,10 +498,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final me = Supabase.instance.client.auth.currentUser?.id;
     final theme = Theme.of(context);
     final visibleComments = _visibleComments();
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Comments')),
-      bottomNavigationBar: const GlobalBottomNav(),
+      bottomNavigationBar: keyboardOpen ? null : const GlobalBottomNav(),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -311,55 +516,6 @@ class _CommentsScreenState extends State<CommentsScreen> {
             constraints: const BoxConstraints(maxWidth: 760),
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: const Color(0xFFE6DDCE)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F766E).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.forum_outlined,
-                            color: Color(0xFF0F766E),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Post comments',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${_comments.length} ${_comments.length == 1 ? 'comment' : 'comments'}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
                 Expanded(
                   child: _loading
                       ? const Center(child: CircularProgressIndicator())
@@ -373,13 +529,19 @@ class _CommentsScreenState extends State<CommentsScreen> {
                               child: ListView.separated(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 padding: const EdgeInsets.all(12),
-                                itemCount: visibleComments.length,
-                                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                                itemBuilder: (_, i) => _buildCommentItem(
-                                  visibleComments[i].comment,
-                                  me,
-                                  visibleComments[i].depth,
-                                ),
+                                itemCount: visibleComments.length + 2,
+                                separatorBuilder: (_, i) =>
+                                    i < 2 ? const SizedBox(height: 12) : const SizedBox(height: 10),
+                                itemBuilder: (_, i) {
+                                  if (i == 0) return _buildPostPreview();
+                                  if (i == 1) return _buildCommentsHeader(theme);
+                                  final item = visibleComments[i - 2];
+                                  return _buildCommentItem(
+                                    item.comment,
+                                    me,
+                                    item.depth,
+                                  );
+                                },
                               ),
                             ),
                 ),
@@ -447,7 +609,9 @@ class _CommentsScreenState extends State<CommentsScreen> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      'Replying to ${_replyToName ?? 'comment'}',
+                                      (me != null && _comments.isNotEmpty && me == _comments.first['post_owner_id']?.toString())
+                                          ? 'Replying as Author to ${_replyToName ?? 'comment'}'
+                                          : 'Replying to ${_replyToName ?? 'comment'}',
                                       style: const TextStyle(fontWeight: FontWeight.w700),
                                     ),
                                   ),
@@ -494,10 +658,24 @@ class _CommentsScreenState extends State<CommentsScreen> {
                               ),
                               const SizedBox(width: 8),
                               FilledButton.icon(
-                                onPressed: _send,
-                                icon: const Icon(Icons.send_rounded, size: 18),
-                                label: Text(_replyToCommentId == null ? 'Send' : 'Reply'),
+                                onPressed: _isSending ? null : _send,
+                                icon: _isSending
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.send_rounded, size: 18),
+                                label: Text(
+                                  _isSending
+                                      ? 'Sending...'
+                                      : (_replyToCommentId == null ? 'Send' : 'Reply'),
+                                ),
                               ),
+
                             ],
                           ),
                         ],

@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'media_compression_service.dart';
+
 class ProfileService {
   final SupabaseClient _db;
   ProfileService(this._db);
@@ -28,33 +30,20 @@ class ProfileService {
     required XFile image,
     required String userId,
   }) async {
-    final ext = image.name.split('.').last.toLowerCase();
-    final safeExt = ext.isEmpty ? 'jpg' : ext;
+    final compressed = await MediaCompressionService.compressImage(image, quality: 72);
+    final safeExt = compressed.extension;
 
     final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}.$safeExt';
     final path = '$userId/$fileName';
 
-    if (kIsWeb) {
-      final Uint8List bytes = await image.readAsBytes();
-      await _db.storage.from('avatars').uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(
-              upsert: true,
-              contentType: _contentTypeFromExt(safeExt),
-            ),
-          );
-    } else {
-      final file = File(image.path);
-      await _db.storage.from('avatars').upload(
-            path,
-            file,
-            fileOptions: FileOptions(
-              upsert: true,
-              contentType: _contentTypeFromExt(safeExt),
-            ),
-          );
-    }
+    await _db.storage.from('avatars').uploadBinary(
+          path,
+          compressed.bytes,
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: compressed.contentType,
+          ),
+        );
 
     // Works if bucket is PUBLIC
     return _db.storage.from('avatars').getPublicUrl(path);

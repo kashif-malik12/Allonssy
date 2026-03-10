@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/food_categories.dart';
 import '../models/post_model.dart';
+import '../services/mention_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
@@ -12,8 +13,13 @@ import '../widgets/tagged_content.dart';
 
 class FoodAdDetailScreen extends StatefulWidget {
   final String postId;
+  final int initialTab;
 
-  const FoodAdDetailScreen({super.key, required this.postId});
+  const FoodAdDetailScreen({
+    super.key,
+    required this.postId,
+    this.initialTab = 0,
+  });
 
   @override
   State<FoodAdDetailScreen> createState() => _FoodAdDetailScreenState();
@@ -28,8 +34,9 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
   String? _error;
   Post? _post;
 
-  int _selectedTab = 0;
+  late int _selectedTab;
   bool _commentsLoading = true;
+  bool _qaSending = false;
   String? _commentsError;
   List<Map<String, dynamic>> _comments = [];
   String? _replyToCommentId;
@@ -39,6 +46,7 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedTab = widget.initialTab;
     _load();
   }
 
@@ -58,7 +66,7 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
     try {
       final row = await Supabase.instance.client
           .from('posts')
-          .select('*, profiles(full_name, avatar_url, city, zipcode)')
+          .select('*, profiles(full_name, business_name, avatar_url, city, zipcode)')
           .eq('id', widget.postId)
           .inFilter('post_type', ['food_ad', 'food'])
           .maybeSingle();
@@ -95,6 +103,10 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
     }
   }
 
+  String _plainListingText(String raw) {
+    return MentionService.parseTaggedContent(raw).body;
+  }
+
   List<_CommentView> _visibleComments() {
     final byParent = <String?, List<Map<String, dynamic>>>{};
     for (final comment in _comments) {
@@ -119,8 +131,9 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
   Future<void> _sendComment() async {
     final post = _post;
     final raw = _commentCtrl.text.trim();
-    if (post == null || raw.isEmpty) return;
+    if (post == null || raw.isEmpty || _qaSending) return;
 
+    setState(() => _qaSending = true);
     try {
       await _svc.addComment(
         widget.postId,
@@ -142,7 +155,17 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Comment error: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _qaSending = false);
     }
+  }
+
+  String _displayAuthorName(Map<String, dynamic> comment, String ownerId) {
+    final userId = comment['user_id']?.toString();
+    if (userId == ownerId) return 'Author';
+    final profile = comment['profiles'];
+    final name = (profile is Map ? profile['full_name'] : null)?.toString().trim();
+    return (name == null || name.isEmpty) ? 'User' : name;
   }
 
   Widget _buildTabButton({
@@ -178,24 +201,28 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
   }
 
   Widget _buildCommentItem(Map<String, dynamic> comment, String? me, int depth) {
+    final ownerId = _post?.userId ?? '';
+    final displayName = _displayAuthorName(comment, ownerId);
     final profile = comment['profiles'];
-    final name = (profile is Map ? profile['full_name'] : null)?.toString().trim();
-    final displayName = (name == null || name.isEmpty) ? 'Unknown' : name;
     final avatarUrl = profile is Map ? profile['avatar_url']?.toString() : null;
     final userId = comment['user_id']?.toString();
     final mine = me != null && userId == me;
+    final isOwner = me != null && me == ownerId;
     final likeCount = (comment['like_count'] as num?)?.toInt() ?? 0;
     final likedByMe = comment['liked_by_me'] == true;
     final commentId = (comment['id'] ?? '').toString();
+    final isAnswer = userId == ownerId;
 
     return Padding(
       padding: EdgeInsets.only(left: depth * 18.0),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: mine ? const Color(0xFFF4EBDD) : Colors.white,
+          color: isAnswer ? const Color(0xFFF4EBDD) : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE6DDCE)),
+          border: Border.all(
+            color: isAnswer ? const Color(0xFFDCC8AA) : const Color(0xFFE6DDCE),
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,12 +254,15 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 2),
                             child: Text(
                               displayName,
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: isAnswer ? const Color(0xFF7A5C2E) : const Color(0xFF12211D),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                      if (mine)
+                      if (mine && !isAnswer)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
@@ -328,7 +358,7 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
         ),
         const SizedBox(height: 8),
-        TaggedContent(content: p.content),
+        Text(_plainListingText(p.content)),
       ],
     );
   }
@@ -336,6 +366,7 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
   Widget _buildCommentsTab(ThemeData theme) {
     final me = Supabase.instance.client.auth.currentUser?.id;
     final visibleComments = _visibleComments();
+    final isOwner = me != null && me == _post?.userId;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -441,7 +472,9 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Replying to ${_replyToName ?? 'comment'}',
+                          isOwner
+                              ? 'Replying as Author to ${_replyToName ?? 'comment'}'
+                              : 'Replying to ${_replyToName ?? 'comment'}',
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
@@ -483,9 +516,20 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
                   ),
                   const SizedBox(width: 8),
                   FilledButton.icon(
-                    onPressed: _sendComment,
-                    icon: const Icon(Icons.send_rounded, size: 18),
-                    label: Text(_replyToCommentId == null ? 'Send' : 'Reply'),
+                    onPressed: _qaSending ? null : _sendComment,
+                    icon: _qaSending
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded, size: 18),
+                    label: _qaSending
+                        ? const Text('Sending...')
+                        : Text(_replyToCommentId == null ? 'Send' : 'Reply'),
                   ),
                 ],
               ),
@@ -558,7 +602,7 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 2),
                               child: Text(
-                                'Restaurant: ${p.authorName ?? 'Unknown'}',
+                                'Restaurant: ${p.authorBusinessName ?? p.authorName ?? 'Unknown'}',
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
                             ),

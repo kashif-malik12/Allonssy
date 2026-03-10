@@ -78,17 +78,21 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
       try {
         final data = await db
             .from('profiles')
-            .select('id, full_name, bio, avatar_url, city, latitude, longitude, is_restaurant, restaurant_type, account_type')
+            .select('id, full_name, bio, business_profile, avatar_url, city, latitude, longitude, is_restaurant, restaurant_type, account_type, business_name, job_title, is_disabled')
             .eq('is_restaurant', true)
-            .order('full_name');
+            .eq('is_disabled', false)
+            .order('business_name');
         rows = (data as List).cast<Map<String, dynamic>>();
       } on PostgrestException {
         final data = await db
             .from('profiles')
-            .select('id, full_name, bio, avatar_url, city, latitude, longitude, account_type')
+            .select('id, full_name, bio, business_profile, avatar_url, city, latitude, longitude, account_type, business_name, job_title, is_disabled')
             .eq('account_type', 'business')
-            .order('full_name');
-        rows = (data as List).cast<Map<String, dynamic>>();
+            .order('business_name');
+        rows = (data as List)
+            .cast<Map<String, dynamic>>()
+            .where((r) => r['is_disabled'] != true)
+            .toList();
       }
 
       var items = rows;
@@ -101,8 +105,10 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
       if (_search.trim().isNotEmpty) {
         final q = _search.toLowerCase().trim();
         items = items.where((r) {
-          return (r['full_name'] ?? '').toString().toLowerCase().contains(q) ||
+          return (r['business_name'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['full_name'] ?? '').toString().toLowerCase().contains(q) ||
               (r['bio'] ?? '').toString().toLowerCase().contains(q) ||
+              (r['business_profile'] ?? '').toString().toLowerCase().contains(q) ||
               (r['city'] ?? '').toString().toLowerCase().contains(q) ||
               restaurantCategoryLabel((r['restaurant_type'] ?? '').toString())
                   .toLowerCase()
@@ -242,39 +248,68 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
 
                               final id = (r['id'] ?? '').toString();
                               
-                              return Card(
-                                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                child: ListTile(
-                                onTap: id.isEmpty ? null : () => context.push('/p/$id'),
-                                contentPadding: const EdgeInsets.all(12),
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Container(
-                                    width: 64,
-                                    height: 64,
-                                    color: Colors.grey.shade200,
-                                    padding: const EdgeInsets.all(6),
-                                    child: (r['avatar_url'] ?? '').toString().isNotEmpty
-                                        ? Image.network(
-                                            (r['avatar_url'] ?? '').toString(),
-                                            fit: BoxFit.contain,
-                                          )
-                                        : const Icon(Icons.storefront_outlined),
+                                final bName = (r['business_name'] as String?) ?? (r['full_name'] as String?) ?? 'Restaurant';
+                                final job = r['job_title'] as String?;
+                                final businessProfile = (r['business_profile'] as String?) ?? '';
+
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  child: ListTile(
+                                  onTap: id.isEmpty ? null : () => context.push('/p/$id'),
+                                  contentPadding: const EdgeInsets.all(12),
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      width: 64,
+                                      height: 64,
+                                      color: Colors.grey.shade200,
+                                      padding: const EdgeInsets.all(6),
+                                      child: (r['avatar_url'] ?? '').toString().isNotEmpty
+                                          ? Image.network(
+                                              (r['avatar_url'] ?? '').toString(),
+                                              fit: BoxFit.contain,
+                                            )
+                                          : const Icon(Icons.storefront_outlined),
+                                    ),
                                   ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    Expanded(child: Text((r['full_name'] ?? 'Restaurant').toString())),
-                                    const Icon(Icons.verified, color: Colors.green, size: 18),
-                                  ],
-                                ),
-                                subtitle: Text(
-                                  '${(r['restaurant_type'] ?? '').toString().isNotEmpty ? restaurantCategoryLabel((r['restaurant_type'] ?? '').toString()) : 'Restaurant'}'
-                                  '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
-                                  '${(r['city'] ?? '').toString().isNotEmpty ? ' • ${(r['city'] ?? '').toString()}' : ''}',
-                                ),
-                                ),
-                              );
+                                  title: Row(
+                                    children: [
+                                      Expanded(child: Text(bName)),
+                                      const Icon(Icons.verified, color: Colors.green, size: 18),
+                                    ],
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (job != null && job.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 2),
+                                          child: Text(
+                                            job,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      Text(
+                                        '${(r['restaurant_type'] ?? '').toString().isNotEmpty ? restaurantCategoryLabel((r['restaurant_type'] ?? '').toString()) : 'Restaurant'}'
+                                        '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
+                                        '${(r['city'] ?? '').toString().isNotEmpty ? ' • ${(r['city'] ?? '').toString()}' : ''}',
+                                      ),
+                                      if (businessProfile.trim().isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            businessProfile.trim(),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  ),
+                                );
                             },
                           ),
           ),

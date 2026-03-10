@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/market_categories.dart';
 import '../models/post_model.dart';
+import '../services/mention_service.dart';
+import '../services/post_service.dart';
 import '../services/reaction_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
@@ -33,6 +35,7 @@ class _MarketplaceProductDetailScreenState
   Post? _post;
   List<Map<String, dynamic>> _qaComments = [];
   bool _qaLoading = false;
+  bool _qaSending = false;
   String? _replyToCommentId;
   String? _replyToName;
   String? _replyToUserId;
@@ -83,6 +86,10 @@ class _MarketplaceProductDetailScreenState
     return null;
   }
 
+  String _plainListingText(String raw) {
+    return MentionService.parseTaggedContent(raw).body;
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -92,7 +99,7 @@ class _MarketplaceProductDetailScreenState
     try {
       final row = await Supabase.instance.client
           .from('posts')
-          .select('*, profiles(full_name, avatar_url, city, zipcode)')
+          .select(PostService.postSelect)
           .eq('id', widget.postId)
           .eq('post_type', 'market')
           .maybeSingle();
@@ -135,8 +142,9 @@ class _MarketplaceProductDetailScreenState
   Future<void> _sendQuestionOrReply() async {
     final post = _post;
     final text = _questionCtrl.text.trim();
-    if (post == null || text.isEmpty) return;
+    if (post == null || text.isEmpty || _qaSending) return;
 
+    setState(() => _qaSending = true);
     try {
       await _reactionService.addComment(
         post.id,
@@ -158,6 +166,8 @@ class _MarketplaceProductDetailScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Q&A error: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _qaSending = false);
     }
   }
 
@@ -175,7 +185,7 @@ class _MarketplaceProductDetailScreenState
 
   String _displayAuthorName(Map<String, dynamic> comment, String ownerId) {
     final userId = comment['user_id']?.toString();
-    if (userId == ownerId) return 'Owner/Author';
+    if (userId == ownerId) return 'Author';
     final profile = comment['profiles'];
     final name = profile is Map ? profile['full_name']?.toString().trim() : null;
     return (name == null || name.isEmpty) ? 'User' : name;
@@ -246,7 +256,7 @@ class _MarketplaceProductDetailScreenState
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
-        TaggedContent(content: p.content),
+        Text(_plainListingText(p.content)),
         if (canSendOffer) ...[
           const SizedBox(height: 20),
           SizedBox(
@@ -334,7 +344,7 @@ class _MarketplaceProductDetailScreenState
                         children: [
                           Expanded(
                             child: Text(
-                              'Replying as Owner/Author to ${_replyToName ?? 'question'}',
+                              'Replying as Author to ${_replyToName ?? 'question'}',
                               style: const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
@@ -367,12 +377,18 @@ class _MarketplaceProductDetailScreenState
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: isOwner && _replyToCommentId == null ? null : _sendQuestionOrReply,
-                      child: Text(
-                        isOwner
-                            ? (_replyToCommentId == null ? 'Select a question to answer' : 'Post answer')
-                            : 'Post question',
-                      ),
+                      onPressed: (isOwner && _replyToCommentId == null) || _qaSending ? null : _sendQuestionOrReply,
+                      child: _qaSending
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Text(
+                              isOwner
+                                  ? (_replyToCommentId == null ? 'Select a question to answer' : 'Post answer')
+                                  : 'Post question',
+                            ),
                     ),
                   ),
                 ],
@@ -439,7 +455,7 @@ class _MarketplaceProductDetailScreenState
                               Text(
                                 (p.marketTitle ?? '').trim().isNotEmpty
                                     ? p.marketTitle!.trim()
-                                    : p.content,
+                                    : _plainListingText(p.content),
                                 style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w700,

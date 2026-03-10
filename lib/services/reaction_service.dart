@@ -97,7 +97,7 @@ class ReactionService {
       'post_id': postId,
       'user_id': _me,
       'content': trimmed,
-      'parent_comment_id': ?parentCommentId,
+      'parent_comment_id': parentCommentId,
     }).select('id').single();
 
     final commentId = (inserted['id'] ?? '').toString();
@@ -118,7 +118,10 @@ class ReactionService {
       );
     }
 
-    if (postOwnerId != null && postOwnerId.isNotEmpty && postOwnerId != _me) {
+    if (postOwnerId != null &&
+        postOwnerId.isNotEmpty &&
+        postOwnerId != _me &&
+        !skipMentionRecipients.contains(postOwnerId)) {
       skipMentionRecipients.add(postOwnerId);
       await _notifyCommentEngagement(
         recipientId: postOwnerId,

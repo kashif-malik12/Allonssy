@@ -1,42 +1,107 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../app/router.dart';
+import '../services/app_settings_service.dart';
+
 class NetworkVideoPlayer extends StatefulWidget {
   final String videoUrl;
   final double maxHeight;
+  final bool startMuted;
+  final bool showMuteToggle;
+  final bool? autoplay;
+  final double muteTopOffset;
 
   const NetworkVideoPlayer({
     super.key,
     required this.videoUrl,
     this.maxHeight = 360,
+    this.startMuted = false,
+    this.showMuteToggle = false,
+    this.autoplay,
+    this.muteTopOffset = 12,
   });
 
   @override
   State<NetworkVideoPlayer> createState() => _NetworkVideoPlayerState();
 }
 
-class _NetworkVideoPlayerState extends State<NetworkVideoPlayer> {
+class _NetworkVideoPlayerState extends State<NetworkVideoPlayer>
+    with WidgetsBindingObserver, RouteAware {
   VideoPlayerController? _controller;
   bool _loading = true;
   bool _failed = false;
+  bool _muted = false;
+  ModalRoute<dynamic>? _route;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (_route == route) return;
+    if (_route is PageRoute) {
+      appRouteObserver.unsubscribe(this);
+    }
+    _route = route;
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void deactivate() {
+    _pauseSafely();
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    if (_route is PageRoute) {
+      appRouteObserver.unsubscribe(this);
+    }
+    WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _pauseSafely();
+    }
+  }
+
+  @override
+  void didPushNext() => _pauseSafely();
+
+  @override
+  void didPop() => _pauseSafely();
+
+  void _pauseSafely() {
+    final controller = _controller;
+    if (controller != null && controller.value.isInitialized && controller.value.isPlaying) {
+      controller.pause();
+    }
   }
 
   Future<void> _init() async {
     final controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
     try {
       await controller.initialize();
-      controller.setLooping(false);
+      controller.setLooping(true);
+      _muted = widget.startMuted;
+      await controller.setVolume(_muted ? 0 : 1);
+      final shouldAutoplay = widget.autoplay ?? AppSettingsService.currentVideoAutoplayEnabled();
+      if (shouldAutoplay) {
+        await controller.play();
+      }
       if (!mounted) {
         await controller.dispose();
         return;
@@ -53,6 +118,16 @@ class _NetworkVideoPlayerState extends State<NetworkVideoPlayer> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _toggleMute() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    final nextMuted = !_muted;
+    await controller.setVolume(nextMuted ? 0 : 1);
+    if (!mounted) return;
+    setState(() => _muted = nextMuted);
   }
 
   @override
@@ -83,6 +158,7 @@ class _NetworkVideoPlayerState extends State<NetworkVideoPlayer> {
     }
 
     final aspectRatio = controller.value.aspectRatio == 0 ? 16 / 9 : controller.value.aspectRatio;
+    final expandToFill = widget.maxHeight == double.infinity;
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -91,9 +167,20 @@ class _NetworkVideoPlayerState extends State<NetworkVideoPlayer> {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            AspectRatio(
-              aspectRatio: aspectRatio,
-              child: VideoPlayer(controller),
+            Positioned.fill(
+              child: expandToFill
+                  ? FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: controller.value.size.width,
+                        height: controller.value.size.height,
+                        child: VideoPlayer(controller),
+                      ),
+                    )
+                  : AspectRatio(
+                      aspectRatio: aspectRatio,
+                      child: VideoPlayer(controller),
+                    ),
             ),
             InkWell(
               onTap: () {
@@ -123,6 +210,27 @@ class _NetworkVideoPlayerState extends State<NetworkVideoPlayer> {
                 ),
               ),
             ),
+            if (widget.showMuteToggle)
+              Positioned(
+                top: widget.muteTopOffset,
+                right: 12,
+                child: Material(
+                  color: Colors.black.withOpacity(0.5),
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _toggleMute,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        _muted ? Icons.volume_off : Icons.volume_up,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

@@ -149,6 +149,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                     actorId: n.actorId,
                     postId: n.postId,
                     commentId: n.commentId,
+                    postType: n.postType,
+                    postOwnerId: n.postOwnerId,
                     readAt: now,
                     actorName: n.actorName,
                     actorAvatarUrl: n.actorAvatarUrl,
@@ -182,6 +184,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 actorId: x.actorId,
                 postId: x.postId,
                 commentId: x.commentId,
+                postType: x.postType,
+                postOwnerId: x.postOwnerId,
                 readAt: DateTime.now(),
                 actorName: x.actorName,
                 actorAvatarUrl: x.actorAvatarUrl,
@@ -200,20 +204,74 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       return;
     }
 
-    if ((n.type == 'like' || n.type == 'comment' || n.type == 'share') && n.postId != null) {
-      if (!mounted) return;
-      context.push('/post/${n.postId}');
-      return;
-    }
+    if ((n.type == 'like' || n.type == 'comment' || n.type == 'share' || n.type == 'comment_like' || n.type == 'comment_reply') && n.postId != null) {
+      String targetPostId = n.postId!;
+      if (n.type == 'share' && n.actorId != null) {
+        final sharedWrapper = await _db
+            .from('posts')
+            .select('id')
+            .eq('user_id', n.actorId!)
+            .eq('shared_post_id', n.postId!)
+            .maybeSingle();
+        final resolvedId = (sharedWrapper?['id'] ?? '').toString();
+        if (resolvedId.isNotEmpty) {
+          targetPostId = resolvedId;
+        }
+      }
 
-    if ((n.type == 'comment_like' || n.type == 'comment_reply') && n.postId != null) {
+      final post = await _db
+          .from('posts')
+          .select('post_type')
+          .eq('id', targetPostId)
+          .maybeSingle();
+
+      final postType = (post?['post_type'] as String?) ?? '';
       if (!mounted) return;
-      context.push('/post/${n.postId}/comments');
+
+      if (postType == 'market') {
+        context.push('/marketplace/product/$targetPostId?tab=qa');
+        return;
+      }
+      if (postType == 'service_offer' || postType == 'service_request') {
+        context.push('/gigs/service/$targetPostId?tab=qa');
+        return;
+      }
+      if (postType == 'food_ad' || postType == 'food') {
+        context.push('/foods/$targetPostId?tab=qa');
+        return;
+      }
+
+      if (n.type == 'comment_like' || n.type == 'comment_reply') {
+        context.push('/post/$targetPostId/comments');
+      } else {
+        context.push('/post/$targetPostId');
+      }
       return;
     }
 
     if (n.type == 'mention' && n.postId != null) {
+      final post = await _db
+          .from('posts')
+          .select('post_type')
+          .eq('id', n.postId!)
+          .maybeSingle();
+
+      final postType = (post?['post_type'] as String?) ?? '';
       if (!mounted) return;
+
+      if (postType == 'market') {
+        context.push('/marketplace/product/${n.postId}?tab=qa');
+        return;
+      }
+      if (postType == 'service_offer' || postType == 'service_request') {
+        context.push('/gigs/service/${n.postId}?tab=qa');
+        return;
+      }
+      if (postType == 'food_ad' || postType == 'food') {
+        context.push('/foods/${n.postId}?tab=qa');
+        return;
+      }
+
       if (n.commentId != null && n.commentId!.isNotEmpty) {
         context.push('/post/${n.postId}/comments');
       } else {
@@ -226,24 +284,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             n.type == 'offer_sent' ||
             n.type == 'offer_accepted' ||
             n.type == 'offer_rejected') &&
-        n.postId != null) {
-      final post = await _db
-          .from('posts')
-          .select('post_type')
-          .eq('id', n.postId!)
-          .maybeSingle();
-
-      final postType = (post?['post_type'] as String?) ?? '';
+        n.postId != null &&
+        n.actorId != null) {
       if (!mounted) return;
-
-      if (postType == 'market') {
-        context.push('/marketplace/product/${n.postId}');
-        return;
-      }
-      if (postType == 'service_offer' || postType == 'service_request') {
-        context.push('/gigs/service/${n.postId}');
-        return;
-      }
+      context.push('/offer-chat/post/${n.postId}/user/${n.actorId}');
+      return;
     }
 
     if (!mounted) return;
@@ -331,7 +376,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   String _titleFor(AppNotification n) {
-    final name = (n.actorName?.trim().isNotEmpty ?? false) ? n.actorName!.trim() : 'Someone';
+    final name = _displayActorName(n);
+    const anonymous = 'Someone';
 
     switch (n.type) {
       case 'follow_request':
@@ -343,28 +389,54 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       case 'like':
         return '$name liked your post';
       case 'comment':
+        if (_isListingNotification(n)) {
+          return '$name asked a question on your listing';
+        }
         return '$name commented on your post';
       case 'comment_like':
         return '$name liked your comment';
       case 'comment_reply':
+        if (_isListingNotification(n)) {
+          return '$name replied to your question';
+        }
         return '$name replied to your comment';
       case 'share':
         return '$name shared your post';
       case 'mention':
         return n.commentId != null && n.commentId!.isNotEmpty
-            ? '$name mentioned you in a comment'
-            : '$name mentioned you in a post';
+            ? '$name tagged you in a comment'
+            : '$name tagged you in a post';
       case 'offer_message':
-        return '$name sent a message about your listing';
+        return '$anonymous sent a message about your listing';
       case 'offer_sent':
-        return '$name sent an offer on your listing';
+        return '$anonymous sent an offer on your listing';
       case 'offer_accepted':
-        return '$name accepted the offer';
+        return '$anonymous accepted the offer';
       case 'offer_rejected':
-        return '$name rejected the offer';
+        return '$anonymous rejected the offer';
       default:
         return '$name sent an update';
     }
+  }
+
+  bool _isListingNotification(AppNotification n) {
+    return n.postType == 'market' ||
+        n.postType == 'service_offer' ||
+        n.postType == 'service_request' ||
+        n.postType == 'food_ad' ||
+        n.postType == 'food';
+  }
+
+  String _displayActorName(AppNotification n) {
+    final actualName = (n.actorName?.trim().isNotEmpty ?? false) ? n.actorName!.trim() : 'Someone';
+    if (!_isListingNotification(n)) return actualName;
+    if (n.type == 'comment_reply' && n.actorId != null && n.actorId == n.postOwnerId) {
+      if (n.postType == 'market' || n.postType == 'food_ad' || n.postType == 'food') {
+        return 'Seller';
+      }
+      return 'Author';
+    }
+    return actualName;
   }
 
   String _formatTime(DateTime dt) {

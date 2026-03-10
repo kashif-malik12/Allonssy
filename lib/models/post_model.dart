@@ -24,6 +24,9 @@ class Post {
   final String? authorOrgKind;
   final String? authorCity;
   final String? authorZipcode;
+  final String? authorBusinessType;
+  final String? authorBusinessName;
+  final String? authorJobTitle;
 
   final String? postType;
   final String? marketCategory;
@@ -53,6 +56,9 @@ class Post {
     this.authorOrgKind,
     this.authorCity,
     this.authorZipcode,
+    this.authorBusinessType,
+    this.authorBusinessName,
+    this.authorJobTitle,
     this.postType,
     this.marketCategory,
     this.marketIntent,
@@ -62,28 +68,41 @@ class Post {
   });
 
   factory Post.fromMap(Map<String, dynamic> map) {
-    final profile = map['profiles'];
+    final rawProfile = map['profiles'];
+    final profile = rawProfile is List
+        ? (rawProfile.isNotEmpty && rawProfile.first is Map
+            ? Map<String, dynamic>.from(rawProfile.first as Map)
+            : null)
+        : (rawProfile is Map ? Map<String, dynamic>.from(rawProfile) : null);
     final nestedSharedPost = map['shared_post'];
 
     final String? authorName =
         (map['author_name'] as String?) ??
-        (profile is Map ? profile['full_name'] as String? : null);
+        profile?['full_name'] as String?;
 
     final String? authorAvatarUrl =
         (map['author_avatar_url'] as String?) ??
-        (profile is Map ? profile['avatar_url'] as String? : null);
+        profile?['avatar_url'] as String?;
 
     final String? authorCity =
         (map['author_city'] as String?) ??
-        (profile is Map ? profile['city'] as String? : null);
+        profile?['city'] as String?;
 
     final String? authorOrgKind =
         (map['author_org_kind'] as String?) ??
-        (profile is Map ? profile['org_kind'] as String? : null);
+        profile?['org_kind'] as String?;
 
     final String? authorZipcode =
         (map['author_zipcode'] as String?) ??
-        (profile is Map ? profile['zipcode'] as String? : null);
+        profile?['zipcode'] as String?;
+
+    final String? authorBusinessType = profile?['business_type'] as String?;
+
+    final String? authorBusinessName =
+        (map['author_business_name'] as String?) ??
+        profile?['business_name'] as String?;
+
+    final String? authorJobTitle = profile?['job_title'] as String?;
 
     return Post(
       id: map['id'] as String,
@@ -108,6 +127,9 @@ class Post {
       authorOrgKind: authorOrgKind,
       authorCity: authorCity,
       authorZipcode: authorZipcode,
+      authorBusinessType: authorBusinessType,
+      authorBusinessName: authorBusinessName,
+      authorJobTitle: authorJobTitle,
       postType: map['post_type'] as String?,
       marketCategory: map['market_category'] as String?,
       marketIntent: map['market_intent'] as String?,

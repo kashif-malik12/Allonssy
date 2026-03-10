@@ -10,7 +10,9 @@ class NotificationService {
   Future<List<Map<String, dynamic>>> fetchLatest({int limit = 50}) async {
     final rows = await _db
         .from('notifications')
-        .select('*, actor:profiles!notifications_actor_id_fkey(full_name, avatar_url)')
+        .select(
+          '*, actor:profiles!notifications_actor_id_fkey(full_name, avatar_url), post:posts!notifications_post_id_fkey(post_type, user_id)',
+        )
         .eq('recipient_id', _me)
         .order('created_at', ascending: false)
         .limit(limit);
@@ -52,7 +54,9 @@ Future<List<Map<String, dynamic>>> fetchPage({
 }) async {
   final rows = await _db
       .from('notifications')
-      .select('*, actor:profiles!notifications_actor_id_fkey(full_name, avatar_url)')
+      .select(
+        '*, actor:profiles!notifications_actor_id_fkey(full_name, avatar_url), post:posts!notifications_post_id_fkey(post_type, user_id)',
+      )
       .eq('recipient_id', _me)
       .order('created_at', ascending: false)
       .range(from, to);

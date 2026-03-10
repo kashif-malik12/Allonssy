@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../widgets/global_app_bar.dart';
 import '../../../widgets/global_bottom_nav.dart';
+import '../services/chat_message_codec.dart';
 import '../services/chat_service.dart';
 import '../services/offer_chat_service.dart';
 
@@ -449,7 +450,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     required VoidCallback? onTap,
   }) {
     final name = (row['other_full_name'] as String?) ?? 'Unknown';
-    final last = (row['last_message'] as String?) ?? '';
+    final last = ChatMessageCodec.previewText(
+      (row['last_message'] as String?) ?? '',
+    );
     final unread = (row['unread_count'] as num?)?.toInt() ?? 0;
 
     return Material(
@@ -527,7 +530,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     required VoidCallback? onTap,
   }) {
     final postTitle = (row['post_title'] as String?) ?? 'Listing';
-    final last = (row['last_message'] as String?) ?? '';
+    final last = ChatMessageCodec.previewText(
+      (row['last_message'] as String?) ?? '',
+    );
     final unread = (row['unread_count'] as num?)?.toInt() ?? 0;
     final status = (row['current_offer_status'] as String?) ?? '';
     final amount = (row['current_offer_amount'] as num?)?.toDouble();

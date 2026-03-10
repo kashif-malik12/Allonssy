@@ -10,6 +10,9 @@ class PostMediaView extends StatefulWidget {
   final double maxHeight;
   final void Function(String imageUrl)? onImageTap;
   final bool singleImagePreview;
+  final bool startMuted;
+  final bool showMuteToggle;
+  final bool? autoplay;
 
   const PostMediaView({
     super.key,
@@ -19,6 +22,9 @@ class PostMediaView extends StatefulWidget {
     this.maxHeight = 360,
     this.onImageTap,
     this.singleImagePreview = false,
+    this.startMuted = false,
+    this.showMuteToggle = false,
+    this.autoplay,
   });
 
   @override
@@ -117,9 +123,19 @@ class _PostMediaViewState extends State<PostMediaView> {
     final trimmedVideo = widget.videoUrl?.trim();
     if (trimmedVideo != null && trimmedVideo.isNotEmpty) {
       if (_isYoutubeUrl(trimmedVideo)) {
-        return YoutubePreview(videoUrl: trimmedVideo);
+        return YoutubePreview(
+          videoUrl: trimmedVideo,
+          startMuted: widget.startMuted,
+          showMuteToggle: widget.showMuteToggle,
+        );
       }
-      return NetworkVideoPlayer(videoUrl: trimmedVideo, maxHeight: widget.maxHeight);
+      return NetworkVideoPlayer(
+        videoUrl: trimmedVideo,
+        maxHeight: widget.maxHeight,
+        startMuted: widget.startMuted,
+        showMuteToggle: widget.showMuteToggle,
+        autoplay: widget.autoplay,
+      );
     }
 
     if (images.isEmpty) {

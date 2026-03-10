@@ -15,34 +15,37 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _passwordFocus = FocusNode();
+  final _userSearchCtrl = TextEditingController();
 
   late final TabController _tab;
 
   bool _checkingAdmin = true;
   bool _isAdmin = false;
   bool _adminLoginLoading = false;
-  String? _adminLoginError;
 
   String _statusFilter = 'pending'; // pending | reviewed | dismissed
 
-  bool _loadingPosts = true;
-  bool _loadingUsers = true;
   bool _loadingStats = true;
   final Set<String> _busyUserIds = <String>{};
-  String? _errorPosts;
-  String? _errorUsers;
-  String? _errorStats;
+  final Set<String> _busyPostIds = <String>{};
 
   List<Map<String, dynamic>> _postReports = [];
   List<Map<String, dynamic>> _userReports = [];
   Map<String, int> _stats = const {};
-  List<Map<String, dynamic>> _recentPosts = [];
-  List<Map<String, dynamic>> _recentUsers = [];
+  
+  List<Map<String, dynamic>> _marketplacePosts = [];
+  List<Map<String, dynamic>> _gigPosts = [];
+  List<Map<String, dynamic>> _foodPosts = [];
+  List<Map<String, dynamic>> _allUsers = [];
+  Map<String, Map<String, dynamic>> _userAuthStatus = const {};
+  Map<String, int> _userReportCounts = const {};
+  Map<String, int> _userBlockedByCounts = const {};
+  Map<String, int> _userBlocksMadeCounts = const {};
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 4, vsync: this);
+    _tab = TabController(length: 6, vsync: this);
     _init();
   }
 
@@ -52,20 +55,37 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
     _email.dispose();
     _password.dispose();
     _passwordFocus.dispose();
+    _userSearchCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _init() async {
     await _checkAdmin();
     if (_isAdmin) {
-      await Future.wait([_loadStats(), _loadPostReports(), _loadUserReports()]);
+      await _refreshAll();
+    }
+  }
+
+  Future<void> _refreshAll() async {
+    setState(() => _loadingStats = true);
+    try {
+      await Future.wait([
+        _loadStats(),
+        _loadPostReports(),
+        _loadUserReports(),
+        _loadCategorizedPosts(),
+        _loadUserModerationCounts(),
+      ]);
+      await _loadAllUsers();
+      await _loadUserAuthStatuses();
+    } finally {
+      if (mounted) setState(() => _loadingStats = false);
     }
   }
 
   Future<void> _adminLogin() async {
     setState(() {
       _adminLoginLoading = true;
-      _adminLoginError = null;
     });
 
     try {
@@ -76,7 +96,6 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
       await _init();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _adminLoginError = e.toString());
     } finally {
       if (mounted) setState(() => _adminLoginLoading = false);
     }
@@ -88,7 +107,6 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
     setState(() {
       _isAdmin = false;
       _checkingAdmin = false;
-      _adminLoginError = null;
     });
   }
 
@@ -127,327 +145,606 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   }
 
   Future<void> _loadPostReports() async {
-    setState(() {
-      _loadingPosts = true;
-      _errorPosts = null;
-    });
-
     try {
-      // You can expand joins later (post author, reporter name, etc.)
       final rows = await _db
           .from('post_reports')
           .select('id, created_at, reporter_id, post_id, reason, details, status')
           .eq('status', _statusFilter)
           .order('created_at', ascending: false);
-
-      setState(() {
-        _postReports = List<Map<String, dynamic>>.from(rows);
-        _loadingPosts = false;
-      });
+      _postReports = List<Map<String, dynamic>>.from(rows);
     } catch (e) {
-      setState(() {
-        _errorPosts = e.toString();
-        _loadingPosts = false;
-      });
+      print('Post reports error: $e');
     }
   }
 
   Future<void> _loadUserReports() async {
-    setState(() {
-      _loadingUsers = true;
-      _errorUsers = null;
-    });
-
     try {
       final rows = await _db
           .from('user_reports')
-          .select(
-              'id, created_at, reporter_id, reported_user_id, reason, details, status')
+          .select('id, created_at, reporter_id, reported_user_id, reason, details, status')
           .eq('status', _statusFilter)
           .order('created_at', ascending: false);
-
-      setState(() {
-        _userReports = List<Map<String, dynamic>>.from(rows);
-        _loadingUsers = false;
-      });
+      _userReports = List<Map<String, dynamic>>.from(rows);
     } catch (e) {
-      setState(() {
-        _errorUsers = e.toString();
-        _loadingUsers = false;
-      });
+      print('User reports error: $e');
     }
   }
 
-  Future<void> _refreshCurrentTab() async {
-    if (_tab.index == 0) {
-      await _loadStats();
-    } else if (_tab.index == 1) {
-      await _loadStats();
-    } else if (_tab.index == 2) {
-      await _loadPostReports();
-    } else {
-      await _loadUserReports();
+  Future<void> _loadCategorizedPosts() async {
+    try {
+      final results = await Future.wait([
+        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').eq('post_type', 'market').order('created_at', ascending: false).limit(50),
+        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['service_offer', 'service_request']).order('created_at', ascending: false).limit(50),
+        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['food_ad', 'food']).order('created_at', ascending: false).limit(50),
+      ]);
+
+      _marketplacePosts = (results[0] as List).cast<Map<String, dynamic>>();
+      _gigPosts = (results[1] as List).cast<Map<String, dynamic>>();
+      _foodPosts = (results[2] as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Categorized posts error: $e');
+    }
+  }
+
+  Future<void> _loadAllUsers() async {
+    try {
+      final rows = await _db
+          .from('profiles')
+          .select('id, full_name, business_name, job_title, profile_type, account_type, org_kind, is_disabled, avatar_url')
+          .order('created_at', ascending: false)
+          .limit(100);
+      _allUsers = (rows as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Load users error: $e');
+    }
+  }
+
+  Future<void> _loadUserModerationCounts() async {
+    try {
+      final results = await Future.wait([
+        _db.from('user_reports').select('reporter_id, reported_user_id'),
+        _db.from('user_blocks').select('blocker_id, blocked_id'),
+      ]);
+
+      final reportCounts = <String, int>{};
+      for (final row in (results[0] as List).cast<Map<String, dynamic>>()) {
+        final reportedId = (row['reported_user_id'] ?? '').toString();
+        if (reportedId.isEmpty) continue;
+        reportCounts[reportedId] = (reportCounts[reportedId] ?? 0) + 1;
+      }
+
+      final blockedByCounts = <String, int>{};
+      final blocksMadeCounts = <String, int>{};
+      for (final row in (results[1] as List).cast<Map<String, dynamic>>()) {
+        final blockerId = (row['blocker_id'] ?? '').toString();
+        final blockedId = (row['blocked_id'] ?? '').toString();
+        if (blockerId.isNotEmpty) {
+          blocksMadeCounts[blockerId] = (blocksMadeCounts[blockerId] ?? 0) + 1;
+        }
+        if (blockedId.isNotEmpty) {
+          blockedByCounts[blockedId] = (blockedByCounts[blockedId] ?? 0) + 1;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _userReportCounts = reportCounts;
+        _userBlockedByCounts = blockedByCounts;
+        _userBlocksMadeCounts = blocksMadeCounts;
+      });
+    } catch (e) {
+      print('Load moderation counts error: $e');
+    }
+  }
+
+  Future<void> _loadUserAuthStatuses() async {
+    try {
+      final accessToken = _db.auth.currentSession?.accessToken;
+      if (accessToken == null || accessToken.isEmpty) return;
+
+      final userIds = _allUsers
+          .map((row) => (row['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      final response = await _db.functions.invoke(
+        'admin-user-auth',
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: {
+          'action': 'list',
+          'userIds': userIds,
+          'accessToken': accessToken,
+        },
+      );
+
+      if (response.status < 200 || response.status >= 300) return;
+      final payload = response.data;
+      if (payload is! Map || payload['users'] is! List) return;
+
+      final statuses = <String, Map<String, dynamic>>{};
+      for (final row in (payload['users'] as List)) {
+        if (row is! Map) continue;
+        final map = Map<String, dynamic>.from(row);
+        final id = (map['id'] ?? '').toString();
+        if (id.isEmpty) continue;
+        statuses[id] = map;
+      }
+
+      if (!mounted) return;
+      setState(() => _userAuthStatus = statuses);
+    } catch (e) {
+      if (!mounted) return;
+      _snack('User auth lookup failed: $e');
     }
   }
 
   Future<void> _loadStats() async {
-    setState(() {
-      _loadingStats = true;
-      _errorStats = null;
-    });
-
     try {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day).toIso8601String();
+      final activeSince = now.subtract(const Duration(minutes: 5)).toIso8601String();
 
       final results = await Future.wait<dynamic>([
         _db.from('profiles').select('id, profile_type, account_type, is_restaurant, org_kind'),
-        _db.from('posts').select('id, post_type, author_profile_type, market_intent, visibility'),
+        _db.from('profiles').select('id').gte('last_seen_at', activeSince),
+        _db.from('posts').select('id, post_type, visibility'),
         _db.from('posts').select('id').gte('created_at', todayStart),
         _db.from('post_reports').select('id').eq('status', 'pending'),
         _db.from('user_reports').select('id').eq('status', 'pending'),
-        _db
-            .from('posts')
-            .select('id, content, market_title, post_type, created_at, user_id, image_url')
-            .order('created_at', ascending: false)
-            .limit(12),
-        _db
-            .from('profiles')
-            .select('id, full_name, profile_type, account_type, org_kind, is_disabled')
-            .order('created_at', ascending: false)
-            .limit(12),
       ]);
 
       final profiles = (results[0] as List).cast<Map<String, dynamic>>();
       final posts = (results[1] as List).cast<Map<String, dynamic>>();
-      String profileTypeOf(Map<String, dynamic> row) {
-        return ((row['profile_type'] ?? row['account_type']) ?? '').toString().trim();
-      }
-
-      String postTypeOf(Map<String, dynamic> row) {
-        return (row['post_type'] ?? '').toString().trim();
-      }
-
-      final peopleCount = profiles
-          .where((row) => profileTypeOf(row) == 'person')
-          .length;
-      final businessCount = profiles
-          .where((row) => profileTypeOf(row) == 'business')
-          .length;
-      final restaurantCount = profiles
-          .where((row) => row['is_restaurant'] == true)
-          .length;
-      final orgCount = profiles
-          .where((row) => profileTypeOf(row) == 'org')
-          .length;
-      final govCount = profiles
-          .where((row) => (row['org_kind'] ?? '').toString() == 'government')
-          .length;
-      final nonprofitCount = profiles
-          .where((row) => (row['org_kind'] ?? '').toString() == 'nonprofit')
-          .length;
-      final newsAgencyCount = profiles
-          .where((row) => (row['org_kind'] ?? '').toString() == 'news_agency')
-          .length;
-
-      final marketplaceCount = posts
-          .where((row) => postTypeOf(row) == 'market')
-          .length;
-      final gigCount = posts
-          .where((row) {
-            final type = postTypeOf(row);
-            return type == 'service_offer' || type == 'service_request';
-          })
-          .length;
-      final foodCount = posts
-          .where((row) {
-            final type = postTypeOf(row);
-            return type == 'food_ad' || type == 'food';
-          })
-          .length;
-      final lostFoundCount = posts
-          .where((row) => postTypeOf(row) == 'lost_found')
-          .length;
-      final generalCount = posts
-          .where((row) {
-            final type = postTypeOf(row);
-            return type.isEmpty || type == 'post';
-          })
-          .length;
-      final publicPostCount = posts
-          .where((row) => (row['visibility'] ?? '').toString() == 'public')
-          .length;
-      final localPostCount = posts
-          .where((row) => (row['visibility'] ?? '').toString() == 'followers')
-          .length;
-
-      if (!mounted) return;
-      setState(() {
-        _stats = {
-          'profiles': profiles.length,
-          'people': peopleCount,
-          'businesses': businessCount,
-          'restaurants': restaurantCount,
-          'organizations': orgCount,
-          'org_government': govCount,
-          'org_nonprofit': nonprofitCount,
-          'org_news_agency': newsAgencyCount,
-          'posts': posts.length,
-          'today_posts': (results[2] as List).length,
-          'general_posts': generalCount,
-          'marketplace_posts': marketplaceCount,
-          'gig_posts': gigCount,
-          'food_posts': foodCount,
-          'lost_found_posts': lostFoundCount,
-          'public_posts': publicPostCount,
-          'local_posts': localPostCount,
-          'pending_post_reports': (results[3] as List).length,
-          'pending_user_reports': (results[4] as List).length,
-        };
-        _recentPosts = (results[5] as List).cast<Map<String, dynamic>>();
-        _recentUsers = (results[6] as List).cast<Map<String, dynamic>>();
-        _loadingStats = false;
-      });
+      
+      _stats = {
+        'profiles': profiles.length,
+        'active_now': (results[1] as List).length,
+        'posts': posts.length,
+        'today_posts': (results[3] as List).length,
+        'pending_post_reports': (results[4] as List).length,
+        'pending_user_reports': (results[5] as List).length,
+      };
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorStats = e.toString();
-        _loadingStats = false;
-      });
+      // Handle or ignore error as before
     }
   }
 
   void _setFilter(String value) {
     setState(() => _statusFilter = value);
-    _refreshCurrentTab();
-  }
-
-  Future<void> _setReportStatus({
-    required String table,
-    required String reportId,
-    required String status,
-  }) async {
-    try {
-      await _db.rpc('admin_set_report_status', params: {
-        'p_table': table,
-        'p_report_id': reportId,
-        'p_status': status,
-      });
-      await _refreshCurrentTab();
-      if (mounted) _snack('Report marked $status');
-    } catch (e) {
-      if (mounted) _snack('Failed: $e');
-    }
+    _loadPostReports();
+    _loadUserReports();
   }
 
   Future<void> _softDeletePost(String postId) async {
     final ok = await _confirm(
-      title: 'Delete post?',
-      message:
-          'This will soft-delete the post (hide it in feeds). You can also mark the report reviewed.',
-      confirmText: 'Delete',
+      title: 'Remove post?',
+      message: 'This will hide the post from all users.',
+      confirmText: 'Remove',
       danger: true,
     );
     if (!ok) return;
 
+    setState(() => _busyPostIds.add(postId));
     try {
       await _db.rpc('admin_soft_delete_post', params: {'p_post_id': postId});
-      if (mounted) _snack('Post deleted');
+      await _refreshAll();
+      _snack('Post removed');
     } catch (e) {
-      if (mounted) _snack('Failed: $e');
+      _snack('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _busyPostIds.remove(postId));
     }
   }
 
   Future<void> _setUserDisabled(String userId, bool disabled) async {
+    final myId = _db.auth.currentUser?.id;
+    if (myId != null && userId == myId) {
+      _snack('You cannot disable your own admin account');
+      return;
+    }
+
     final ok = await _confirm(
       title: disabled ? 'Disable user?' : 'Enable user?',
-      message: disabled
-          ? 'This will block the user from logging in until you enable the account again.'
-          : 'This will restore login access for this user.',
+      message: disabled ? 'This will block login access.' : 'This will restore login access.',
       confirmText: disabled ? 'Disable' : 'Enable',
       danger: disabled,
     );
     if (!ok) return;
 
-    if (mounted) {
-      setState(() => _busyUserIds.add(userId));
-    }
-
+    setState(() => _busyUserIds.add(userId));
     try {
-      await _db.rpc(
-        'admin_set_user_disabled',
-        params: {'p_user_id': userId, 'p_disabled': disabled},
-      );
-      await Future.wait([_loadStats(), _loadUserReports()]);
-      if (mounted) {
-        _snack(disabled ? 'User disabled' : 'User enabled');
-      }
+      await _db.rpc('admin_set_user_disabled', params: {'p_user_id': userId, 'p_disabled': disabled});
+      await _refreshAll();
+      _snack(disabled ? 'User disabled' : 'User enabled');
     } catch (e) {
-      if (mounted) _snack('Failed: $e');
+      _snack('Failed: $e');
     } finally {
-      if (mounted) {
-        setState(() => _busyUserIds.remove(userId));
-      }
+      if (mounted) setState(() => _busyUserIds.remove(userId));
     }
   }
 
   Future<void> _deleteUser(String userId) async {
+    final myId = _db.auth.currentUser?.id;
+    if (myId != null && userId == myId) {
+      _snack('You cannot delete your own admin account');
+      return;
+    }
+
     final ok = await _confirm(
       title: 'Delete user?',
-      message:
-          'This will permanently delete the account, remove the profile, delete related user data, and remove the avatar. This cannot be undone.',
-      confirmText: 'Delete forever',
+      message: 'This action is permanent and cannot be undone.',
+      confirmText: 'Delete Forever',
       danger: true,
     );
     if (!ok) return;
 
-    if (mounted) {
-      setState(() => _busyUserIds.add(userId));
-    }
-
+    setState(() => _busyUserIds.add(userId));
     try {
-      await _db.rpc('admin_delete_user_account', params: {'p_user_id': userId});
-      await Future.wait([_loadStats(), _loadUserReports()]);
-      if (mounted) _snack('User deleted');
-    } catch (e) {
-      if (mounted) _snack('Failed: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _busyUserIds.remove(userId));
+      final accessToken = _db.auth.currentSession?.accessToken;
+      if (accessToken == null || accessToken.isEmpty) {
+        throw 'Not authenticated';
       }
+
+      final response = await _db.functions.invoke(
+        'admin-delete-user',
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: {
+          'userId': userId,
+          'accessToken': accessToken,
+        },
+      );
+      if (response.status < 200 || response.status >= 300) {
+        final payload = response.data;
+        if (payload is Map && payload['error'] != null) {
+          throw payload['error'].toString();
+        }
+        throw 'Delete failed';
+      }
+      if (mounted) {
+        setState(() {
+          _allUsers.removeWhere((row) => (row['id'] ?? '').toString() == userId);
+          _userAuthStatus = Map<String, Map<String, dynamic>>.from(_userAuthStatus)
+            ..remove(userId);
+          _userReports.removeWhere((row) {
+            final reportedUserId = (row['reported_user_id'] ?? '').toString();
+            final reporterId = (row['reporter_id'] ?? '').toString();
+            return reportedUserId == userId || reporterId == userId;
+          });
+          _stats = {
+            ..._stats,
+            'profiles': ((_stats['profiles'] ?? 1) - 1).clamp(0, 1 << 30),
+          };
+        });
+      }
+      await _refreshAll();
+      _snack('User deleted permanently');
+    } catch (e) {
+      _snack('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _busyUserIds.remove(userId));
+    }
+  }
+
+  Future<void> _verifyUser(String userId) async {
+    setState(() => _busyUserIds.add(userId));
+    try {
+      final accessToken = _db.auth.currentSession?.accessToken;
+      if (accessToken == null || accessToken.isEmpty) {
+        throw 'Not authenticated';
+      }
+
+      final response = await _db.functions.invoke(
+        'admin-user-auth',
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: {
+          'action': 'verify',
+          'userId': userId,
+          'accessToken': accessToken,
+        },
+      );
+      if (response.status < 200 || response.status >= 300) {
+        final payload = response.data;
+        if (payload is Map && payload['error'] != null) {
+          throw payload['error'].toString();
+        }
+        throw 'Verification failed';
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _userAuthStatus = Map<String, Map<String, dynamic>>.from(_userAuthStatus)
+          ..update(
+            userId,
+            (value) => {
+              ...value,
+              'verified': true,
+            },
+            ifAbsent: () => {'verified': true},
+          );
+      });
+      _snack('User verified');
+    } catch (e) {
+      _snack('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _busyUserIds.remove(userId));
+    }
+  }
+
+  Future<void> _resendVerification(String userId) async {
+    setState(() => _busyUserIds.add(userId));
+    try {
+      final accessToken = _db.auth.currentSession?.accessToken;
+      if (accessToken == null || accessToken.isEmpty) {
+        throw 'Not authenticated';
+      }
+
+      final response = await _db.functions.invoke(
+        'admin-user-auth',
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: {
+          'action': 'resend',
+          'userId': userId,
+          'accessToken': accessToken,
+        },
+      );
+      if (response.status < 200 || response.status >= 300) {
+        final payload = response.data;
+        if (payload is Map && payload['error'] != null) {
+          throw payload['error'].toString();
+        }
+        throw 'Resend failed';
+      }
+      _snack('Verification email sent');
+    } catch (e) {
+      _snack('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _busyUserIds.remove(userId));
+    }
+  }
+
+  Future<void> _createUserFromAdmin({
+    required String email,
+    required String password,
+    required String fullName,
+    required bool autoVerify,
+    required bool sendVerificationEmail,
+  }) async {
+    try {
+      final accessToken = _db.auth.currentSession?.accessToken;
+      if (accessToken == null || accessToken.isEmpty) {
+        throw 'Not authenticated';
+      }
+
+      final response = await _db.functions.invoke(
+        'admin-user-auth',
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: {
+          'action': 'create',
+          'email': email,
+          'password': password,
+          'fullName': fullName,
+          'autoVerify': autoVerify,
+          'sendVerificationEmail': sendVerificationEmail,
+          'accessToken': accessToken,
+        },
+      );
+      if (response.status < 200 || response.status >= 300) {
+        final payload = response.data;
+        if (payload is Map && payload['error'] != null) {
+          throw payload['error'].toString();
+        }
+        throw 'User creation failed';
+      }
+
+      final payload = response.data;
+      await _refreshAll();
+
+      if (payload is Map && payload['warning'] != null) {
+        _snack('User created. Verification email warning: ${payload['warning']}');
+        return;
+      }
+
+      if (autoVerify) {
+        _snack('User created and verified');
+      } else if (sendVerificationEmail) {
+        _snack('User created and verification email sent');
+      } else {
+        _snack('User created');
+      }
+    } catch (e) {
+      _snack('Failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _showCreateUserDialog() async {
+    final emailCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    final fullNameCtrl = TextEditingController();
+    final passwordFocus = FocusNode();
+    var autoVerify = true;
+    var sendVerificationEmail = false;
+    var saving = false;
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> submit() async {
+              final email = emailCtrl.text.trim();
+              final password = passwordCtrl.text;
+              final fullName = fullNameCtrl.text.trim();
+
+              if (email.isEmpty || !email.contains('@')) {
+                setModalState(() => error = 'Enter a valid email');
+                return;
+              }
+              if (password.length < 6) {
+                setModalState(() => error = 'Password must be at least 6 characters');
+                return;
+              }
+
+              setModalState(() {
+                saving = true;
+                error = null;
+              });
+
+              try {
+                await _createUserFromAdmin(
+                  email: email,
+                  password: password,
+                  fullName: fullName,
+                  autoVerify: autoVerify,
+                  sendVerificationEmail: sendVerificationEmail,
+                );
+                if (mounted) Navigator.of(ctx).pop();
+              } catch (e) {
+                setModalState(() {
+                  saving = false;
+                  error = e.toString();
+                });
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Create user'),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 420,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: fullNameCtrl,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => passwordFocus.requestFocus(),
+                        decoration: const InputDecoration(
+                          labelText: 'Name (optional)',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => passwordFocus.requestFocus(),
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: passwordCtrl,
+                        focusNode: passwordFocus,
+                        obscureText: true,
+                        onSubmitted: (_) {
+                          if (!saving) submit();
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Temporary password',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Verify automatically'),
+                        subtitle: const Text('User can log in immediately with this password'),
+                        value: autoVerify,
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                setModalState(() {
+                                  autoVerify = value;
+                                  if (value) sendVerificationEmail = false;
+                                });
+                              },
+                      ),
+                      SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Send verification email'),
+                        subtitle: const Text('Use when you do not want to auto-verify'),
+                        value: sendVerificationEmail,
+                        onChanged: saving || autoVerify
+                            ? null
+                            : (value) {
+                                setModalState(() => sendVerificationEmail = value);
+                              },
+                      ),
+                      if (error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: saving ? null : submit,
+                  child: Text(saving ? 'Creating...' : 'Create user'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    emailCtrl.dispose();
+    passwordCtrl.dispose();
+    fullNameCtrl.dispose();
+    passwordFocus.dispose();
+  }
+
+  Future<void> _setReportStatus({required String table, required String reportId, required String status}) async {
+    try {
+      await _db.from(table).update({'status': status}).eq('id', reportId);
+      await _refreshAll();
+      _snack('Report marked $status');
+    } catch (e) {
+      _snack('Failed: $e');
     }
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Future<bool> _confirm({
-    required String title,
-    required String message,
-    required String confirmText,
-    bool danger = false,
-  }) async {
+  Future<bool> _confirm({required String title, required String message, required String confirmText, bool danger = false}) async {
     final res = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(title),
         content: Text(message),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: danger
-                ? ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Theme.of(context).colorScheme.onError,
-                  )
-                : null,
+            style: danger ? ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white) : null,
             child: Text(confirmText),
           ),
         ],
@@ -458,450 +755,742 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_checkingAdmin) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_db.auth.currentUser == null) {
-      return _buildAdminLoginScreen();
-    }
-
-    if (!_isAdmin) {
-      return _buildAccessDeniedScreen();
-    }
+    if (_checkingAdmin) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_db.auth.currentUser == null) return _buildAdminLoginScreen();
+    if (!_isAdmin) return _buildAccessDeniedScreen();
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Admin Portal'),
+        title: const Text('Moderation Dashboard', style: TextStyle(fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(onPressed: () => context.go('/feed'), icon: const Icon(Icons.home_outlined), tooltip: 'Feed'),
+          IconButton(onPressed: _refreshAll, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+          IconButton(onPressed: _logoutAdmin, icon: const Icon(Icons.logout), tooltip: 'Logout'),
+        ],
         bottom: TabBar(
           controller: _tab,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 16),
           tabs: const [
-            Tab(text: 'Overview'),
-            Tab(text: 'Moderation'),
-            Tab(text: 'Post Reports'),
-            Tab(text: 'User Reports'),
+            Tab(text: 'Dashboard'),
+            Tab(text: 'Users'),
+            Tab(text: 'Marketplace'),
+            Tab(text: 'Gigs'),
+            Tab(text: 'Food Ads'),
+            Tab(text: 'Reports'),
           ],
         ),
-        actions: [
-          IconButton(
-            onPressed: () => context.go('/feed'),
-            icon: const Icon(Icons.home_outlined),
-            tooltip: 'Home',
-          ),
-          IconButton(
-            onPressed: _refreshCurrentTab,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-          ),
-          IconButton(
-            onPressed: _logoutAdmin,
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-          ),
+      ),
+      body: TabBarView(
+        controller: _tab,
+        children: [
+          _buildDashboard(),
+          _buildUserManagementTable(),
+          _buildPostModerationTab(_marketplacePosts, 'market'),
+          _buildPostModerationTab(_gigPosts, 'gig'),
+          _buildPostModerationTab(_foodPosts, 'food'),
+          _buildReportsTab(),
         ],
       ),
-      body: Column(
+    );
+  }
+
+  Widget _buildDashboard() {
+    if (_loadingStats) return const Center(child: CircularProgressIndicator());
+    return RefreshIndicator(
+      onRefresh: _refreshAll,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
         children: [
-          _StatusChips(
-            value: _statusFilter,
-            onChanged: _setFilter,
-            visible: _tab.index >= 2,
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: MediaQuery.of(context).size.width > 900 ? 4 : 2,
+            childAspectRatio: 1.5,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            children: [
+              _ModernStatCard(title: 'Active Profiles', value: _stats['profiles']?.toString() ?? '0', icon: Icons.people, color: Colors.indigo),
+              _ModernStatCard(title: 'Active Now', value: _stats['active_now']?.toString() ?? '0', icon: Icons.online_prediction, color: Colors.teal),
+              _ModernStatCard(title: 'New Today', value: _stats['today_posts']?.toString() ?? '0', icon: Icons.bolt, color: Colors.amber),
+              _ModernStatCard(title: 'Post Reports', value: _stats['pending_post_reports']?.toString() ?? '0', icon: Icons.flag, color: Colors.red, isAlert: (_stats['pending_post_reports'] ?? 0) > 0),
+              _ModernStatCard(title: 'User Reports', value: _stats['pending_user_reports']?.toString() ?? '0', icon: Icons.person_off, color: Colors.redAccent, isAlert: (_stats['pending_user_reports'] ?? 0) > 0),
+            ],
           ),
-          const Divider(height: 1),
-          Expanded(
-            child: TabBarView(
-              controller: _tab,
-              children: [
-                _buildOverview(),
-                _buildModerationTab(),
-                _buildPostReports(),
-                _buildUserReports(),
-              ],
-            ),
+          const SizedBox(height: 24),
+          const Text('Quick Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _QuickNavCard(title: 'Manage Users', icon: Icons.people_alt_outlined, color: Colors.purple, onTap: () => _tab.animateTo(1)),
+              _QuickNavCard(title: 'Marketplace', icon: Icons.storefront, color: Colors.blue, onTap: () => _tab.animateTo(2)),
+              _QuickNavCard(title: 'Service Gigs', icon: Icons.work_outline, color: Colors.orange, onTap: () => _tab.animateTo(3)),
+              _QuickNavCard(title: 'Food Ads', icon: Icons.restaurant, color: Colors.green, onTap: () => _tab.animateTo(4)),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildOverview() {
-    if (_loadingStats) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_errorStats != null) {
-      return Center(child: Text(_errorStats!));
-    }
+  Widget _buildPostModerationTab(List<Map<String, dynamic>> posts, String category) {
+    if (posts.isEmpty) return const Center(child: Text('No posts found.'));
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: posts.length,
+      itemBuilder: (context, i) {
+        final p = posts[i];
+        final profile = p['profiles'] as Map<String, dynamic>?;
+        final authorName = profile?['full_name'] ?? profile?['business_name'] ?? 'Unknown';
+        final title = (p['market_title'] ?? p['content'] ?? '').toString();
+        final postId = p['id'].toString();
+        final isBusy = _busyPostIds.contains(postId);
 
-    return RefreshIndicator(
-      onRefresh: _loadStats,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFE6DDCE)),
-            ),
-            child: Column(
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Admin overview',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Use this dashboard to review reports, watch platform activity, and jump quickly into moderation work.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                if (p['image_url'] != null)
+                  ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(p['image_url'], width: 70, height: 70, fit: BoxFit.cover)),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('By $authorName • ${p['created_at']}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      Text(p['content'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+                    ],
                   ),
                 ),
+                IconButton(onPressed: isBusy ? null : () => _softDeletePost(postId), icon: const Icon(Icons.delete_outline, color: Colors.red)),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _StatCard(
-                title: 'Profiles',
-                value: '${_stats['profiles'] ?? 0}',
-                subtitle: 'Registered accounts',
-              ),
-              _StatCard(
-                title: 'Posts',
-                value: '${_stats['posts'] ?? 0}',
-                subtitle: 'Total published posts',
-              ),
-              _StatCard(
-                title: 'Today',
-                value: '${_stats['today_posts'] ?? 0}',
-                subtitle: 'Posts created today',
-              ),
-              _StatCard(
-                title: 'Pending Post Reports',
-                value: '${_stats['pending_post_reports'] ?? 0}',
-                subtitle: 'Need moderation review',
-                danger: (_stats['pending_post_reports'] ?? 0) > 0,
-              ),
-              _StatCard(
-                title: 'Pending User Reports',
-                value: '${_stats['pending_user_reports'] ?? 0}',
-                subtitle: 'Need moderation review',
-                danger: (_stats['pending_user_reports'] ?? 0) > 0,
-              ),
-            ],
+        );
+      },
+    );
+  }
+
+  Widget _buildUserManagement() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _userSearchCtrl,
+            decoration: InputDecoration(hintText: 'Search users...', prefixIcon: const Icon(Icons.search), border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)), filled: true, fillColor: Colors.white),
+            onChanged: (v) => setState(() {}),
           ),
-          const SizedBox(height: 18),
-          _OverviewSection(
-            title: 'Users on the portal',
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _MiniStatCard(title: 'People', value: '${_stats['people'] ?? 0}'),
-                _MiniStatCard(title: 'Businesses', value: '${_stats['businesses'] ?? 0}'),
-                _MiniStatCard(title: 'Restaurants', value: '${_stats['restaurants'] ?? 0}'),
-                _MiniStatCard(title: 'Organizations', value: '${_stats['organizations'] ?? 0}'),
-                _MiniStatCard(title: 'Government', value: '${_stats['org_government'] ?? 0}'),
-                _MiniStatCard(title: 'Non-profit', value: '${_stats['org_nonprofit'] ?? 0}'),
-                _MiniStatCard(title: 'News agency', value: '${_stats['org_news_agency'] ?? 0}'),
-              ],
-            ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _allUsers.length,
+            itemBuilder: (context, i) {
+              final u = _allUsers[i];
+              final name = (u['business_name'] ?? u['full_name'] ?? 'Unnamed').toString();
+              if (_userSearchCtrl.text.isNotEmpty && !name.toLowerCase().contains(_userSearchCtrl.text.toLowerCase())) return const SizedBox.shrink();
+              final uid = u['id'].toString();
+              final myId = _db.auth.currentUser?.id;
+              final isMe = myId != null && uid == myId;
+              final disabled = u['is_disabled'] == true;
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(backgroundImage: u['avatar_url'] != null ? NetworkImage(u['avatar_url']) : null, child: u['avatar_url'] == null ? const Icon(Icons.person) : null),
+                  title: Text(isMe ? '$name (You)' : name),
+                  subtitle: Text('${u['account_type']} • ${u['job_title'] ?? 'No title'}'),
+                  trailing: isMe
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+                              SizedBox(width: 6),
+                              Text(
+                                'Protected',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Switch(
+                              value: !disabled,
+                              onChanged: (v) => _setUserDisabled(uid, !v),
+                              activeTrackColor: Colors.green,
+                            ),
+                            IconButton(
+                              onPressed: () => _deleteUser(uid),
+                              icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            ),
+                          ],
+                        ),
+                ),
+              );
+            },
           ),
-          const SizedBox(height: 18),
-          _OverviewSection(
-            title: 'Content breakdown',
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _MiniStatCard(title: 'General posts', value: '${_stats['general_posts'] ?? 0}'),
-                _MiniStatCard(title: 'Marketplace', value: '${_stats['marketplace_posts'] ?? 0}'),
-                _MiniStatCard(title: 'Gigs', value: '${_stats['gig_posts'] ?? 0}'),
-                _MiniStatCard(title: 'Food ads', value: '${_stats['food_posts'] ?? 0}'),
-                _MiniStatCard(title: 'Lost & found', value: '${_stats['lost_found_posts'] ?? 0}'),
-                _MiniStatCard(title: 'Public posts', value: '${_stats['public_posts'] ?? 0}'),
-                _MiniStatCard(title: 'Local posts', value: '${_stats['local_posts'] ?? 0}'),
-              ],
-            ),
-          ),
-          Row(
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUserManagementV2() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
             children: [
               Expanded(
-                child: _AdminActionCard(
-                  title: 'Review post reports',
-                  subtitle: 'Check reported posts, dismiss noise, or remove harmful posts.',
-                  icon: Icons.flag_outlined,
-                  onTap: () => _tab.animateTo(2),
+                child: TextField(
+                  controller: _userSearchCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Search users...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  onChanged: (v) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: _AdminActionCard(
-                  title: 'Review user reports',
-                  subtitle: 'Handle abusive accounts and apply bans or unbans.',
-                  icon: Icons.person_off_outlined,
-                  onTap: () => _tab.animateTo(3),
-                ),
+              FilledButton.icon(
+                onPressed: _showCreateUserDialog,
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Create user'),
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFE6DDCE)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Admin notes',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _allUsers.length,
+            itemBuilder: (context, i) {
+              final u = _allUsers[i];
+              final uid = u['id'].toString();
+              final authInfo = _userAuthStatus[uid] ?? const <String, dynamic>{};
+              final email = authInfo['email']?.toString().trim() ?? '';
+              final rawName =
+                  (u['business_name'] ?? u['full_name'] ?? '').toString().trim();
+              final name = rawName.isNotEmpty
+                  ? rawName
+                  : (email.isNotEmpty ? email : 'Unnamed');
+              final query = _userSearchCtrl.text.trim().toLowerCase();
+              if (query.isNotEmpty &&
+                  !name.toLowerCase().contains(query) &&
+                  !email.toLowerCase().contains(query)) {
+                return const SizedBox.shrink();
+              }
+
+              final myId = _db.auth.currentUser?.id;
+              final isMe = myId != null && uid == myId;
+              final disabled = u['is_disabled'] == true;
+              final isVerified = authInfo['verified'] == true;
+              final accountType = (u['account_type'] ?? 'user').toString();
+              final jobTitle = (u['job_title'] ?? '').toString().trim();
+              final isBusy = _busyUserIds.contains(uid);
+              final subtitleParts = <String>[
+                if (jobTitle.isNotEmpty)
+                  '$accountType • $jobTitle'
+                else
+                  accountType,
+                if (email.isNotEmpty) 'Email: $email',
+              ];
+
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: u['avatar_url'] != null
+                        ? NetworkImage(u['avatar_url'])
+                        : null,
+                    child: u['avatar_url'] == null
+                        ? const Icon(Icons.person)
+                        : null,
+                  ),
+                  title: Text(isMe ? '$name (You)' : name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...subtitleParts.map(Text.new),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isVerified
+                              ? Colors.green.shade50
+                              : Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: isVerified
+                                ? Colors.green.shade200
+                                : Colors.orange.shade200,
+                          ),
+                        ),
+                        child: Text(
+                          isVerified ? 'Verified' : 'Unverified',
+                          style: TextStyle(
+                            color: isVerified
+                                ? Colors.green.shade800
+                                : Colors.orange.shade800,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
+                    ],
+                  ),
+                  trailing: isMe
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.lock_outline,
+                                size: 16,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Protected',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Switch(
+                              value: !disabled,
+                              onChanged: isBusy
+                                  ? null
+                                  : (v) => _setUserDisabled(uid, !v),
+                              activeTrackColor: Colors.green,
+                            ),
+                            if (!isVerified)
+                              IconButton(
+                                tooltip: 'Verify user',
+                                onPressed: isBusy ? null : () => _verifyUser(uid),
+                                icon: const Icon(
+                                  Icons.verified_user_outlined,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            if (!isVerified)
+                              IconButton(
+                                tooltip: 'Resend verification email',
+                                onPressed: isBusy
+                                    ? null
+                                    : () => _resendVerification(uid),
+                                icon: const Icon(
+                                  Icons.mark_email_unread_outlined,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            IconButton(
+                              onPressed: isBusy ? null : () => _deleteUser(uid),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
-                const SizedBox(height: 12),
-                _buildNoteLine('Pending queues update when you refresh the dashboard or reports tabs.'),
-                _buildNoteLine('Deleting a post hides it from feeds.'),
-                _buildNoteLine('Banning a user depends on your backend app logic using the ban flag/RPC.'),
-              ],
-            ),
+              );
+            },
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUserManagementTable() {
+    final query = _userSearchCtrl.text.trim().toLowerCase();
+    final visibleUsers = _allUsers.where((u) {
+      final uid = (u['id'] ?? '').toString();
+      final authInfo = _userAuthStatus[uid] ?? const <String, dynamic>{};
+      final email = authInfo['email']?.toString().trim() ?? '';
+      final rawName =
+          (u['full_name'] ?? u['business_name'] ?? '').toString().trim();
+      final name = rawName.isNotEmpty ? rawName : (email.isNotEmpty ? email : 'Unnamed');
+      if (query.isEmpty) return true;
+      return name.toLowerCase().contains(query) || email.toLowerCase().contains(query);
+    }).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 700;
+              final searchField = TextField(
+                controller: _userSearchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search users...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                onChanged: (v) => setState(() {}),
+              );
+              final createButton = FilledButton.icon(
+                onPressed: _showCreateUserDialog,
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Create user'),
+              );
+
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    searchField,
+                    const SizedBox(height: 12),
+                    createButton,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: searchField),
+                  const SizedBox(width: 12),
+                  createButton,
+                ],
+              );
+            },
+          ),
+        ),
+        Expanded(
+          child: visibleUsers.isEmpty
+              ? const Center(child: Text('No users found.'))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columns: const [
+                        DataColumn(label: Text('User')),
+                        DataColumn(label: Text('User type')),
+                        DataColumn(label: Text('Email')),
+                        DataColumn(label: Text('Reports')),
+                        DataColumn(label: Text('Blocked')),
+                        DataColumn(label: Text('Status')),
+                        DataColumn(label: Text('Actions')),
+                      ],
+                      rows: visibleUsers.map((u) {
+                        final uid = u['id'].toString();
+                        final authInfo =
+                            _userAuthStatus[uid] ?? const <String, dynamic>{};
+                        final email = authInfo['email']?.toString().trim() ?? '';
+                        final rawName =
+                            (u['full_name'] ?? u['business_name'] ?? '').toString().trim();
+                        final businessName =
+                            (u['business_name'] ?? '').toString().trim();
+                        final name = rawName.isNotEmpty
+                            ? rawName
+                            : (email.isNotEmpty ? email : 'Unnamed');
+                        final myId = _db.auth.currentUser?.id;
+                        final isMe = myId != null && uid == myId;
+                        final disabled = u['is_disabled'] == true;
+                        final verifiedValue = authInfo['verified'];
+                        final isVerified = verifiedValue == true;
+                        final isUnknownStatus = verifiedValue == null;
+                        final accountType = (u['account_type'] ?? 'user').toString();
+                        final jobTitle = (u['job_title'] ?? '').toString().trim();
+                        final isBusy = _busyUserIds.contains(uid);
+                        final reportCount = _userReportCounts[uid] ?? 0;
+                        final blockedByCount = _userBlockedByCounts[uid] ?? 0;
+                        final blocksMadeCount = _userBlocksMadeCounts[uid] ?? 0;
+
+                        return DataRow(
+                          cells: [
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 16,
+                                    backgroundImage: u['avatar_url'] != null
+                                        ? NetworkImage(u['avatar_url'])
+                                        : null,
+                                    child: u['avatar_url'] == null
+                                        ? const Icon(Icons.person, size: 18)
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 220),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          isMe ? '$name (You)' : name,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (businessName.isNotEmpty)
+                                          Text(
+                                            businessName,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.grey.shade700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 180),
+                                child: Text(
+                                  jobTitle.isNotEmpty
+                                      ? '$accountType • $jobTitle'
+                                      : accountType,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 260),
+                                child: SelectableText(
+                                  email.isNotEmpty ? email : 'No email found',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                reportCount.toString(),
+                                style: TextStyle(
+                                  fontWeight: reportCount > 0 ? FontWeight.w800 : FontWeight.w500,
+                                  color: reportCount > 0 ? Colors.red.shade700 : null,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                'By $blockedByCount / Made $blocksMadeCount',
+                                style: TextStyle(
+                                  fontWeight: (blockedByCount > 0 || blocksMadeCount > 0)
+                                      ? FontWeight.w800
+                                      : FontWeight.w500,
+                                  color: blockedByCount > 0 ? Colors.orange.shade800 : null,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isUnknownStatus
+                                      ? Colors.grey.shade100
+                                      : isVerified
+                                      ? Colors.green.shade50
+                                      : Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: isUnknownStatus
+                                        ? Colors.grey.shade300
+                                        : isVerified
+                                        ? Colors.green.shade200
+                                        : Colors.orange.shade200,
+                                  ),
+                                ),
+                                child: Text(
+                                  isUnknownStatus
+                                      ? 'Unknown'
+                                      : (isVerified ? 'Verified' : 'Unverified'),
+                                  style: TextStyle(
+                                    color: isUnknownStatus
+                                        ? Colors.grey.shade700
+                                        : isVerified
+                                        ? Colors.green.shade800
+                                        : Colors.orange.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              isMe
+                                  ? Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(999),
+                                        border: Border.all(color: Colors.grey.shade300),
+                                      ),
+                                      child: const Text(
+                                        'Protected',
+                                        style: TextStyle(
+                                          color: Colors.grey,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    )
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Switch(
+                                          value: !disabled,
+                                          onChanged: isBusy
+                                              ? null
+                                              : (v) => _setUserDisabled(uid, !v),
+                                          activeTrackColor: Colors.green,
+                                        ),
+                                        if (!isVerified && !isUnknownStatus)
+                                          IconButton(
+                                            tooltip: 'Verify user',
+                                            onPressed: isBusy ? null : () => _verifyUser(uid),
+                                            icon: const Icon(
+                                              Icons.verified_user_outlined,
+                                              color: Colors.green,
+                                            ),
+                                          ),
+                                        if (!isVerified && !isUnknownStatus)
+                                          IconButton(
+                                            tooltip: 'Resend verification email',
+                                            onPressed: isBusy
+                                                ? null
+                                                : () => _resendVerification(uid),
+                                            icon: const Icon(
+                                              Icons.mark_email_unread_outlined,
+                                              color: Colors.orange,
+                                            ),
+                                          ),
+                                        IconButton(
+                                          onPressed: isBusy ? null : () => _deleteUser(uid),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReportsTab() {
+    return Column(
+      children: [
+        _StatusChips(value: _statusFilter, onChanged: _setFilter),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const Text('Post Reports', style: TextStyle(fontWeight: FontWeight.bold)),
+              ..._postReports.map((r) => _buildReportTile(r, 'post_reports')),
+              const SizedBox(height: 20),
+              const Text('User Reports', style: TextStyle(fontWeight: FontWeight.bold)),
+              ..._userReports.map((r) => _buildReportTile(r, 'user_reports')),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReportTile(Map<String, dynamic> r, String table) {
+    return Card(
+      child: ListTile(
+        title: Text(r['reason'] ?? 'No reason'),
+        subtitle: Text(r['details'] ?? ''),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(icon: const Icon(Icons.check, color: Colors.green), onPressed: () => _setReportStatus(table: table, reportId: r['id'].toString(), status: 'reviewed')),
+            IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: () => _setReportStatus(table: table, reportId: r['id'].toString(), status: 'dismissed')),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildAdminLoginScreen() {
-    final theme = Theme.of(context);
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0B1220), Color(0xFF101B31)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1080),
-              child: Container(
-                margin: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F7F5),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withOpacity(0.08)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 28,
-                      offset: Offset(0, 18),
-                    ),
-                  ],
-                ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth >= 860;
-
-                    final leftPanel = Container(
-                      padding: const EdgeInsets.all(34),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF121A2B), Color(0xFF0F2A3C)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(30),
-                          bottomLeft: Radius.circular(30),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 68,
-                            height: 68,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Icon(
-                              Icons.admin_panel_settings_outlined,
-                              color: Colors.white,
-                              size: 34,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          const Text(
-                            'Admin Portal',
-                            style: TextStyle(
-                              fontSize: 42,
-                              height: 1,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                              letterSpacing: -1.1,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            'Moderation, platform stats, reports, user controls, and content review in one admin portal.',
-                            style: TextStyle(
-                              fontSize: 16,
-                              height: 1.5,
-                              color: Colors.white.withOpacity(0.82),
-                            ),
-                          ),
-                          const SizedBox(height: 28),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: const [
-                              _AdminLoginChip(label: 'Moderation'),
-                              _AdminLoginChip(label: 'Site stats'),
-                              _AdminLoginChip(label: 'Reports'),
-                              _AdminLoginChip(label: 'User control'),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-
-                    final rightPanel = Padding(
-                      padding: const EdgeInsets.all(30),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 430),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Admin sign in',
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Use an admin account to enter the portal.',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(height: 22),
-                              TextField(
-                                controller: _email,
-                                keyboardType: TextInputType.emailAddress,
-                                textInputAction: TextInputAction.next,
-                                onSubmitted: (_) => _passwordFocus.requestFocus(),
-                                decoration: const InputDecoration(
-                                  labelText: 'Admin email',
-                                  prefixIcon: Icon(Icons.mail_outline),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _password,
-                                focusNode: _passwordFocus,
-                                obscureText: true,
-                                textInputAction: TextInputAction.done,
-                                onSubmitted: (_) {
-                                  if (!_adminLoginLoading) _adminLogin();
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Password',
-                                  prefixIcon: Icon(Icons.lock_outline),
-                                ),
-                              ),
-                              if (_adminLoginError != null) ...[
-                                const SizedBox(height: 12),
-                                Text(
-                                  _adminLoginError!,
-                                  style: const TextStyle(color: Color(0xFFD92D20)),
-                                ),
-                              ],
-                              const SizedBox(height: 18),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton(
-                                  onPressed: _adminLoginLoading ? null : _adminLogin,
-                                  child: Text(
-                                    _adminLoginLoading ? 'Signing in...' : 'Open admin portal',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: () => context.go('/login'),
-                                  child: const Text('Go to main login'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-
-                    if (!wide) {
-                      return SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: double.infinity,
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Color(0xFF121A2B), Color(0xFF0F2A3C)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.only(
-                                  topLeft: Radius.circular(30),
-                                  topRight: Radius.circular(30),
-                                ),
-                              ),
-                              child: leftPanel,
-                            ),
-                            rightPanel,
-                          ],
-                        ),
-                      );
-                    }
-
-                    return Row(
-                      children: [
-                        Expanded(flex: 11, child: leftPanel),
-                        Expanded(flex: 10, child: rightPanel),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
+      backgroundColor: Colors.indigo.shade900,
+      body: Center(
+        child: Container(
+          width: 400,
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.admin_panel_settings, size: 64, color: Colors.indigo),
+              const SizedBox(height: 16),
+              const Text('Admin Access', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              TextField(controller: _email, decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(controller: _password, focusNode: _passwordFocus, obscureText: true, decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder())),
+              const SizedBox(height: 24),
+              SizedBox(width: double.infinity, height: 50, child: FilledButton(onPressed: _adminLoginLoading ? null : _adminLogin, child: Text(_adminLoginLoading ? 'Entering...' : 'Sign In'))),
+            ],
           ),
         ),
       ),
@@ -909,322 +1498,57 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   }
 
   Widget _buildAccessDeniedScreen() {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin Portal'),
-        actions: [
-          IconButton(
-            onPressed: () => context.go('/feed'),
-            icon: const Icon(Icons.home_outlined),
-          ),
-          IconButton(
-            onPressed: _logoutAdmin,
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Card(
-            margin: const EdgeInsets.all(16),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.admin_panel_settings_outlined, size: 42),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Admin access required',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'This account does not have admin access to the moderation portal.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      OutlinedButton(
-                        onPressed: () => context.go('/feed'),
-                        child: const Text('Go home'),
-                      ),
-                      FilledButton(
-                        onPressed: _logoutAdmin,
-                        child: const Text('Logout'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    return const Scaffold(body: Center(child: Text('Access Denied. Admins only.')));
   }
+}
 
-  Widget _buildModerationTab() {
-    if (_loadingStats) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_errorStats != null) {
-      return Center(child: Text(_errorStats!));
-    }
+class _ModernStatCard extends StatelessWidget {
+  final String title, value;
+  final IconData icon;
+  final Color color;
+  final bool isAlert;
+  const _ModernStatCard({required this.title, required this.value, required this.icon, required this.color, this.isAlert = false});
 
-    return RefreshIndicator(
-      onRefresh: _loadStats,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _OverviewSection(
-            title: 'Posts to verify',
-            child: Column(
-              children: _recentPosts.isEmpty
-                  ? [const Text('No recent posts found.')]
-                  : _recentPosts
-                      .map((post) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _AdminPostPreviewCard(
-                              title: ((post['market_title'] ?? '').toString().trim().isNotEmpty
-                                      ? post['market_title']
-                                      : post['content'])!
-                                  .toString(),
-                              subtitle:
-                                  '${_adminPostTypeLabel((post['post_type'] ?? '').toString())} • ${(post['created_at'] ?? '').toString()}',
-                              imageUrl: (post['image_url'] ?? '').toString(),
-                              body: (post['content'] ?? '').toString(),
-                              onRemove: () => _softDeletePost((post['id'] ?? '').toString()),
-                            ),
-                          ))
-                      .toList(),
-            ),
-          ),
-          const SizedBox(height: 18),
-          _OverviewSection(
-            title: 'Users to review',
-            child: Column(
-              children: _recentUsers.isEmpty
-                  ? [const Text('No users found.')]
-                  : _recentUsers
-                      .map((user) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _AdminUserListTile(
-                              title: ((user['full_name'] ?? 'Unnamed user')).toString(),
-                              subtitle: _adminUserTypeLabel(user),
-                              isDisabled: user['is_disabled'] == true,
-                              busy: _busyUserIds.contains((user['id'] ?? '').toString()),
-                              onToggleDisabled: () => _setUserDisabled(
-                                (user['id'] ?? '').toString(),
-                                !(user['is_disabled'] == true),
-                              ),
-                              onDelete: () => _deleteUser((user['id'] ?? '').toString()),
-                            ),
-                          ))
-                      .toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoteLine(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: isAlert ? Border.all(color: Colors.red, width: 2) : null, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)]),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 4),
-            child: Icon(Icons.circle, size: 8, color: Color(0xFFCC7A00)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text)),
+          Icon(icon, color: color),
+          const Spacer(),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(title, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
         ],
       ),
     );
   }
+}
 
-  String _adminPostTypeLabel(String value) {
-    switch (value) {
-      case 'market':
-        return 'Marketplace';
-      case 'service_offer':
-        return 'Gig offer';
-      case 'service_request':
-        return 'Gig request';
-      case 'food_ad':
-      case 'food':
-        return 'Food ad';
-      case 'lost_found':
-        return 'Lost & found';
-      case 'post':
-      case '':
-        return 'General post';
-      default:
-        return value;
-    }
-  }
+class _QuickNavCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _QuickNavCard({required this.title, required this.icon, required this.color, required this.onTap});
 
-  String _adminUserTypeLabel(Map<String, dynamic> user) {
-    final type = ((user['profile_type'] ?? user['account_type']) ?? '').toString();
-    final orgKind = (user['org_kind'] ?? '').toString();
-
-    if (type == 'org' && orgKind.isNotEmpty) {
-      return 'Organization • $orgKind';
-    }
-    if (type.isEmpty) return 'Unknown type';
-    return type[0].toUpperCase() + type.substring(1);
-  }
-
-  Widget _buildPostReports() {
-    if (_loadingPosts) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_errorPosts != null) {
-      return Center(child: Text(_errorPosts!));
-    }
-    if (_postReports.isEmpty) {
-      return const Center(child: Text('No reports.'));
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadPostReports,
-      child: ListView.separated(
-        padding: const EdgeInsets.all(12),
-        itemCount: _postReports.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (_, i) {
-          final r = _postReports[i];
-          final id = r['id'].toString();
-          final postId = r['post_id'].toString();
-          final reason = (r['reason'] ?? '').toString();
-          final details = (r['details'] ?? '').toString();
-          final reporterId = r['reporter_id']?.toString() ?? '';
-          final createdAt = (r['created_at'] ?? '').toString();
-
-          return _ReportCard(
-            title: reason.isEmpty ? 'Post report' : reason,
-            subtitle:
-                'Post: $postId\nReporter: $reporterId\nCreated: $createdAt',
-            details: details.isEmpty ? null : details,
-            actions: [
-              TextButton.icon(
-                onPressed: () => _setReportStatus(
-                  table: 'post_reports',
-                  reportId: id,
-                  status: 'dismissed',
-                ),
-                icon: const Icon(Icons.close),
-                label: const Text('Dismiss'),
-              ),
-              TextButton.icon(
-                onPressed: () => _setReportStatus(
-                  table: 'post_reports',
-                  reportId: id,
-                  status: 'reviewed',
-                ),
-                icon: const Icon(Icons.check),
-                label: const Text('Reviewed'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await _softDeletePost(postId);
-                  // Optional: auto mark reviewed after delete
-                  await _setReportStatus(
-                    table: 'post_reports',
-                    reportId: id,
-                    status: 'reviewed',
-                  );
-                },
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Delete post'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildUserReports() {
-    if (_loadingUsers) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_errorUsers != null) {
-      return Center(child: Text(_errorUsers!));
-    }
-    if (_userReports.isEmpty) {
-      return const Center(child: Text('No reports.'));
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadUserReports,
-      child: ListView.separated(
-        padding: const EdgeInsets.all(12),
-        itemCount: _userReports.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (_, i) {
-          final r = _userReports[i];
-          final id = r['id'].toString();
-          final reportedUserId = r['reported_user_id'].toString();
-          final reason = (r['reason'] ?? '').toString();
-          final details = (r['details'] ?? '').toString();
-          final reporterId = r['reporter_id']?.toString() ?? '';
-          final createdAt = (r['created_at'] ?? '').toString();
-
-          return _ReportCard(
-            title: reason.isEmpty ? 'User report' : reason,
-            subtitle:
-                'User: $reportedUserId\nReporter: $reporterId\nCreated: $createdAt',
-            details: details.isEmpty ? null : details,
-            actions: [
-              TextButton.icon(
-                onPressed: () => _setReportStatus(
-                  table: 'user_reports',
-                  reportId: id,
-                  status: 'dismissed',
-                ),
-                icon: const Icon(Icons.close),
-                label: const Text('Dismiss'),
-              ),
-              TextButton.icon(
-                onPressed: () => _setReportStatus(
-                  table: 'user_reports',
-                  reportId: id,
-                  status: 'reviewed',
-                ),
-                icon: const Icon(Icons.check),
-                label: const Text('Reviewed'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await _setUserDisabled(reportedUserId, true);
-                  await _setReportStatus(
-                    table: 'user_reports',
-                    reportId: id,
-                    status: 'reviewed',
-                  );
-                },
-                icon: const Icon(Icons.block),
-                label: const Text('Disable user'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _deleteUser(reportedUserId),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Delete user'),
-              ),
-            ],
-          );
-        },
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: 140,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(height: 8),
+            Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }
@@ -1233,573 +1557,18 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
 class _StatusChips extends StatelessWidget {
   final String value;
   final ValueChanged<String> onChanged;
-  final bool visible;
-
-  const _StatusChips({
-    required this.value,
-    required this.onChanged,
-    this.visible = true,
-  });
+  const _StatusChips({required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    if (!visible) {
-      return const SizedBox.shrink();
-    }
-    final items = const [
-      ('pending', 'Pending'),
-      ('reviewed', 'Reviewed'),
-      ('dismissed', 'Dismissed'),
-    ];
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-      child: Row(
-        children: items.map((e) {
-          final selected = value == e.$1;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(e.$2),
-              selected: selected,
-              onSelected: (_) => onChanged(e.$1),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final String subtitle;
-  final bool danger;
-
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.subtitle,
-    this.danger = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 220,
+    final items = const [('pending', 'Pending'), ('reviewed', 'Reviewed'), ('dismissed', 'Dismissed')];
+    return Padding(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: danger ? const Color(0xFFD92D20) : const Color(0xFFE6DDCE),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: danger ? const Color(0xFFD92D20) : null,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AdminActionCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _AdminActionCard({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFE6DDCE)),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: const Color(0xFFF4EBDD),
-              child: Icon(icon, color: const Color(0xFFCC7A00)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OverviewSection extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _OverviewSection({
-    required this.title,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE6DDCE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 14),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniStatCard extends StatelessWidget {
-  final String title;
-  final String value;
-
-  const _MiniStatCard({
-    required this.title,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 170,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE6DDCE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AdminLoginChip extends StatelessWidget {
-  final String label;
-
-  const _AdminLoginChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.12)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Colors.white.withOpacity(0.9),
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _AdminPostListTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final VoidCallback onRemove;
-
-  const _AdminPostListTile({
-    required this.title,
-    required this.subtitle,
-    required this.onRemove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE6DDCE)),
-      ),
       child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 20,
-            backgroundColor: Color(0xFFF4EBDD),
-            child: Icon(Icons.article_outlined, color: Color(0xFFCC7A00)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title.trim().isEmpty ? 'Untitled post' : title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            onPressed: onRemove,
-            icon: const Icon(Icons.delete_outline, size: 18),
-            label: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AdminPostPreviewCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final String imageUrl;
-  final String body;
-  final VoidCallback onRemove;
-
-  const _AdminPostPreviewCard({
-    required this.title,
-    required this.subtitle,
-    required this.imageUrl,
-    required this.body,
-    required this.onRemove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE6DDCE)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              width: 96,
-              height: 96,
-              color: const Color(0xFFF4EBDD),
-              child: imageUrl.trim().isEmpty
-                  ? const Icon(Icons.image_outlined, color: Color(0xFFCC7A00))
-                  : Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.broken_image_outlined,
-                        color: Color(0xFFCC7A00),
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title.trim().isEmpty ? 'Untitled post' : title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                if (body.trim().isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    body,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    FilledButton.tonalIcon(
-                      onPressed: onRemove,
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('Remove post'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AdminUserListTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool isDisabled;
-  final bool busy;
-  final VoidCallback onToggleDisabled;
-  final VoidCallback onDelete;
-
-  const _AdminUserListTile({
-    required this.title,
-    required this.subtitle,
-    required this.isDisabled,
-    required this.busy,
-    required this.onToggleDisabled,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE6DDCE)),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: const Color(0xFFF4EBDD),
-            child: Text(
-              title.trim().isEmpty ? '?' : title.trim()[0].toUpperCase(),
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Color(0xFFCC7A00),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title.trim().isEmpty ? 'Unnamed user' : title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: isDisabled
-                        ? const Color(0xFFFDECEC)
-                        : const Color(0xFFE8F5EE),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    isDisabled ? 'Disabled' : 'Active',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isDisabled
-                          ? const Color(0xFFD92D20)
-                          : const Color(0xFF0F766E),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: busy ? null : onToggleDisabled,
-                child: Text(isDisabled ? 'Enable' : 'Disable'),
-              ),
-              FilledButton.tonal(
-                onPressed: busy ? null : onDelete,
-                style: FilledButton.styleFrom(
-                  foregroundColor: const Color(0xFFD92D20),
-                ),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReportCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final String? details;
-  final List<Widget> actions;
-
-  const _ReportCard({
-    required this.title,
-    required this.subtitle,
-    required this.actions,
-    this.details,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: Theme.of(context).textTheme.titleMedium,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 6),
-            Text(subtitle,
-                style: Theme.of(context).textTheme.bodySmall,
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis),
-            if (details != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                details!,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: actions,
-            ),
-          ],
-        ),
+        children: items.map((e) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(label: Text(e.$2), selected: value == e.$1, onSelected: (_) => onChanged(e.$1)),
+        )).toList(),
       ),
     );
   }

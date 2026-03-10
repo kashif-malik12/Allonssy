@@ -1,0 +1,401 @@
+import 'dart:io' show File;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../services/mention_service.dart';
+import '../services/post_service.dart';
+import '../widgets/global_bottom_nav.dart';
+import '../widgets/local_video_preview.dart';
+import '../widgets/mention_picker_sheet.dart';
+
+enum QuickCaptureMode { photo, video }
+
+class QuickCameraPostScreen extends StatefulWidget {
+  const QuickCameraPostScreen({super.key, required this.mode});
+
+  final QuickCaptureMode mode;
+
+  @override
+  State<QuickCameraPostScreen> createState() => _QuickCameraPostScreenState();
+}
+
+class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
+  final _contentCtrl = TextEditingController();
+  final _picker = ImagePicker();
+  final _mentionService = MentionService(Supabase.instance.client);
+
+  String _visibility = 'public';
+  String _shareScope = 'none';
+  bool _loading = false;
+  bool _capturing = true;
+  bool _isOrganization = false;
+  XFile? _mediaFile;
+  List<MentionCandidate> _selectedMentions = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _loadAuthorMetadata();
+    await _captureMedia();
+  }
+
+  @override
+  void dispose() {
+    _contentCtrl.dispose();
+    super.dispose();
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _loadAuthorMetadata() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final row = await Supabase.instance.client
+          .from('profiles')
+          .select('profile_type, account_type')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (!mounted) return;
+      setState(() {
+        final authorType = (row?['profile_type'] as String?) ??
+            (row?['account_type'] as String?) ??
+            'person';
+        _isOrganization = authorType == 'org';
+        if (_isOrganization) {
+          _visibility = 'public';
+        }
+      });
+    } catch (_) {
+      // Keep defaults
+    }
+  }
+
+  Future<void> _captureMedia() async {
+    if (!mounted) return;
+    setState(() {
+      _capturing = true;
+      _mediaFile = null;
+    });
+
+    try {
+      XFile? captured;
+      if (widget.mode == QuickCaptureMode.photo) {
+        captured = await _picker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 78,
+        );
+      } else {
+        captured = await _picker.pickVideo(
+          source: ImageSource.camera,
+          maxDuration: const Duration(seconds: 10),
+        );
+      }
+
+      if (!mounted) return;
+      if (captured == null) {
+        Navigator.pop(context, false);
+        return;
+      }
+
+      setState(() => _mediaFile = captured);
+    } catch (e) {
+      if (mounted) {
+        _showError('Camera failed: $e');
+        Navigator.pop(context, false);
+      }
+    } finally {
+      if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  Future<void> _pickMentions() async {
+    try {
+      final connections = await _mentionService.fetchMutualConnections();
+      if (!mounted) return;
+      if (connections.isEmpty) {
+        _showError('No mutual connections available to tag');
+        return;
+      }
+
+      final selected = await showMentionPickerSheet(
+        context: context,
+        available: connections,
+        initialSelection: _selectedMentions,
+        title: 'Tag connections',
+      );
+
+      if (selected != null && mounted) {
+        setState(() => _selectedMentions = selected);
+      }
+    } catch (e) {
+      _showError('Tag loading failed: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> _loadProfileLocation(SupabaseClient supabase) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return null;
+
+    return supabase
+        .from('profiles')
+        .select('city, latitude, longitude')
+        .eq('id', user.id)
+        .maybeSingle();
+  }
+
+  Future<void> _submit() async {
+    final mediaFile = _mediaFile;
+    if (mediaFile == null) {
+      _showError('Capture something first');
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final supabase = Supabase.instance.client;
+      final service = PostService(supabase);
+      final rawContent = _contentCtrl.text.trim();
+      final profile = await _loadProfileLocation(supabase);
+      final city = profile?['city'] as String?;
+      final lat = profile?['latitude'] as num?;
+      final lng = profile?['longitude'] as num?;
+
+      if (lat == null || lng == null) {
+        if (!mounted) return;
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Location required'),
+            content: const Text(
+              'To post in the local feed, please set your location in your profile.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  context.go('/complete-profile');
+                },
+                child: const Text('Complete Profile'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final allowedTagIds = await _mentionService
+          .filterAllowedUserIds(_selectedMentions.map((e) => e.id).toList());
+      final content = _mentionService.composeTaggedContent(
+        rawContent,
+        _selectedMentions,
+      );
+
+      String? imageUrl;
+      String? videoUrl;
+      if (widget.mode == QuickCaptureMode.photo) {
+        imageUrl = await service.uploadPostImage(
+          image: mediaFile,
+          userId: supabase.auth.currentUser!.id,
+        );
+      } else {
+        videoUrl = await service.uploadPostVideo(
+          video: mediaFile,
+          userId: supabase.auth.currentUser!.id,
+        );
+      }
+
+      await service.createPost(
+        content: content,
+        visibility: _visibility,
+        latitude: lat.toDouble(),
+        longitude: lng.toDouble(),
+        locationName: city,
+        imageUrl: imageUrl,
+        videoUrl: videoUrl,
+        postType: 'post',
+        shareScope: _shareScope,
+        taggedUserIds: allowedTagIds,
+      );
+
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      _showError('Error: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Widget _buildPreview() {
+    final mediaFile = _mediaFile;
+    if (_capturing) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (mediaFile == null) {
+      return const Center(child: Text('No media captured'));
+    }
+
+    if (widget.mode == QuickCaptureMode.photo) {
+      final provider = kIsWeb
+          ? NetworkImage(mediaFile.path)
+          : FileImage(File(mediaFile.path)) as ImageProvider;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Image(
+          image: provider,
+          width: double.infinity,
+          height: 320,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+
+    return LocalVideoPreview(file: mediaFile, height: 260);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Quick Camera Post')),
+      bottomNavigationBar: const GlobalBottomNav(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildPreview(),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _contentCtrl,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'What is happening?',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _loading ? null : _captureMedia,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retake'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _loading ? null : _pickMentions,
+                      icon: const Icon(Icons.alternate_email),
+                      label: const Text('Tag connections'),
+                    ),
+                  ),
+                ],
+              ),
+              if (_selectedMentions.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedMentions
+                      .map(
+                        (mention) => InputChip(
+                          label: Text(mention.name),
+                          onDeleted: () {
+                            setState(() {
+                              _selectedMentions = _selectedMentions
+                                  .where((item) => item.id != mention.id)
+                                  .toList();
+                            });
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+              const SizedBox(height: 12),
+              if (!_isOrganization) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: _visibility,
+                  items: const [
+                    DropdownMenuItem(value: 'public', child: Text('Public')),
+                    DropdownMenuItem(value: 'followers', child: Text('Local')),
+                  ],
+                  onChanged: (v) => setState(() => _visibility = v ?? 'public'),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Visibility',
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.public, color: Colors.blue),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'This quick camera post will be public.',
+                          style: TextStyle(color: Colors.blue),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _shareScope,
+                items: const [
+                  DropdownMenuItem(value: 'none', child: Text('No sharing')),
+                  DropdownMenuItem(value: 'followers', child: Text('Followers can share')),
+                  DropdownMenuItem(value: 'connections', child: Text('Connections can share')),
+                  DropdownMenuItem(value: 'public', child: Text('Public can share')),
+                ],
+                onChanged: (v) => setState(() => _shareScope = v ?? 'none'),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Allow sharing',
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _loading || _capturing ? null : _submit,
+                child: _loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Post now'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

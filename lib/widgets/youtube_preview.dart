@@ -3,10 +3,19 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../core/utils/youtube_utils.dart';
+import '../services/app_settings_service.dart';
 
 class YoutubePreview extends StatelessWidget {
   final String videoUrl;
-  const YoutubePreview({super.key, required this.videoUrl});
+  final bool startMuted;
+  final bool showMuteToggle;
+
+  const YoutubePreview({
+    super.key,
+    required this.videoUrl,
+    this.startMuted = false,
+    this.showMuteToggle = false,
+  });
 
   Future<void> _openVideoExternally(BuildContext context, String videoId) async {
     final uri = Uri.parse(youtubeWatchUrlFromId(videoId));
@@ -23,12 +32,16 @@ class YoutubePreview extends StatelessWidget {
   }
 
   void _openPlayer(BuildContext context, String videoId) {
+    final shouldAutoplay = AppSettingsService.currentVideoAutoplayEnabled();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _YoutubePlayerSheet(
         videoId: videoId,
+        autoplay: shouldAutoplay,
+        startMuted: startMuted,
+        showMuteToggle: showMuteToggle,
         onOpenYoutube: () => _openVideoExternally(context, videoId),
       ),
     );
@@ -83,10 +96,16 @@ class YoutubePreview extends StatelessWidget {
 class _YoutubePlayerSheet extends StatefulWidget {
   final String videoId;
   final Future<void> Function() onOpenYoutube;
+  final bool autoplay;
+  final bool startMuted;
+  final bool showMuteToggle;
 
   const _YoutubePlayerSheet({
     required this.videoId,
     required this.onOpenYoutube,
+    required this.autoplay,
+    required this.startMuted,
+    required this.showMuteToggle,
   });
 
   @override
@@ -95,18 +114,24 @@ class _YoutubePlayerSheet extends StatefulWidget {
 
 class _YoutubePlayerSheetState extends State<_YoutubePlayerSheet> {
   late final YoutubePlayerController _controller;
+  late bool _muted;
 
   @override
   void initState() {
     super.initState();
+    _muted = widget.startMuted;
     _controller = YoutubePlayerController(
-      params: const YoutubePlayerParams(
+      params: YoutubePlayerParams(
         showFullscreenButton: true,
-        mute: false,
+        mute: widget.startMuted,
         strictRelatedVideos: true,
       ),
     );
-    _controller.loadVideoById(videoId: widget.videoId);
+    if (widget.autoplay) {
+      _controller.loadVideoById(videoId: widget.videoId);
+    } else {
+      _controller.cueVideoById(videoId: widget.videoId);
+    }
   }
 
   @override
@@ -142,9 +167,41 @@ class _YoutubePlayerSheetState extends State<_YoutubePlayerSheet> {
             YoutubePlayerScaffold(
               controller: _controller,
               builder: (context, player) {
-                return AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: player,
+                return Stack(
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: player,
+                    ),
+                    if (widget.showMuteToggle)
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Material(
+                          color: Colors.black.withOpacity(0.5),
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () {
+                              if (_muted) {
+                                _controller.unMute();
+                              } else {
+                                _controller.mute();
+                              }
+                              setState(() => _muted = !_muted);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Icon(
+                                _muted ? Icons.volume_off : Icons.volume_up,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               },
             ),

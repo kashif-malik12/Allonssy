@@ -168,4 +168,34 @@ class FollowService {
         .eq('status', 'accepted');
     return (rows as List).length;
   }
+
+  Future<List<String>> mutualConnectionIds(String profileId) async {
+    final followersRows = await _db
+        .from('follows')
+        .select('follower_id')
+        .eq('followed_profile_id', profileId)
+        .eq('status', 'accepted');
+
+    final followingRows = await _db
+        .from('follows')
+        .select('followed_profile_id')
+        .eq('follower_id', profileId)
+        .eq('status', 'accepted');
+
+    final followerIds = (followersRows as List)
+        .map((row) => (row['follower_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final followingIds = (followingRows as List)
+        .map((row) => (row['followed_profile_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    return followerIds.intersection(followingIds).toList();
+  }
+
+  Future<int> mutualConnectionsCount(String profileId) async {
+    final ids = await mutualConnectionIds(profileId);
+    return ids.length;
+  }
 }

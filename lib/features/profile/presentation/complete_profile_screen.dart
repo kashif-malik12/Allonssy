@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/business_categories.dart';
 import '../../../core/restaurant_categories.dart';
+import '../../../services/media_limits.dart';
 import '../../../services/profile_service.dart';
 import '../../../widgets/global_app_bar.dart'; // ✅ NEW
 import '../../../widgets/global_bottom_nav.dart';
@@ -24,6 +25,9 @@ class CompleteProfileScreen extends StatefulWidget {
 class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _name = TextEditingController();
   final _bio = TextEditingController();
+  final _businessName = TextEditingController();
+  final _jobTitle = TextEditingController();
+  final _businessProfile = TextEditingController();
 
   final _zipCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
@@ -59,6 +63,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   void dispose() {
     _name.dispose();
     _bio.dispose();
+    _businessName.dispose();
+    _jobTitle.dispose();
+    _businessProfile.dispose();
     _zipCtrl.dispose();
     _cityCtrl.dispose();
     super.dispose();
@@ -130,7 +137,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         data = await Supabase.instance.client
             .from('profiles')
             .select(
-             'full_name, bio, zipcode, city, latitude, longitude, profile_type, account_type, org_kind, radius_km, avatar_url, is_restaurant, restaurant_type, business_type',
+             'full_name, bio, business_profile, zipcode, city, latitude, longitude, profile_type, account_type, org_kind, radius_km, avatar_url, is_restaurant, restaurant_type, business_type, business_name, job_title',
             )
             .eq('id', user.id)
             .maybeSingle();
@@ -149,6 +156,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       setState(() {
         _name.text = (data?['full_name'] as String?) ?? '';
         _bio.text = (data?['bio'] as String?) ?? '';
+        _businessName.text = (data?['business_name'] as String?) ?? '';
+        _jobTitle.text = (data?['job_title'] as String?) ?? '';
+        _businessProfile.text = (data?['business_profile'] as String?) ?? '';
         _zipCtrl.text = (data?['zipcode'] as String?) ?? '';
         _cityCtrl.text = (data?['city'] as String?) ?? '';
         _savedZip = (data?['zipcode'] as String?)?.trim();
@@ -188,7 +198,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     try {
       final image = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 75,
+        imageQuality: MediaLimits.avatarImageQuality,
       );
       if (image == null) return;
 
@@ -346,6 +356,17 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       final updateData = <String, dynamic>{
         'full_name': fullName,
         'bio': _bio.text.trim().isEmpty ? null : _bio.text.trim(),
+        'business_name': (_accountType == 'business' || _accountType == 'org')
+            ? _businessName.text.trim()
+            : null,
+        'job_title': (_accountType == 'business' || _accountType == 'org')
+            ? _jobTitle.text.trim()
+            : null,
+        'business_profile': (_accountType == 'business' || _accountType == 'org')
+            ? (_businessProfile.text.trim().isEmpty
+                ? null
+                : _businessProfile.text.trim())
+            : null,
 
         'account_type': _accountType,
         'profile_type': _accountType,
@@ -380,14 +401,16 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         final msg = (e.message).toLowerCase();
         if (!msg.contains('is_restaurant') &&
             !msg.contains('restaurant_type') &&
-            !msg.contains('business_type')) {
+            !msg.contains('business_type') &&
+            !msg.contains('business_profile')) {
           rethrow;
         }
 
         final fallback = Map<String, dynamic>.from(updateData)
           ..remove('is_restaurant')
           ..remove('restaurant_type')
-           ..remove('business_type');
+          ..remove('business_type')
+          ..remove('business_profile');
 
         await Supabase.instance.client.from('profiles').upsert({
           'id': user.id,
@@ -522,7 +545,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             const SizedBox(height: 16),
 
             DropdownButtonFormField<String>(
-              initialValue: _accountType,
+              value: _accountType,
               items: const [
                 DropdownMenuItem(value: 'person', child: Text('Person')),
                 DropdownMenuItem(value: 'business', child: Text('Business')),
@@ -545,23 +568,6 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               ),
             ),
             const SizedBox(height: 12),
-
-            if (_accountType == 'org') ...[
-              DropdownButtonFormField<String>(
-                initialValue: _orgKind,
-                items: const [
-                  DropdownMenuItem(value: 'government', child: Text('Government')),
-                  DropdownMenuItem(value: 'nonprofit', child: Text('Non-profit')),
-                  DropdownMenuItem(value: 'news_agency', child: Text('News agency')),
-                ],
-                onChanged: (v) => setState(() => _orgKind = v),
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Organization type',
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
 
             if (_accountType == 'business') ...[
               CheckboxListTile(
@@ -586,7 +592,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               const SizedBox(height: 8),
               if (_isRestaurant) ...[
                 DropdownButtonFormField<String>(
-                  initialValue: _restaurantType,
+                  value: _restaurantType,
                   items: restaurantMainCategories
                       .map((c) => DropdownMenuItem(
                             value: c,
@@ -603,7 +609,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               ],
               if (!_isRestaurant) ...[
                 DropdownButtonFormField<String>(
-                  initialValue: _businessType,
+                  value: _businessType,
                   items: businessMainCategories
                       .map((c) => DropdownMenuItem(
                             value: c,
@@ -618,6 +624,59 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
+            ],
+
+            if (_accountType == 'business' || _accountType == 'org') ...[
+              TextField(
+                controller: _businessName,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  labelText: _accountType == 'business' ? 'Business Name' : 'Organization Name',
+                  prefixIcon: const Icon(Icons.business),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _jobTitle,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Your Title (Founder, Owner, Manager...)',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _businessProfile,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  labelText: _accountType == 'business'
+                      ? 'Short business profile'
+                      : 'Short organization profile',
+                  hintText: _accountType == 'business'
+                      ? 'Briefly describe your business'
+                      : 'Briefly describe your organization',
+                  prefixIcon: const Icon(Icons.business_center_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            if (_accountType == 'org') ...[
+              DropdownButtonFormField<String>(
+                value: _orgKind,
+                items: const [
+                  DropdownMenuItem(value: 'government', child: Text('Government')),
+                  DropdownMenuItem(value: 'nonprofit', child: Text('Non-profit')),
+                  DropdownMenuItem(value: 'news_agency', child: Text('News agency')),
+                ],
+                onChanged: (v) => setState(() => _orgKind = v),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Organization type',
+                ),
+              ),
+              const SizedBox(height: 12),
             ],
 
             TextField(
@@ -681,7 +740,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              initialValue: _radiusKm,
+              value: _radiusKm,
               items: const [
                 DropdownMenuItem(value: 5, child: Text('5 km')),
                 DropdownMenuItem(value: 10, child: Text('10 km')),

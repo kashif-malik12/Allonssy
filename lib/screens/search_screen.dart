@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -46,9 +47,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   bool _loading = false;
   String? _error;
+  bool _filtersExpanded = true;
 
   // ✅ Nearby toggle + viewer location from profile
-  bool _nearbyOnly = true;
+  bool _nearbyOnly = false;
   double? _meLat;
   double? _meLng;
   int _meRadiusKm = 5;
@@ -60,6 +62,23 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Map<String, dynamic>> _profiles = [];
   List<Map<String, dynamic>> _posts = [];
 
+  Future<Set<String>> _disabledProfileIds(Iterable<String> ids) async {
+    final uniqueIds = ids.where((id) => id.isNotEmpty).toSet().toList();
+    if (uniqueIds.isEmpty) return <String>{};
+
+    final rows = await _db
+        .from('profiles')
+        .select('id, is_disabled')
+        .inFilter('id', uniqueIds);
+
+    return (rows as List)
+        .cast<Map<String, dynamic>>()
+        .where((row) => row['is_disabled'] == true)
+        .map((row) => (row['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   String _visibilityLabel(String raw) {
     switch (raw.trim()) {
       case 'followers':
@@ -70,6 +89,120 @@ class _SearchScreenState extends State<SearchScreen> {
       default:
         return raw;
     }
+  }
+
+  String _escapeIlikeValue(String value) {
+    return value
+        .replaceAll(r'\', r'\\')
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_')
+        .replaceAll(',', ' ')
+        .trim();
+  }
+
+  double _toRad(double degrees) => degrees * math.pi / 180.0;
+
+  double _distanceKm(double lat1, double lng1, double lat2, double lng2) {
+    final dLat = _toRad(lat2 - lat1);
+    final dLng = _toRad(lng2 - lng1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRad(lat1)) *
+            math.cos(_toRad(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return 6371.0 * c;
+  }
+
+  Future<List<Map<String, dynamic>>> _fallbackProfileSearch(
+    String query, {
+    required bool useNearby,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final pattern = _escapeIlikeValue(trimmed);
+    final rows = await _db
+        .from('profiles')
+        .select(
+          'id, full_name, business_name, job_title, account_type, city, zipcode, latitude, longitude, avatar_url, is_disabled',
+        )
+        .eq('is_disabled', false)
+        .or(
+          [
+            'full_name.ilike.%$pattern%',
+            'business_name.ilike.%$pattern%',
+            'job_title.ilike.%$pattern%',
+            'city.ilike.%$pattern%',
+            'zipcode.ilike.%$pattern%',
+          ].join(','),
+        )
+        .limit(50);
+
+    final myId = _db.auth.currentUser?.id;
+    final normalizedQuery = trimmed.toLowerCase();
+    final results = <Map<String, dynamic>>[];
+
+    for (final row in (rows as List).cast<Map<String, dynamic>>()) {
+      final id = (row['id'] ?? '').toString();
+      if (id.isEmpty || id == myId) continue;
+
+      final lat = (row['latitude'] as num?)?.toDouble();
+      final lng = (row['longitude'] as num?)?.toDouble();
+      double? distanceKm;
+
+      if (_meLat != null && _meLng != null && lat != null && lng != null) {
+        distanceKm = _distanceKm(_meLat!, _meLng!, lat, lng);
+      }
+
+      if (useNearby) {
+        if (distanceKm == null || distanceKm > _meRadiusKm) {
+          continue;
+        }
+      }
+
+      final enriched = Map<String, dynamic>.from(row);
+      if (distanceKm != null) {
+        enriched['distance_km'] = distanceKm;
+      }
+      results.add(enriched);
+    }
+
+    int score(Map<String, dynamic> row) {
+      final candidates = [
+        (row['business_name'] ?? '').toString().toLowerCase(),
+        (row['full_name'] ?? '').toString().toLowerCase(),
+        (row['job_title'] ?? '').toString().toLowerCase(),
+        (row['city'] ?? '').toString().toLowerCase(),
+      ];
+
+      for (final value in candidates) {
+        if (value == normalizedQuery) return 0;
+      }
+      for (final value in candidates) {
+        if (value.startsWith(normalizedQuery)) return 1;
+      }
+      for (final value in candidates) {
+        if (value.contains(normalizedQuery)) return 2;
+      }
+      return 3;
+    }
+
+    results.sort((a, b) {
+      final scoreCompare = score(a).compareTo(score(b));
+      if (scoreCompare != 0) return scoreCompare;
+
+      final aDist = (a['distance_km'] as num?)?.toDouble() ?? double.infinity;
+      final bDist = (b['distance_km'] as num?)?.toDouble() ?? double.infinity;
+      final distCompare = aDist.compareTo(bDist);
+      if (distCompare != 0) return distCompare;
+
+      final aName = ((a['business_name'] ?? a['full_name'] ?? '') as String).toLowerCase();
+      final bName = ((b['business_name'] ?? b['full_name'] ?? '') as String).toLowerCase();
+      return aName.compareTo(bName);
+    });
+
+    return results.take(30).toList();
   }
 
   SupabaseClient get _db => Supabase.instance.client;
@@ -129,6 +262,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _error = null;
         _profiles = [];
         _posts = [];
+        _filtersExpanded = true;
       });
       return;
     }
@@ -137,6 +271,7 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _filtersExpanded = false;
     });
 
     try {
@@ -144,7 +279,7 @@ class _SearchScreenState extends State<SearchScreen> {
       if (_tab == SearchTab.profiles) {
         final useNearby = _nearbyOnly && _meLat != null && _meLng != null;
 
-        final res = useNearby
+        final rpcRes = useNearby
             ? await _db.rpc('search_profiles_nearby', params: {
                 'q': q,
                 'viewer_lat': _meLat,
@@ -158,11 +293,36 @@ class _SearchScreenState extends State<SearchScreen> {
                 'limit_n': 30,
               });
 
-        final rows = (res as List<dynamic>).cast<Map<String, dynamic>>();
+        final rows = (rpcRes as List<dynamic>).cast<Map<String, dynamic>>();
+        final fallbackRows = await _fallbackProfileSearch(
+          q,
+          useNearby: useNearby,
+        );
+        final mergedById = <String, Map<String, dynamic>>{};
+        for (final row in rows) {
+          final id = (row['id'] ?? '').toString();
+          if (id.isEmpty) continue;
+          mergedById[id] = Map<String, dynamic>.from(row);
+        }
+        for (final row in fallbackRows) {
+          final id = (row['id'] ?? '').toString();
+          if (id.isEmpty) continue;
+          mergedById.putIfAbsent(id, () => Map<String, dynamic>.from(row));
+        }
+
+        final disabledIds =
+            await _disabledProfileIds(mergedById.keys);
+        final myId = _db.auth.currentUser?.id;
+        final visibleRows = mergedById.values.where((row) {
+          final id = (row['id'] ?? '').toString();
+          if (id.isEmpty) return false;
+          if (id == myId) return false;
+          return !disabledIds.contains(id);
+        }).toList();
 
         if (!mounted) return;
         setState(() {
-          _profiles = rows;
+          _profiles = visibleRows;
           _posts = [];
           _loading = false;
         });
@@ -202,10 +362,17 @@ class _SearchScreenState extends State<SearchScreen> {
               });
 
         final rows = (res as List<dynamic>).cast<Map<String, dynamic>>();
+        final disabledIds = await _disabledProfileIds(
+          rows.map((row) => (row['user_id'] ?? row['profile_id'] ?? '').toString()),
+        );
+        final visibleRows = rows.where((row) {
+          final authorId = (row['user_id'] ?? row['profile_id'] ?? '').toString();
+          return !disabledIds.contains(authorId);
+        }).toList();
 
         if (!mounted) return;
         setState(() {
-          _posts = rows;
+          _posts = visibleRows;
           _profiles = [];
           _loading = false;
         });
@@ -225,8 +392,187 @@ class _SearchScreenState extends State<SearchScreen> {
       _error = null;
       _profiles = [];
       _posts = [];
+      if (_qCtrl.text.trim().isEmpty) {
+        _filtersExpanded = true;
+      }
     });
     _runSearch();
+  }
+
+  Widget _buildSearchControls() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: SegmentedButton<SearchTab>(
+            segments: const [
+              ButtonSegment(
+                value: SearchTab.profiles,
+                label: Text('Profiles'),
+                icon: Icon(Icons.person_search),
+              ),
+              ButtonSegment(
+                value: SearchTab.posts,
+                label: Text('Posts'),
+                icon: Icon(Icons.article),
+              ),
+            ],
+            selected: {_tab},
+            onSelectionChanged: (s) => _switchTab(s.first),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _nearbyOnly,
+            title: const Text('Nearby only'),
+            subtitle: Text(
+              !_profileLoaded
+                  ? 'Loading your location...'
+                  : !_nearbyOnly
+                      ? 'Global search'
+                      : (_meLat == null || _meLng == null)
+                          ? 'Location not set in your profile (fallback to global search)'
+                          : 'Using your profile radius: $_meRadiusKm km',
+            ),
+            onChanged: (v) {
+              setState(() => _nearbyOnly = v);
+              _runSearch();
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Match strictness',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _strictnessLabel(_simThreshold),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              Slider(
+                value: _simThreshold.clamp(0.15, 0.45).toDouble(),
+                min: 0.15,
+                max: 0.45,
+                divisions: 6,
+                label: _strictnessLabel(_simThreshold),
+                onChanged: (v) {
+                  final clamped = v.clamp(0.15, 0.45).toDouble();
+                  setState(() => _simThreshold = clamped);
+                },
+                onChangeEnd: (_) => _runSearch(),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Broader', style: TextStyle(fontSize: 12)),
+                    Text('Exact', style: TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+              Text(
+                'This changes match quality only. Distance is controlled by Nearby only.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        if (_tab == SearchTab.posts) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _DropdownBox(
+                    label: 'Scope',
+                    child: DropdownButton<SearchScope>(
+                      isExpanded: true,
+                      value: _scope,
+                      underline: const SizedBox.shrink(),
+                      items: const [
+                        DropdownMenuItem(
+                          value: SearchScope.public,
+                          child: Text('Public'),
+                        ),
+                        DropdownMenuItem(
+                          value: SearchScope.following,
+                          child: Text('Following'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => _scope = v);
+                        _runSearch();
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _DropdownBox(
+                    label: 'Post Type',
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _selectedPostType,
+                      underline: const SizedBox.shrink(),
+                      items: _postTypes
+                          .map((t) => DropdownMenuItem(
+                                value: t,
+                                child: Text(t),
+                              ))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => _selectedPostType = v);
+                        _runSearch();
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: _DropdownBox(
+              label: 'Author Type',
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: _selectedAuthorType,
+                underline: const SizedBox.shrink(),
+                items: _authorTypes
+                    .map((t) => DropdownMenuItem(
+                          value: t,
+                          child: Text(t),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedAuthorType = v);
+                  _runSearch();
+                },
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+      ],
+    );
   }
 
   @override
@@ -267,6 +613,35 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: (_) => _runSearch(),
             ),
           ),
+          if (q.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => setState(() => _filtersExpanded = !_filtersExpanded),
+                child: Ink(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE6DDCE)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(_filtersExpanded ? Icons.expand_less : Icons.tune),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _filtersExpanded ? 'Hide search filters' : 'Show search filters',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_filtersExpanded) ...[
 
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -299,9 +674,11 @@ class _SearchScreenState extends State<SearchScreen> {
               subtitle: Text(
                 !_profileLoaded
                     ? 'Loading your location…'
-                    : (_meLat == null || _meLng == null)
+                    : !_nearbyOnly
+                        ? 'Global search'
+                        : (_meLat == null || _meLng == null)
                         ? 'Location not set in your profile (fallback to global search)'
-                        : 'Using radius $_meRadiusKm km',
+                        : 'Using your profile radius: $_meRadiusKm km',
               ),
               onChanged: (v) {
                 setState(() => _nearbyOnly = v);
@@ -350,6 +727,10 @@ class _SearchScreenState extends State<SearchScreen> {
                       Text('Exact', style: TextStyle(fontSize: 12)),
                     ],
                   ),
+                ),
+                Text(
+                  'This changes match quality only. Distance is controlled by Nearby only.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
@@ -437,6 +818,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ],
 
           const SizedBox(height: 8),
+          ],
           Expanded(child: _buildBody(q)),
         ],
       ),
@@ -478,6 +860,10 @@ class _SearchScreenState extends State<SearchScreen> {
           final p = _profiles[i];
           final id = (p['id'] ?? '').toString();
           final fullName = (p['full_name'] ?? '').toString();
+          final bName = (p['business_name'] as String?) ?? '';
+          final job = (p['job_title'] as String?) ?? '';
+          
+          final displayName = bName.isNotEmpty ? bName : (fullName.isEmpty ? 'Unnamed' : fullName);
           final accountType = (p['account_type'] ?? '').toString();
           final city = (p['city'] ?? '').toString();
           final zipcode = (p['zipcode'] ?? '').toString();
@@ -485,18 +871,32 @@ class _SearchScreenState extends State<SearchScreen> {
 
           return ListTile(
             leading: CircleAvatar(
-              child: Text(fullName.trim().isEmpty ? '?' : fullName.trim()[0]),
+              child: Text(displayName.trim().isEmpty ? '?' : displayName.trim()[0].toUpperCase()),
             ),
-            title: Text(fullName.isEmpty ? 'Unnamed' : fullName),
-            subtitle: Text(
-              [
-                if (accountType.isNotEmpty) accountType,
-                if (dist != null) '${dist.toStringAsFixed(1)} km',
-                if (city.isNotEmpty || zipcode.isNotEmpty)
-                  '${city.isEmpty ? '' : city}${city.isNotEmpty && zipcode.isNotEmpty ? ' • ' : ''}${zipcode.isEmpty ? '' : zipcode}',
-              ].where((x) => x.isNotEmpty).join(' — '),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            title: Text(displayName),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (job.isNotEmpty)
+                  Text(
+                    job,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F766E),
+                    ),
+                  ),
+                Text(
+                  [
+                    if (accountType.isNotEmpty) accountType,
+                    if (dist != null) '${dist.toStringAsFixed(1)} km',
+                    if (city.isNotEmpty || zipcode.isNotEmpty)
+                      '${city.isEmpty ? '' : city}${city.isNotEmpty && zipcode.isNotEmpty ? ' • ' : ''}${zipcode.isEmpty ? '' : zipcode}',
+                  ].where((x) => x.isNotEmpty).join(' — '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
             onTap: () => context.push('/p/$id'),
           );

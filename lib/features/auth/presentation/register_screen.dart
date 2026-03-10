@@ -15,6 +15,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordFocus = FocusNode();
 
   bool _loading = false;
+  bool _success = false;
   String? _error;
 
   @override
@@ -29,6 +30,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _success = false;
     });
 
     try {
@@ -39,11 +41,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (res.user == null) throw 'Sign up failed';
 
-      if (mounted) context.go('/home');
+      final identities = res.user!.identities ?? const [];
+      final looksLikeExistingUser = res.session == null &&
+          identities.isEmpty &&
+          (res.user!.email?.trim().toLowerCase() == _email.text.trim().toLowerCase());
+
+      if (looksLikeExistingUser) {
+        throw 'An account with this email already exists. Please log in instead.';
+      }
+
+      // If email verification is enabled, session might be null
+      if (res.session == null) {
+        if (mounted) {
+          setState(() {
+            _success = true;
+            _loading = false;
+          });
+        }
+      } else {
+        if (mounted) context.go('/home');
+      }
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !_success) setState(() => _loading = false);
     }
   }
 
@@ -143,74 +164,109 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ],
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Create account',
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
+                    child: _success
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.mark_email_read_outlined,
+                                color: Color(0xFFCC7A00),
+                                size: 64,
+                              ),
+                              const SizedBox(height: 24),
+                              Text(
+                                'Check your email',
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'We have sent a verification link to ${_email.text}. Please click the link to confirm your account.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  height: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton(
+                                  onPressed: () => context.go('/login'),
+                                  child: const Text('Return to login'),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Create account',
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Start your local profile in a few seconds.',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 22),
+                              TextField(
+                                controller: _email,
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                onSubmitted: (_) => _passwordFocus.requestFocus(),
+                                decoration: const InputDecoration(
+                                  labelText: 'Email',
+                                  prefixIcon: Icon(Icons.mail_outline),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _password,
+                                focusNode: _passwordFocus,
+                                obscureText: true,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) {
+                                  if (!_loading) _register();
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Password',
+                                  prefixIcon: Icon(Icons.lock_outline),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (_error != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Text(
+                                    _error!,
+                                    style: const TextStyle(color: Color(0xFFD92D20)),
+                                  ),
+                                ),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton(
+                                  onPressed: _loading ? null : _register,
+                                  child: Text(_loading ? 'Creating...' : 'Create account'),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton(
+                                  onPressed: () => context.go('/login'),
+                                  child: const Text('Back to login'),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Start your local profile in a few seconds.',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        TextField(
-                          controller: _email,
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          onSubmitted: (_) => _passwordFocus.requestFocus(),
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
-                            prefixIcon: Icon(Icons.mail_outline),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _password,
-                          focusNode: _passwordFocus,
-                          obscureText: true,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) {
-                            if (!_loading) _register();
-                          },
-                          decoration: const InputDecoration(
-                            labelText: 'Password',
-                            prefixIcon: Icon(Icons.lock_outline),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(color: Color(0xFFD92D20)),
-                            ),
-                          ),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _loading ? null : _register,
-                            child: Text(_loading ? 'Creating...' : 'Create account'),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () => context.go('/login'),
-                            child: const Text('Back to login'),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
               );

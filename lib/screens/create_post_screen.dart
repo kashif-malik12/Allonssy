@@ -10,9 +10,11 @@ import '../core/food_categories.dart';
 import '../core/market_categories.dart';
 import '../core/post_types.dart';
 import '../core/service_categories.dart';
+import '../services/media_limits.dart';
 import '../services/mention_service.dart';
 import '../services/post_service.dart';
 import '../widgets/global_bottom_nav.dart';
+import '../widgets/local_video_preview.dart';
 import '../widgets/mention_picker_sheet.dart';
 
 enum _ComposerMediaMode { none, photos, videoFile, youtube }
@@ -26,8 +28,8 @@ class CreatePostScreen extends StatefulWidget {
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
   static const int _maxPhotoCount = 2;
-  static const int _maxPhotoBytes = 4 * 1024 * 1024;
-  static const int _maxVideoBytes = 20 * 1024 * 1024;
+  static const int _maxPhotoBytes = MediaLimits.maxPhotoBytes;
+  static const int _maxVideoBytes = MediaLimits.maxVideoBytes;
 
   final _contentCtrl = TextEditingController();
   final _videoUrlCtrl = TextEditingController();
@@ -45,6 +47,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _selectedFoodCategory = foodMainCategories.first;
   String _shareScope = 'none';
   bool _isRestaurantAuthor = false;
+  String _authorType = 'person';
   bool _loading = false;
 
   _ComposerMediaMode _mediaMode = _ComposerMediaMode.none;
@@ -58,11 +61,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       _selectedPostType == PostType.serviceRequest;
   bool get _isFoodAdPost => _selectedPostType == PostType.foodAd;
   bool get _supportsVideoModes => !_isMarketPost && !_isServicePost && !_isFoodAdPost;
+  bool get _isOrganization => _authorType == 'org';
 
   @override
   void initState() {
     super.initState();
-    _loadRestaurantFlag();
+    _loadAuthorMetadata();
   }
 
   @override
@@ -74,21 +78,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     super.dispose();
   }
 
-  Future<void> _loadRestaurantFlag() async {
+  Future<void> _loadAuthorMetadata() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
     try {
       final row = await Supabase.instance.client
           .from('profiles')
-          .select('is_restaurant')
+          .select('is_restaurant, profile_type, account_type')
           .eq('id', user.id)
           .maybeSingle();
       if (!mounted) return;
-      setState(() => _isRestaurantAuthor = row?['is_restaurant'] == true);
+      setState(() {
+        _isRestaurantAuthor = row?['is_restaurant'] == true;
+        _authorType = (row?['profile_type'] as String?) ??
+            (row?['account_type'] as String?) ??
+            'person';
+      });
     } on PostgrestException {
       if (!mounted) return;
-      setState(() => _isRestaurantAuthor = false);
+      setState(() {
+        _isRestaurantAuthor = false;
+        _authorType = 'person';
+      });
     }
   }
 
@@ -127,6 +139,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void _onPostTypeChanged(PostType value) {
     setState(() {
       _selectedPostType = value;
+      // Enforce public for everything except general posts by persons
+      if (value != PostType.post || _isOrganization) {
+        _visibility = 'public';
+      }
       if (!_isMarketPost) {
         _selectedMarketCategory = marketMainCategories.first;
         _selectedMarketIntent = 'selling';
@@ -147,7 +163,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _pickPhotos() async {
-    final files = await _picker.pickMultiImage(imageQuality: 85);
+    final files = await _picker.pickMultiImage(
+      imageQuality: MediaLimits.postImageQuality,
+    );
     if (files.isEmpty) return;
 
     final chosen = files.take(_maxPhotoCount).toList();
@@ -255,7 +273,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
 
     double? marketPrice;
-    if (_isFoodAdPost || _isMarketPost || (_isServicePost && marketPriceRaw.isNotEmpty)) {
+    if (_isMarketPost ||
+        ((_isFoodAdPost || _isServicePost) && marketPriceRaw.isNotEmpty)) {
       marketPrice = double.tryParse(marketPriceRaw);
       if (marketPrice == null || marketPrice < 0) {
         _showError('Please enter a valid price');
@@ -263,8 +282,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
     }
 
-    if (_isFoodAdPost && marketPriceRaw.isEmpty) {
-      _showError('Please enter food price');
+    if (_isMarketPost && marketPriceRaw.isEmpty) {
+      _showError('Please enter product price');
       return;
     }
 
@@ -541,29 +560,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           if (_selectedVideo != null)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: const Color(0xFFE6DDCE)),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  const Icon(Icons.videocam_outlined),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _selectedVideo!.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  LocalVideoPreview(file: _selectedVideo!, height: 220),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () => setState(() {
+                        _selectedVideo = null;
+                        _mediaMode = _ComposerMediaMode.none;
+                      }),
+                      icon: const Icon(Icons.close),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => setState(() {
-                      _selectedVideo = null;
-                      _mediaMode = _ComposerMediaMode.none;
-                    }),
-                    icon: const Icon(Icons.close),
                   ),
                 ],
               ),
@@ -691,8 +704,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       decoration: InputDecoration(
                         border: const OutlineInputBorder(),
                         labelText: _isFoodAdPost
-                            ? 'Food price'
-                            : (_isServicePost ? 'Rate/Budget (optional)' : 'Price (optional)'),
+                            ? 'Food price (optional)'
+                            : (_isServicePost ? 'Rate/Budget (optional)' : 'Price'),
                         hintText: _isFoodAdPost
                             ? 'e.g. 12.99'
                             : (_isServicePost ? 'e.g. 50' : 'e.g. 1200'),
@@ -770,18 +783,40 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ],
                   _buildMediaSection(),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _visibility,
-                    items: const [
-                      DropdownMenuItem(value: 'public', child: Text('Public')),
-                      DropdownMenuItem(value: 'followers', child: Text('Local')),
-                    ],
-                    onChanged: (v) => setState(() => _visibility = v ?? 'public'),
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      labelText: 'Visibility',
+                  if (_selectedPostType == PostType.post && !_isOrganization) ...[
+                    DropdownButtonFormField<String>(
+                      initialValue: _visibility,
+                      items: const [
+                        DropdownMenuItem(value: 'public', child: Text('Public')),
+                        DropdownMenuItem(value: 'followers', child: Text('Local')),
+                      ],
+                      onChanged: (v) => setState(() => _visibility = v ?? 'public'),
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        labelText: 'Visibility',
+                      ),
                     ),
-                  ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.public, color: Colors.blue),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'This post will be public so everyone nearby can see it.',
+                              style: TextStyle(color: Colors.blue),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: _shareScope,

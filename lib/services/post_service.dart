@@ -16,46 +16,34 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'media_compression_service.dart';
+import 'user_block_service.dart';
+
 class PostService {
   final SupabaseClient _db;
   PostService(this._db);
 
   static const String postSelect =
-      '*, profiles(full_name, avatar_url, city, zipcode, org_kind)';
+      '*, profiles(full_name, avatar_url, city, zipcode, org_kind, business_type, business_name, job_title)';
 
   Future<String> uploadPostImage({
     required XFile image,
     required String userId,
   }) async {
-    final ext = image.name.split('.').last.toLowerCase();
-    final safeExt = ext.isEmpty ? 'jpg' : ext;
+    final compressed = await MediaCompressionService.compressImage(image);
+    final safeExt = compressed.extension;
 
     final fileName = '${DateTime.now().millisecondsSinceEpoch}.$safeExt';
     final path = '$userId/$fileName';
 
-    if (kIsWeb) {
-      final Uint8List bytes = await image.readAsBytes();
-
-      await _db.storage.from('post-images').uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(
-              upsert: false,
-              contentType: _contentTypeFromExt(safeExt),
-            ),
-          );
-    } else {
-      final file = File(image.path);
-
-      await _db.storage.from('post-images').upload(
-            path,
-            file,
-            fileOptions: FileOptions(
-              upsert: false,
-              contentType: _contentTypeFromExt(safeExt),
-            ),
-          );
-    }
+    await _db.storage.from('post-images').uploadBinary(
+          path,
+          compressed.bytes,
+          fileOptions: FileOptions(
+            upsert: false,
+            contentType: compressed.contentType,
+          ),
+        );
 
     return _db.storage.from('post-images').getPublicUrl(path);
   }
@@ -64,14 +52,15 @@ class PostService {
     required XFile video,
     required String userId,
   }) async {
-    final ext = video.name.split('.').last.toLowerCase();
+    final preparedVideo = await MediaCompressionService.compressVideo(video);
+    final ext = preparedVideo.name.split('.').last.toLowerCase();
     final safeExt = ext.isEmpty ? 'mp4' : ext;
 
     final fileName = '${DateTime.now().millisecondsSinceEpoch}.$safeExt';
     final path = '$userId/$fileName';
 
     if (kIsWeb) {
-      final Uint8List bytes = await video.readAsBytes();
+      final Uint8List bytes = await preparedVideo.readAsBytes();
 
       await _db.storage.from('post-images').uploadBinary(
             path,
@@ -82,7 +71,7 @@ class PostService {
             ),
           );
     } else {
-      final file = File(video.path);
+      final file = File(preparedVideo.path);
 
       await _db.storage.from('post-images').upload(
             path,
@@ -142,12 +131,16 @@ class PostService {
         (profile?['account_type'] as String?) ??
         'person';
 
-    final normalizedVisibility = visibility == 'local' ? 'followers' : visibility;
+    var finalVisibility = visibility == 'local' ? 'followers' : visibility;
+    // Enforce public for marketplace, gigs, lost & found, food ads, and organizations
+    if (postType != 'post' || authorType == 'org') {
+      finalVisibility = 'public';
+    }
 
     final payload = <String, dynamic>{
       'user_id': user.id,
       'content': content,
-      'visibility': normalizedVisibility,
+      'visibility': finalVisibility,
       'latitude': latitude,
       'longitude': longitude,
       'location_name': locationName,
@@ -198,7 +191,7 @@ class PostService {
         inserted = await _db.from('posts').insert({
           'user_id': user.id,
           'content': content,
-          'visibility': normalizedVisibility,
+          'visibility': finalVisibility,
           'latitude': latitude,
           'longitude': longitude,
           'location_name': locationName,
@@ -259,6 +252,10 @@ class PostService {
         }
       }
     }
+  }
+
+  Future<void> deleteOwnPost(String postId) async {
+    await _db.rpc('delete_own_post', params: {'p_post_id': postId});
   }
 
   Future<void> sharePost({
@@ -352,8 +349,13 @@ class PostService {
                 .select(postSelect)
                 .inFilter('id', sharedIds)) as List;
 
+    final filteredBaseRows =
+        await excludeUnavailableAuthorRows(baseRows.cast<Map<String, dynamic>>());
+    final filteredSharedRows =
+        await excludeUnavailableAuthorRows(sharedRows.cast<Map<String, dynamic>>());
+
     final baseById = <String, Map<String, dynamic>>{};
-    for (final row in baseRows.cast<Map<String, dynamic>>()) {
+    for (final row in filteredBaseRows) {
       final id = (row['id'] ?? '').toString();
       if (id.isNotEmpty) {
         baseById[id] = row;
@@ -361,7 +363,7 @@ class PostService {
     }
 
     final byId = <String, Map<String, dynamic>>{};
-    for (final row in sharedRows.cast<Map<String, dynamic>>()) {
+    for (final row in filteredSharedRows) {
       final id = (row['id'] ?? '').toString();
       if (id.isNotEmpty) {
         byId[id] = row;
@@ -410,6 +412,61 @@ class PostService {
             msg.contains('shared_post_id') ||
             msg.contains('market_title') ||
             msg.contains('market_price'));
+  }
+
+  Future<Set<String>> fetchDisabledProfileIds(Iterable<String> profileIds) async {
+    final ids = profileIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return <String>{};
+
+    final rows = await _db
+        .from('profiles')
+        .select('id, is_disabled')
+        .inFilter('id', ids);
+
+    return (rows as List)
+        .cast<Map<String, dynamic>>()
+        .where((row) => row['is_disabled'] == true)
+        .map((row) => (row['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<List<Map<String, dynamic>>> excludeDisabledAuthorRows(
+    List<Map<String, dynamic>> rows, {
+    String authorKey = 'user_id',
+  }) async {
+    if (rows.isEmpty) return rows;
+
+    final disabledIds = await fetchDisabledProfileIds(
+      rows.map((row) => (row[authorKey] ?? '').toString()),
+    );
+
+    if (disabledIds.isEmpty) return rows;
+
+    return rows
+        .where((row) => !disabledIds.contains((row[authorKey] ?? '').toString()))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> excludeBlockedAuthorRows(
+    List<Map<String, dynamic>> rows, {
+    String authorKey = 'user_id',
+  }) async {
+    if (rows.isEmpty) return rows;
+    final blockedIds = await UserBlockService(_db).fetchBlockedRelatedUserIds();
+    if (blockedIds.isEmpty) return rows;
+
+    return rows
+        .where((row) => !blockedIds.contains((row[authorKey] ?? '').toString()))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> excludeUnavailableAuthorRows(
+    List<Map<String, dynamic>> rows, {
+    String authorKey = 'user_id',
+  }) async {
+    final visibleRows = await excludeDisabledAuthorRows(rows, authorKey: authorKey);
+    return excludeBlockedAuthorRows(visibleRows, authorKey: authorKey);
   }
 
   // -----------------------------
@@ -476,7 +533,7 @@ class PostService {
             .order('id', ascending: false)
             .limit(limit);
 
-        return (data as List).cast<Map<String, dynamic>>();
+        return excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
       }
 
       // FOLLOWING scope: posts from accepted followed users + self (server-side filters + cursor)
@@ -524,7 +581,7 @@ class PostService {
           .order('id', ascending: false)
           .limit(limit);
 
-      return (data as List).cast<Map<String, dynamic>>();
+      return excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
     }
 
     // 3) Location exists: use RPC for distance-filtered feed
@@ -546,6 +603,6 @@ class PostService {
       'p_before_id': beforeId,
     });
 
-    return (rows as List).cast<Map<String, dynamic>>();
+    return excludeUnavailableAuthorRows((rows as List).cast<Map<String, dynamic>>());
   }
 } // Added missing closing brace

@@ -20,14 +20,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app/chat_singletons.dart';
 import '../core/food_categories.dart';
+import '../core/create_post_launcher.dart';
 import '../models/post_model.dart';
 import '../core/business_categories.dart';
 import '../core/market_categories.dart';
 import '../core/restaurant_categories.dart';
 import '../core/service_categories.dart';
+import '../services/feed_filter_service.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
-import '../widgets/youtube_preview.dart';
 import '../widgets/global_bottom_nav.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/mobile_video_feed.dart';
@@ -42,8 +43,8 @@ class FeedScreen extends StatefulWidget {
   State<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> {
-  static const String _feedFiltersKey = 'feed_filters';
+class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
+  final FeedFilterService _feedFilterService = FeedFilterService(Supabase.instance.client);
 
   // Feed state
   bool _loading = true;
@@ -69,27 +70,26 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _generalPostsEnabled = true;
   String _generalPostsScope = 'all';
   bool _marketplaceEnabled = true;
-  String _marketplaceScope = 'all';
   final Set<String> _selectedMarketplaceIntents = {'buying', 'selling'};
   final Set<String> _selectedMarketplaceCategories = {};
   bool _gigsEnabled = true;
-  String _gigsScope = 'all';
   final Set<String> _selectedGigTypes = {'service_offer', 'service_request'};
   final Set<String> _selectedGigCategories = {};
   bool _lostFoundEnabled = true;
   String _lostFoundScope = 'all';
   bool _foodAdsEnabled = true;
-  String _foodAdsScope = 'all';
   final Set<String> _selectedFoodCategories = {};
   bool _organizationsEnabled = false;
-  String _organizationsScope = 'all';
   final Set<String> _selectedOrganizationKinds = {};
-  int? _publicDistanceLimitKm;
 
   // ✅ Notifications badge + realtime
   int _unreadNotifs = 0;
   RealtimeChannel? _notifChannel;
+  RealtimeChannel? _postsChannel;
   Timer? _notifDebounce;
+  Timer? _newPostsPoller;
+  bool _syncingPostMutation = false;
+  final Set<String> _pendingNewPostIds = {};
   Map<String, dynamic>? _myProfileSummary;
   int _profileCompleteness = 0;
   int _pendingOfferConversations = 0;
@@ -97,29 +97,59 @@ class _FeedScreenState extends State<FeedScreen> {
   List<Map<String, dynamic>> _topPosts = [];
   final PageController _mobileFeedPager = PageController();
   int _mobileFeedPage = 0;
+  bool _feedSummaryExpanded = false;
+  AppLifecycleState? _appLifecycleState;
+  bool _pollingStateInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appLifecycleState = WidgetsBinding.instance.lifecycleState;
     _scroll.addListener(_onScroll);
     _initFeed();
     _initNotificationsUnread();
+    _subscribePostsRealtime();
     _loadSidebarData();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_pollingStateInitialized) return;
+    _pollingStateInitialized = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _updateNewPostsPollingState();
+    });
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _mobileFeedPager.dispose();
 
     _notifDebounce?.cancel();
+    _newPostsPoller?.cancel();
     final ch = _notifChannel;
     _notifChannel = null;
     if (ch != null) {
       Supabase.instance.client.removeChannel(ch);
     }
+    final postsCh = _postsChannel;
+    _postsChannel = null;
+    if (postsCh != null) {
+      Supabase.instance.client.removeChannel(postsCh);
+    }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appLifecycleState = state;
+    _updateNewPostsPollingState();
   }
 
   // -----------------------------
@@ -128,7 +158,7 @@ class _FeedScreenState extends State<FeedScreen> {
   void _onScroll() {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
-    final shouldShowTop = pos.pixels > 900;
+    final shouldShowTop = pos.pixels > 320;
     if (shouldShowTop != _showScrollTop && mounted) {
       setState(() => _showScrollTop = shouldShowTop);
     }
@@ -143,81 +173,80 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _restoreSavedFilters() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    final data = user?.userMetadata?[_feedFiltersKey];
-    if (data is! Map) return;
+    final data = await _feedFilterService.load();
+    if (data == null || !mounted) return;
 
-    if (!mounted) return;
-    setState(() {
-      _generalPostsEnabled = data['general_enabled'] != false;
-      _generalPostsScope = (data['general_scope'] as String?) ?? 'all';
-      _marketplaceEnabled = data['market_enabled'] != false;
-      _marketplaceScope = (data['market_scope'] as String?) ?? 'all';
-      _selectedMarketplaceIntents
-        ..clear()
-        ..addAll(((data['market_intents'] as List?) ?? const []).map((e) => e.toString()));
-      _selectedMarketplaceCategories
-        ..clear()
-        ..addAll(((data['market_categories'] as List?) ?? const []).map((e) => e.toString()));
-      _gigsEnabled = data['gigs_enabled'] != false;
-      _gigsScope = (data['gigs_scope'] as String?) ?? 'all';
-      _selectedGigTypes
-        ..clear()
-        ..addAll(((data['gig_types'] as List?) ?? const []).map((e) => e.toString()));
-      _selectedGigCategories
-        ..clear()
-        ..addAll(((data['gig_categories'] as List?) ?? const []).map((e) => e.toString()));
-      _lostFoundEnabled = data['lost_found_enabled'] != false;
-      _lostFoundScope = (data['lost_found_scope'] as String?) ?? 'all';
-      _foodAdsEnabled = data['food_enabled'] != false;
-      _foodAdsScope = (data['food_scope'] as String?) ?? 'all';
-      _selectedFoodCategories
-        ..clear()
-        ..addAll(((data['food_categories'] as List?) ?? const []).map((e) => e.toString()));
-      _organizationsEnabled = data['org_enabled'] == true;
-      _organizationsScope = (data['org_scope'] as String?) ?? 'all';
-      _selectedOrganizationKinds
-        ..clear()
-        ..addAll(((data['org_kinds'] as List?) ?? const []).map((e) => e.toString()));
-      _publicDistanceLimitKm = (data['public_distance_km'] as num?)?.toInt();
-    });
+    setState(() => _applySavedFilters(data));
   }
 
   Future<void> _saveFilters() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
+    await _feedFilterService.save(_currentFilterPayload());
+  }
 
-    final payload = <String, dynamic>{
-      _feedFiltersKey: {
-        'general_enabled': _generalPostsEnabled,
-        'general_scope': _generalPostsScope,
-        'market_enabled': _marketplaceEnabled,
-        'market_scope': _marketplaceScope,
-        'market_intents': _selectedMarketplaceIntents.toList(),
-        'market_categories': _selectedMarketplaceCategories.toList(),
-        'gigs_enabled': _gigsEnabled,
-        'gigs_scope': _gigsScope,
-        'gig_types': _selectedGigTypes.toList(),
-        'gig_categories': _selectedGigCategories.toList(),
-        'lost_found_enabled': _lostFoundEnabled,
-        'lost_found_scope': _lostFoundScope,
-        'food_enabled': _foodAdsEnabled,
-        'food_scope': _foodAdsScope,
-        'food_categories': _selectedFoodCategories.toList(),
-        'org_enabled': _organizationsEnabled,
-        'org_scope': _organizationsScope,
-        'org_kinds': _selectedOrganizationKinds.toList(),
-        'public_distance_km': _publicDistanceLimitKm,
-      },
-    };
-
-    try {
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(data: payload),
-      );
-    } catch (_) {
-      // non-blocking
+  void _applySavedFilters(Map<String, dynamic> data) {
+    _generalPostsEnabled = data['general_enabled'] != false;
+    _generalPostsScope = (data['general_scope'] as String?) ?? 'all';
+    _marketplaceEnabled = data['market_enabled'] != false;
+    _selectedMarketplaceIntents
+      ..clear()
+      ..addAll(((data['market_intents'] as List?) ?? const []).map((e) => e.toString()));
+    _selectedMarketplaceCategories
+      ..clear()
+      ..addAll(((data['market_categories'] as List?) ?? const []).map((e) => e.toString()));
+    if (_marketplaceEnabled && _selectedMarketplaceCategories.isEmpty) {
+      _selectedMarketplaceCategories.addAll(marketMainCategories);
     }
+    if (_selectedMarketplaceIntents.isEmpty) {
+      _selectedMarketplaceIntents.addAll({'buying', 'selling'});
+    }
+    _gigsEnabled = data['gigs_enabled'] != false;
+    _selectedGigTypes
+      ..clear()
+      ..addAll(((data['gig_types'] as List?) ?? const []).map((e) => e.toString()));
+    _selectedGigCategories
+      ..clear()
+      ..addAll(((data['gig_categories'] as List?) ?? const []).map((e) => e.toString()));
+    if (_gigsEnabled && _selectedGigCategories.isEmpty) {
+      _selectedGigCategories.addAll(serviceMainCategories);
+    }
+    if (_selectedGigTypes.isEmpty) {
+      _selectedGigTypes.addAll({'service_offer', 'service_request'});
+    }
+    _lostFoundEnabled = data['lost_found_enabled'] != false;
+    _lostFoundScope = (data['lost_found_scope'] as String?) ?? 'all';
+    _foodAdsEnabled = data['food_enabled'] != false;
+    _selectedFoodCategories
+      ..clear()
+      ..addAll(((data['food_categories'] as List?) ?? const []).map((e) => e.toString()));
+    if (_foodAdsEnabled && _selectedFoodCategories.isEmpty) {
+      _selectedFoodCategories.addAll(foodMainCategories);
+    }
+    _organizationsEnabled = data['org_enabled'] == true;
+    _selectedOrganizationKinds
+      ..clear()
+      ..addAll(((data['org_kinds'] as List?) ?? const []).map((e) => e.toString()));
+    if (_organizationsEnabled && _selectedOrganizationKinds.isEmpty) {
+      _selectedOrganizationKinds.addAll({'government', 'nonprofit', 'news_agency'});
+    }
+  }
+
+  Map<String, dynamic> _currentFilterPayload() {
+    return {
+      'general_enabled': _generalPostsEnabled,
+      'general_scope': _generalPostsScope,
+      'market_enabled': _marketplaceEnabled,
+      'market_intents': _selectedMarketplaceIntents.toList(),
+      'market_categories': _selectedMarketplaceCategories.toList(),
+      'gigs_enabled': _gigsEnabled,
+      'gig_types': _selectedGigTypes.toList(),
+      'gig_categories': _selectedGigCategories.toList(),
+      'lost_found_enabled': _lostFoundEnabled,
+      'lost_found_scope': _lostFoundScope,
+      'food_enabled': _foodAdsEnabled,
+      'food_categories': _selectedFoodCategories.toList(),
+      'org_enabled': _organizationsEnabled,
+      'org_kinds': _selectedOrganizationKinds.toList(),
+    };
   }
 
   // -----------------------------
@@ -282,6 +311,92 @@ class _FeedScreenState extends State<FeedScreen> {
     _notifChannel = channel;
   }
 
+  void _subscribePostsRealtime() {
+    if (_postsChannel != null) return;
+
+    final channel = Supabase.instance.client.channel('feed-posts');
+    channel
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'posts',
+          callback: (payload) {
+            final insertedId = (payload.newRecord['id'] ?? '').toString();
+            if (insertedId.isEmpty || !mounted) return;
+
+            final existingIds = _posts.map((post) => post.id).toSet();
+            if (existingIds.contains(insertedId) ||
+                _pendingNewPostIds.contains(insertedId)) {
+              return;
+            }
+
+            setState(() {
+              _pendingNewPostIds.add(insertedId);
+            });
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'posts',
+          callback: (_) {
+            _refreshFeedAfterPostMutation();
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.delete,
+          schema: 'public',
+          table: 'posts',
+          callback: (payload) {
+            final deletedId = (payload.oldRecord['id'] ?? '').toString();
+            if (deletedId.isEmpty || !mounted) return;
+
+            setState(() {
+              _pendingNewPostIds.remove(deletedId);
+              _posts.removeWhere(
+                (post) => post.id == deletedId || post.sharedPostId == deletedId,
+              );
+              _topPosts.removeWhere(
+                (row) =>
+                    (row['id'] ?? '').toString() == deletedId ||
+                    (row['shared_post_id'] ?? '').toString() == deletedId,
+              );
+            });
+          },
+        )
+        .subscribe();
+
+    _postsChannel = channel;
+  }
+
+  Future<void> _reloadForNewPosts() async {
+    await _load(reset: true);
+    await _loadSidebarData();
+    if (!mounted) return;
+    setState(() {
+      _pendingNewPostIds.clear();
+    });
+    if (_scroll.hasClients) {
+      await _scroll.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  Future<void> _refreshFeedAfterPostMutation() async {
+    if (_syncingPostMutation || !mounted) return;
+    _syncingPostMutation = true;
+
+    try {
+      await _load(reset: true);
+      await _loadSidebarData();
+    } finally {
+      _syncingPostMutation = false;
+    }
+  }
+
   Widget _notifBell() {
     return IconButton(
       tooltip: 'Notifications',
@@ -325,10 +440,16 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _onBeforeLogout() async {
+    _stopNewPostsPolling();
     final ch = _notifChannel;
     _notifChannel = null;
     if (ch != null) {
       await Supabase.instance.client.removeChannel(ch);
+    }
+    final postsCh = _postsChannel;
+    _postsChannel = null;
+    if (postsCh != null) {
+      await Supabase.instance.client.removeChannel(postsCh);
     }
   }
 
@@ -400,8 +521,10 @@ class _FeedScreenState extends State<FeedScreen> {
     return type == 'food_ad' || type == 'food';
   }
 
+  bool _isOrganizationAuthored(Post post) => (post.authorType ?? '').trim() == 'org';
+
   bool _matchesMarketplaceFilters(Post post) {
-    if (!_isMarketplacePost(post) || !_matchesVisibilityScope(post, _marketplaceScope)) {
+    if (!_isMarketplacePost(post)) {
       return false;
     }
 
@@ -421,7 +544,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   bool _matchesGigFilters(Post post) {
-    if (!_isGigPost(post) || !_matchesVisibilityScope(post, _gigsScope)) {
+    if (!_isGigPost(post)) {
       return false;
     }
 
@@ -450,6 +573,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
     if (_generalPostsEnabled &&
         _isGeneralPost(post) &&
+        !_isOrganizationAuthored(post) &&
         _matchesVisibilityScope(post, _generalPostsScope)) {
       matchedSection = true;
     }
@@ -471,8 +595,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
     if (!matchedSection &&
         _foodAdsEnabled &&
-        _isFoodPost(post) &&
-        _matchesVisibilityScope(post, _foodAdsScope)) {
+        _isFoodPost(post)) {
       if (_selectedFoodCategories.isNotEmpty) {
         matchedSection = _selectedFoodCategories.contains((post.marketCategory ?? '').trim());
       }
@@ -481,7 +604,6 @@ class _FeedScreenState extends State<FeedScreen> {
     if (_organizationsEnabled &&
         !matchedSection &&
         (post.authorType ?? '').trim() == 'org' &&
-        _matchesVisibilityScope(post, _organizationsScope) &&
         _isGeneralPost(post)) {
       if (_selectedOrganizationKinds.isNotEmpty) {
         final orgKind = ((post.authorOrgKind ?? _authorOrgKinds[post.userId]) ?? '').trim();
@@ -491,14 +613,226 @@ class _FeedScreenState extends State<FeedScreen> {
 
     if (!matchedSection) return false;
 
-    if (_publicDistanceLimitKm != null && (post.visibility ?? 'public') == 'public') {
-      final distance = post.distanceKm;
-      if (distance == null || distance > _publicDistanceLimitKm!) {
-        return false;
+    return true;
+  }
+
+  void _startNewPostsPolling() {
+    _newPostsPoller?.cancel();
+    _newPostsPoller = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) => _pollForNewPosts(),
+    );
+  }
+
+  void _stopNewPostsPolling() {
+    _newPostsPoller?.cancel();
+    _newPostsPoller = null;
+  }
+
+  bool _shouldPollForNewPosts() {
+    final lifecycle = _appLifecycleState;
+    final appActive =
+        lifecycle == null ||
+        lifecycle == AppLifecycleState.resumed ||
+        lifecycle == AppLifecycleState.inactive;
+    final onFeedTab = !_useSplitMobileFeeds(context) || _mobileFeedPage == 0;
+    return mounted && appActive && onFeedTab;
+  }
+
+  void _updateNewPostsPollingState() {
+    if (!_shouldPollForNewPosts()) {
+      _stopNewPostsPolling();
+      return;
+    }
+
+    if (_newPostsPoller == null || !_newPostsPoller!.isActive) {
+      _startNewPostsPolling();
+    }
+  }
+
+  Future<List<Post>> _fetchFeedPage({
+    required int limit,
+    DateTime? beforeCreatedAt,
+    String? beforeId,
+    bool refreshAuthorBadges = true,
+  }) async {
+    final service = PostService(Supabase.instance.client);
+
+    final raw = await service.fetchPublicFeed(
+      scope: 'all',
+      postType: 'all',
+      authorType: 'all',
+      limit: limit,
+      beforeCreatedAt: beforeCreatedAt,
+      beforeId: beforeId,
+    );
+
+    final me = Supabase.instance.client.auth.currentUser?.id;
+    List<Map<String, dynamic>> ownRows = const [];
+    List<Map<String, dynamic>> followedRows = const [];
+    List<Map<String, dynamic>> orgRows = const [];
+    _followingIds.clear();
+    _followerIds.clear();
+    _mutualConnectionIds.clear();
+    if (me != null) {
+      var ownQuery = Supabase.instance.client
+          .from('posts')
+          .select(PostService.postSelect)
+          .eq('user_id', me);
+
+      if (beforeCreatedAt != null) {
+        final ts = beforeCreatedAt.toIso8601String();
+        if (beforeId != null && beforeId.isNotEmpty) {
+          ownQuery = ownQuery.or(
+            'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$beforeId)',
+          );
+        } else {
+          ownQuery = ownQuery.lt('created_at', ts);
+        }
+      }
+
+      final ownData = await ownQuery
+          .order('created_at', ascending: false)
+          .order('id', ascending: false)
+          .limit(limit);
+      ownRows = await service.excludeUnavailableAuthorRows(
+        (ownData as List).cast<Map<String, dynamic>>(),
+      );
+
+      final followed = await Supabase.instance.client
+          .from('follows')
+          .select('followed_profile_id')
+          .eq('follower_id', me)
+          .eq('status', 'accepted');
+
+      final followedIds = (followed as List)
+          .map((e) => e['followed_profile_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      _followingIds
+        ..clear()
+        ..addAll(followedIds);
+
+      final followers = await Supabase.instance.client
+          .from('follows')
+          .select('follower_id')
+          .eq('followed_profile_id', me)
+          .eq('status', 'accepted');
+
+      final followerIds = (followers as List)
+          .map((e) => e['follower_id'] as String?)
+          .whereType<String>()
+          .toSet();
+
+      _followerIds
+        ..clear()
+        ..addAll(followerIds);
+      _mutualConnectionIds
+        ..clear()
+        ..addAll(_followingIds.intersection(_followerIds));
+
+      if (followedIds.isNotEmpty) {
+        var followedQuery = Supabase.instance.client
+            .from('posts')
+            .select(PostService.postSelect)
+            .inFilter('user_id', followedIds);
+
+        if (beforeCreatedAt != null) {
+          final ts = beforeCreatedAt.toIso8601String();
+          if (beforeId != null && beforeId.isNotEmpty) {
+            followedQuery = followedQuery.or(
+              'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$beforeId)',
+            );
+          } else {
+            followedQuery = followedQuery.lt('created_at', ts);
+          }
+        }
+
+        final followedData = await followedQuery
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .limit(limit);
+        followedRows = await service.excludeUnavailableAuthorRows(
+          (followedData as List).cast<Map<String, dynamic>>(),
+        );
       }
     }
 
-    return true;
+    if (_organizationsEnabled) {
+      dynamic orgQuery = Supabase.instance.client
+          .from('posts')
+          .select(PostService.postSelect)
+          .eq('author_profile_type', 'org')
+          .eq('visibility', 'public');
+
+      if (orgQuery != null && beforeCreatedAt != null) {
+        final ts = beforeCreatedAt.toIso8601String();
+        if (beforeId != null && beforeId.isNotEmpty) {
+          orgQuery = orgQuery.or(
+            'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$beforeId)',
+          );
+        } else {
+          orgQuery = orgQuery.lt('created_at', ts);
+        }
+      }
+
+      if (orgQuery != null) {
+        final orgData = await orgQuery
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .limit(limit);
+        orgRows = await service.excludeUnavailableAuthorRows(
+          (orgData as List).cast<Map<String, dynamic>>(),
+        );
+      }
+    }
+
+    final mergedRaw = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
+    for (final row in [...raw, ...ownRows, ...followedRows, ...orgRows]) {
+      final id = (row['id'] ?? '').toString();
+      if (id.isEmpty || !seenIds.add(id)) continue;
+      mergedRaw.add(row);
+    }
+    mergedRaw.sort((a, b) {
+      final aCreated = DateTime.tryParse((a['created_at'] ?? '').toString()) ?? DateTime(1970);
+      final bCreated = DateTime.tryParse((b['created_at'] ?? '').toString()) ?? DateTime(1970);
+      final timeCompare = bCreated.compareTo(aCreated);
+      if (timeCompare != 0) return timeCompare;
+      return ((b['id'] ?? '').toString()).compareTo((a['id'] ?? '').toString());
+    });
+
+    final hydratedRows = await service.attachSharedPosts(mergedRaw);
+    final fetchedPosts = hydratedRows.map((e) => Post.fromMap(e)).toList();
+    if (refreshAuthorBadges) {
+      await _loadAuthorBadges(fetchedPosts);
+    }
+    return fetchedPosts.where(_matchesSelectedFilters).toList();
+  }
+
+  Future<void> _pollForNewPosts() async {
+    if (!mounted || _loading || _loadingMore) return;
+    try {
+      final latestPosts = await _fetchFeedPage(
+        limit: _pageSize,
+        refreshAuthorBadges: false,
+      );
+      if (!mounted) return;
+
+      final existingIds = _posts.map((post) => post.id).toSet();
+      final newIds = latestPosts
+          .map((post) => post.id)
+          .where((id) => !existingIds.contains(id))
+          .toSet();
+      if (newIds.isEmpty) return;
+
+      setState(() {
+        _pendingNewPostIds.addAll(newIds);
+      });
+    } catch (_) {
+      // Polling is additive only. Ignore transient failures.
+    }
   }
 
   Future<void> _load({required bool reset}) async {
@@ -507,6 +841,7 @@ class _FeedScreenState extends State<FeedScreen> {
         _loading = true;
         _error = null;
         _posts = [];
+        _pendingNewPostIds.clear();
         _hasMore = true;
         _loadingMore = false;
         _cursorCreatedAt = null;
@@ -517,187 +852,17 @@ class _FeedScreenState extends State<FeedScreen> {
     }
 
     try {
-      final service = PostService(Supabase.instance.client);
-
-      final raw = await service.fetchPublicFeed(
-        scope: 'all',
-        postType: 'all',
-        authorType: 'all',
+      final fetchedPosts = await _fetchFeedPage(
         limit: _pageSize,
         beforeCreatedAt: _cursorCreatedAt,
         beforeId: _cursorId,
       );
+      final incoming = fetchedPosts;
 
-      final me = Supabase.instance.client.auth.currentUser?.id;
-      List<Map<String, dynamic>> ownRows = const [];
-      List<Map<String, dynamic>> followedRows = const [];
-      List<Map<String, dynamic>> orgRows = const [];
-      _followingIds.clear();
-      _followerIds.clear();
-      _mutualConnectionIds.clear();
-      if (me != null) {
-        var ownQuery = Supabase.instance.client
-            .from('posts')
-            .select(PostService.postSelect)
-            .eq('user_id', me);
+      if (incoming.length < _pageSize) _hasMore = false;
 
-        if (_cursorCreatedAt != null) {
-          final ts = _cursorCreatedAt!.toIso8601String();
-          if (_cursorId != null && _cursorId!.isNotEmpty) {
-            ownQuery = ownQuery.or(
-              'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$_cursorId)',
-            );
-          } else {
-            ownQuery = ownQuery.lt('created_at', ts);
-          }
-        }
-
-        final ownData = await ownQuery
-            .order('created_at', ascending: false)
-            .order('id', ascending: false)
-            .limit(_pageSize);
-        ownRows = (ownData as List).cast<Map<String, dynamic>>();
-
-        final followed = await Supabase.instance.client
-            .from('follows')
-            .select('followed_profile_id')
-            .eq('follower_id', me)
-            .eq('status', 'accepted');
-
-        final followedIds = (followed as List)
-            .map((e) => e['followed_profile_id'] as String?)
-            .whereType<String>()
-            .toSet()
-            .toList();
-        _followingIds
-          ..clear()
-          ..addAll(followedIds);
-
-        final followers = await Supabase.instance.client
-            .from('follows')
-            .select('follower_id')
-            .eq('followed_profile_id', me)
-            .eq('status', 'accepted');
-
-        final followerIds = (followers as List)
-            .map((e) => e['follower_id'] as String?)
-            .whereType<String>()
-            .toSet();
-
-        _followerIds
-          ..clear()
-          ..addAll(followerIds);
-        _mutualConnectionIds
-          ..clear()
-          ..addAll(_followingIds.intersection(_followerIds));
-
-        if (followedIds.isNotEmpty) {
-          var followedQuery = Supabase.instance.client
-              .from('posts')
-              .select(PostService.postSelect)
-              .inFilter('user_id', followedIds);
-
-          if (_cursorCreatedAt != null) {
-            final ts = _cursorCreatedAt!.toIso8601String();
-            if (_cursorId != null && _cursorId!.isNotEmpty) {
-              followedQuery = followedQuery.or(
-                'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$_cursorId)',
-              );
-            } else {
-              followedQuery = followedQuery.lt('created_at', ts);
-            }
-          }
-
-          final followedData = await followedQuery
-              .order('created_at', ascending: false)
-              .order('id', ascending: false)
-              .limit(_pageSize);
-          followedRows = (followedData as List).cast<Map<String, dynamic>>();
-        }
-      }
-
-      if (_organizationsEnabled) {
-        dynamic orgQuery = Supabase.instance.client
-            .from('posts')
-            .select(PostService.postSelect)
-            .eq('author_profile_type', 'org');
-
-        if (_organizationsScope == 'public') {
-          orgQuery = orgQuery.eq('visibility', 'public');
-        } else if (_organizationsScope == 'following') {
-          if (me == null) {
-            orgRows = const [];
-            orgQuery = null;
-          } else {
-          final followed = await Supabase.instance.client
-              .from('follows')
-              .select('followed_profile_id')
-              .eq('follower_id', me)
-              .eq('status', 'accepted');
-          final ids = (followed as List)
-              .map((e) => e['followed_profile_id'] as String?)
-              .whereType<String>()
-              .toSet()
-              .toList();
-          if (!ids.contains(me)) ids.add(me);
-          if (ids.isEmpty) {
-            orgRows = const [];
-            orgQuery = null;
-          } else {
-            orgQuery = orgQuery.inFilter('user_id', ids);
-          }
-          }
-        } else {
-          orgQuery = orgQuery.inFilter('visibility', ['public', 'followers']);
-        }
-
-        if (orgQuery != null && _cursorCreatedAt != null) {
-          final ts = _cursorCreatedAt!.toIso8601String();
-          if (_cursorId != null && _cursorId!.isNotEmpty) {
-            orgQuery = orgQuery.or(
-              'created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$_cursorId)',
-            );
-          } else {
-            orgQuery = orgQuery.lt('created_at', ts);
-          }
-        }
-
-        if (orgQuery != null) {
-          final orgData = await orgQuery
-              .order('created_at', ascending: false)
-              .order('id', ascending: false)
-              .limit(_pageSize);
-          orgRows = (orgData as List).cast<Map<String, dynamic>>();
-        }
-      }
-
-      final mergedRaw = <Map<String, dynamic>>[];
-      final seenIds = <String>{};
-      for (final row in [...raw, ...ownRows, ...followedRows, ...orgRows]) {
-        final id = (row['id'] ?? '').toString();
-        if (id.isEmpty || !seenIds.add(id)) continue;
-        mergedRaw.add(row);
-      }
-      mergedRaw.sort((a, b) {
-        final aCreated = DateTime.tryParse((a['created_at'] ?? '').toString()) ?? DateTime(1970);
-        final bCreated = DateTime.tryParse((b['created_at'] ?? '').toString()) ?? DateTime(1970);
-        final timeCompare = bCreated.compareTo(aCreated);
-        if (timeCompare != 0) return timeCompare;
-        return ((b['id'] ?? '').toString()).compareTo((a['id'] ?? '').toString());
-      });
-
-      final hydratedRows = await service.attachSharedPosts(mergedRaw);
-      final fetchedPosts = hydratedRows.map((e) => Post.fromMap(e)).toList();
-      await _loadAuthorBadges(fetchedPosts);
-      final incoming = fetchedPosts.where(_matchesSelectedFilters).toList();
-
-      // If backend returned fewer than a page, no more pages
-      final gotFullPage = mergedRaw.length >= _pageSize;
-      if (!gotFullPage) _hasMore = false;
-
-      // Update cursor from the oldest item returned by backend
-      if (fetchedPosts.isNotEmpty) {
-        final last = fetchedPosts.last;
+      if (incoming.isNotEmpty) {
+        final last = incoming.last;
         _cursorCreatedAt = last.createdAt;
         _cursorId = last.id;
       }
@@ -743,52 +908,36 @@ class _FeedScreenState extends State<FeedScreen> {
     final postService = PostService(Supabase.instance.client);
 
     if (isMarketplacePost || isGigPost) {
-      return FutureBuilder<int>(
-        future: react.commentsCount(p.id),
-        builder: (context, snap) {
-          final qaCount = snap.hasData ? snap.data! : 0;
-          final qaRoute = isMarketplacePost
-              ? '/marketplace/product/${p.id}?tab=qa'
-              : '/gigs/service/${p.id}?tab=qa';
-          return Row(
-            children: [
-              TextButton.icon(
-                onPressed: () => context.push(qaRoute),
-                icon: const Icon(Icons.forum_outlined),
-                label: Text('Q&A $qaCount'),
-              ),
-              if (_canSharePost(p)) ...[
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () async {
-                    try {
-                      await postService.sharePost(
-                        originalPostId: p.id,
-                        originalAuthorId: p.userId,
-                        originalVisibility: p.visibility,
-                        originalLatitude: p.latitude,
-                        originalLongitude: p.longitude,
-                        originalLocationName: p.locationName,
-                      );
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Post shared')),
-                      );
-                      await _load(reset: true);
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Share error: $e')),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.share_outlined),
-                  label: const Text('Share'),
-                ),
-              ],
-            ],
-          );
-        },
+      if (!_canSharePost(p)) return const SizedBox.shrink();
+      return Row(
+        children: [
+          TextButton.icon(
+            onPressed: () async {
+              try {
+                await postService.sharePost(
+                  originalPostId: p.id,
+                  originalAuthorId: p.userId,
+                  originalVisibility: p.visibility,
+                  originalLatitude: p.latitude,
+                  originalLongitude: p.longitude,
+                  originalLocationName: p.locationName,
+                );
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Post shared')),
+                );
+                await _load(reset: true);
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Share error: $e')),
+                );
+              }
+            },
+            icon: const Icon(Icons.share_outlined),
+            label: const Text('Share'),
+          ),
+        ],
       );
     }
 
@@ -883,8 +1032,50 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  String? _orgKindLabel(String value) {
+    switch (value) {
+      case 'government':
+        return 'Government';
+      case 'nonprofit':
+        return 'Non-profit';
+      case 'news_agency':
+        return 'News agency';
+      default:
+        return value.trim().isEmpty ? null : value;
+    }
+  }
+
   String? _getAuthorBadgeType(Post post) {
     return _authorBadgeLabels[post.userId];
+  }
+
+  String? _getAuthorAccountBadge(Post post) {
+    final type = ((post.authorType ?? '')).trim();
+    switch (type) {
+      case 'business':
+        final subtype = (_getAuthorBadgeType(post) ?? '').trim().toLowerCase();
+        final restaurantLabels = restaurantMainCategories
+            .map(restaurantCategoryLabel)
+            .map((value) => value.toLowerCase())
+            .toSet();
+        return restaurantLabels.contains(subtype) ? 'Restaurant' : 'Business';
+      case 'org':
+        return 'Organization';
+      default:
+        return null;
+    }
+  }
+
+  String? _getAuthorSubtypeBadge(Post post) {
+    final type = ((post.authorType ?? '')).trim();
+    if (type == 'org') {
+      final orgKind = ((post.authorOrgKind ?? _authorOrgKinds[post.userId]) ?? '').trim();
+      return _orgKindLabel(orgKind);
+    }
+    if (type == 'business') {
+      return _getAuthorBadgeType(post);
+    }
+    return null;
   }
 
   Future<void> _loadAuthorBadges(List<Post> posts) async {
@@ -977,7 +1168,7 @@ class _FeedScreenState extends State<FeedScreen> {
         Supabase.instance.client
             .from('profiles')
             .select(
-              'id, full_name, bio, avatar_url, zipcode, city, latitude, longitude, profile_type',
+              'id, full_name, bio, avatar_url, zipcode, city, latitude, longitude, profile_type, radius_km',
             )
             .eq('id', uid)
             .maybeSingle(),
@@ -1054,11 +1245,67 @@ class _FeedScreenState extends State<FeedScreen> {
       case 'market':
         return 'Marketplace listing';
       case 'service_offer':
-        return 'Service offer';
       case 'service_request':
-        return 'Service request';
+        return 'Gigs post';
       default:
         return post.authorName ?? 'Unknown';
+    }
+  }
+
+  String? _getPostTypeBadge(Post p) {
+    switch (p.postType) {
+      case 'market':
+        return 'Marketplace';
+      case 'service_offer':
+        return 'Service Offer';
+      case 'service_request':
+        return 'Service Request';
+      case 'lost_found':
+        return 'Lost & Found';
+      case 'food_ad':
+      case 'food':
+        return 'Food Ad';
+      default:
+        return null;
+    }
+  }
+
+  String? _getCategoryBadge(Post p) {
+    final category = (p.marketCategory ?? '').trim();
+    if (category.isEmpty) return null;
+
+    switch (p.postType) {
+      case 'market':
+        return marketCategoryLabel(category);
+      case 'service_offer':
+      case 'service_request':
+        return serviceCategoryLabel(category);
+      case 'food_ad':
+      case 'food':
+        return foodCategoryLabel(category);
+      default:
+        return null;
+    }
+  }
+
+  String? _getMarketplaceIntentBadge(Post p) {
+    if (p.postType != 'market') return null;
+
+    final intent = (p.marketIntent ?? '').trim();
+    if (intent.isEmpty) return null;
+    return _intentLabel(intent);
+  }
+
+  bool _shouldShowAuthorBadge(Post p) {
+    switch (p.postType) {
+      case 'market':
+      case 'service_offer':
+      case 'service_request':
+      case 'food_ad':
+      case 'food':
+        return false;
+      default:
+        return true;
     }
   }
 
@@ -1127,7 +1374,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
                 FilledButton.icon(
                   onPressed: () async {
-                    final res = await context.push('/create-post');
+                    final res = await openCreatePostFlow(context);
                     if (!mounted) return;
                     if (res == true) _load(reset: true);
                   },
@@ -1185,62 +1432,152 @@ class _FeedScreenState extends State<FeedScreen> {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () {
+          if (!mounted) return;
+          setState(() => _feedSummaryExpanded = !_feedSummaryExpanded);
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFFFCF7), Color(0xFFF4EBDD)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE6DDCE)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x12000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFE6DDCE)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 18,
-              offset: Offset(0, 8),
-            ),
-          ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F766E).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.radar_outlined,
+                  color: Color(0xFF0F766E),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Current feed view',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: const Color(0xFF0F766E),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _feedSummaryExpanded ? 'Tap to hide details' : 'Tap to view details',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    AnimatedCrossFade(
+                      duration: const Duration(milliseconds: 180),
+                      firstChild: const SizedBox.shrink(),
+                      secondChild: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _feedWhatShowing(),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      crossFadeState: _feedSummaryExpanded
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                _feedSummaryExpanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                color: const Color(0xFF0F766E),
+              ),
+            ],
+          ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F766E).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(14),
+      ),
+    );
+  }
+
+  Widget _buildFeedStatusBanner() {
+    final count = _pendingNewPostIds.length;
+    if (count == 0) return const SizedBox.shrink();
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: _reloadForNewPosts,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F766E),
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 14,
+                offset: Offset(0, 6),
               ),
-              child: const Icon(
-                Icons.radar_outlined,
-                color: Color(0xFF0F766E),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Current feed view',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: const Color(0xFF0F766E),
-                      fontWeight: FontWeight.w800,
-                    ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.fiber_new_rounded, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  count == 1 ? '1 new post' : '$count new posts',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    _feedWhatShowing(),
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStickyFeedStatus({required double top}) {
+    if (_pendingNewPostIds.isEmpty) return const SizedBox.shrink();
+    return Positioned(
+      top: top,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        bottom: false,
+        child: IgnorePointer(
+          ignoring: false,
+          child: Center(child: _buildFeedStatusBanner()),
         ),
       ),
     );
@@ -1250,22 +1587,17 @@ class _FeedScreenState extends State<FeedScreen> {
     var draftGeneralEnabled = _generalPostsEnabled;
     var draftGeneralScope = _generalPostsScope;
     var draftMarketplaceEnabled = _marketplaceEnabled;
-    var draftMarketplaceScope = _marketplaceScope;
     final draftMarketplaceIntents = {..._selectedMarketplaceIntents};
     final draftMarketplaceCategories = {..._selectedMarketplaceCategories};
     var draftGigsEnabled = _gigsEnabled;
-    var draftGigsScope = _gigsScope;
     final draftGigTypes = {..._selectedGigTypes};
     final draftGigCategories = {..._selectedGigCategories};
     var draftLostFoundEnabled = _lostFoundEnabled;
     var draftLostFoundScope = _lostFoundScope;
     var draftFoodAdsEnabled = _foodAdsEnabled;
-    var draftFoodAdsScope = _foodAdsScope;
     final draftFoodCategories = {..._selectedFoodCategories};
     var draftOrganizationsEnabled = _organizationsEnabled;
-    var draftOrganizationsScope = _organizationsScope;
     final draftOrganizationKinds = {..._selectedOrganizationKinds};
-    int? draftPublicDistanceLimitKm = _publicDistanceLimitKm;
     bool hasInvalidRequiredSelections() {
       return (draftMarketplaceEnabled && draftMarketplaceCategories.isEmpty) ||
           (draftGigsEnabled && draftGigCategories.isEmpty) ||
@@ -1327,13 +1659,11 @@ class _FeedScreenState extends State<FeedScreen> {
                                 draftGeneralEnabled = true;
                                 draftGeneralScope = 'all';
                                 draftMarketplaceEnabled = true;
-                                draftMarketplaceScope = 'all';
                                 draftMarketplaceIntents
                                   ..clear()
                                   ..addAll({'buying', 'selling'});
                                 draftMarketplaceCategories.clear();
                                 draftGigsEnabled = true;
-                                draftGigsScope = 'all';
                                 draftGigTypes
                                   ..clear()
                                   ..addAll({'service_offer', 'service_request'});
@@ -1341,12 +1671,9 @@ class _FeedScreenState extends State<FeedScreen> {
                                 draftLostFoundEnabled = true;
                                 draftLostFoundScope = 'all';
                                 draftFoodAdsEnabled = true;
-                                draftFoodAdsScope = 'all';
                                 draftFoodCategories.clear();
                                 draftOrganizationsEnabled = false;
-                                draftOrganizationsScope = 'all';
                                 draftOrganizationKinds.clear();
-                                draftPublicDistanceLimitKm = null;
                               });
                             },
                             child: const Text('Reset'),
@@ -1384,13 +1711,6 @@ class _FeedScreenState extends State<FeedScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildScopeChips(
-                              selected: draftMarketplaceScope,
-                              onSelected: (value) {
-                                setSheetState(() => draftMarketplaceScope = value);
-                              },
-                            ),
-                            const SizedBox(height: 12),
                             _buildMultiSelectSection(
                               title: 'Marketplace type',
                               options: const [
@@ -1427,13 +1747,6 @@ class _FeedScreenState extends State<FeedScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildScopeChips(
-                              selected: draftGigsScope,
-                              onSelected: (value) {
-                                setSheetState(() => draftGigsScope = value);
-                              },
-                            ),
-                            const SizedBox(height: 12),
                             _buildMultiSelectSection(
                               title: 'Gig type',
                               options: const [
@@ -1485,13 +1798,6 @@ class _FeedScreenState extends State<FeedScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildScopeChips(
-                              selected: draftFoodAdsScope,
-                              onSelected: (value) {
-                                setSheetState(() => draftFoodAdsScope = value);
-                              },
-                            ),
-                            const SizedBox(height: 12),
                             _buildMultiSelectSection(
                               title: 'Food categories',
                               options: foodMainCategories
@@ -1518,13 +1824,6 @@ class _FeedScreenState extends State<FeedScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildScopeChips(
-                              selected: draftOrganizationsScope,
-                              onSelected: (value) {
-                                setSheetState(() => draftOrganizationsScope = value);
-                              },
-                            ),
-                            const SizedBox(height: 12),
                             _buildMultiSelectSection(
                               title: 'Organization types',
                               options: const [
@@ -1542,52 +1841,6 @@ class _FeedScreenState extends State<FeedScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                          borderRadius: BorderRadius.circular(22),
-                          border: Border.all(color: const Color(0xFFE6DDCE)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Public distance',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'This only limits public posts. Local posts keep using their own visibility rules.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _buildDistanceChip(
-                                  label: 'Any distance',
-                                  selected: draftPublicDistanceLimitKm == null,
-                                  onTap: () => setSheetState(() => draftPublicDistanceLimitKm = null),
-                                ),
-                                for (final km in const [5, 10, 20, 50, 100])
-                                  _buildDistanceChip(
-                                    label: '$km km',
-                                    selected: draftPublicDistanceLimitKm == km,
-                                    onTap: () => setSheetState(() => draftPublicDistanceLimitKm = km),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
                       const SizedBox(height: 18),
                       SizedBox(
                         width: double.infinity,
@@ -1600,7 +1853,6 @@ class _FeedScreenState extends State<FeedScreen> {
                               _generalPostsEnabled = draftGeneralEnabled;
                               _generalPostsScope = draftGeneralScope;
                               _marketplaceEnabled = draftMarketplaceEnabled;
-                              _marketplaceScope = draftMarketplaceScope;
                               _selectedMarketplaceIntents
                                 ..clear()
                                 ..addAll(draftMarketplaceIntents);
@@ -1608,7 +1860,6 @@ class _FeedScreenState extends State<FeedScreen> {
                                 ..clear()
                                 ..addAll(draftMarketplaceCategories);
                               _gigsEnabled = draftGigsEnabled;
-                              _gigsScope = draftGigsScope;
                               _selectedGigTypes
                                 ..clear()
                                 ..addAll(draftGigTypes);
@@ -1618,16 +1869,13 @@ class _FeedScreenState extends State<FeedScreen> {
                               _lostFoundEnabled = draftLostFoundEnabled;
                               _lostFoundScope = draftLostFoundScope;
                               _foodAdsEnabled = draftFoodAdsEnabled;
-                              _foodAdsScope = draftFoodAdsScope;
                               _selectedFoodCategories
                                 ..clear()
                                 ..addAll(draftFoodCategories);
                               _organizationsEnabled = draftOrganizationsEnabled;
-                              _organizationsScope = draftOrganizationsScope;
                               _selectedOrganizationKinds
                                 ..clear()
                                 ..addAll(draftOrganizationKinds);
-                              _publicDistanceLimitKm = draftPublicDistanceLimitKm;
                             });
                             _saveFilters();
                             _load(reset: true);
@@ -1671,9 +1919,7 @@ class _FeedScreenState extends State<FeedScreen> {
       final categoryText = _selectedMarketplaceCategories.isEmpty
           ? 'no categories selected'
           : _selectedMarketplaceCategories.map(marketCategoryLabel).join(', ');
-      sections.add(
-        '$intentText in $categoryText (${_sectionScopeLabel(_marketplaceScope).toLowerCase()})',
-      );
+      sections.add('$intentText in $categoryText');
     }
     if (_gigsEnabled) {
       final gigText = _selectedGigTypes.isEmpty
@@ -1682,9 +1928,7 @@ class _FeedScreenState extends State<FeedScreen> {
       final categoryText = _selectedGigCategories.isEmpty
           ? 'no categories selected'
           : _selectedGigCategories.map(serviceCategoryLabel).join(', ');
-      sections.add(
-        'gigs $gigText in $categoryText (${_sectionScopeLabel(_gigsScope).toLowerCase()})',
-      );
+      sections.add('gigs $gigText in $categoryText');
     }
     if (_lostFoundEnabled) {
       sections.add('lost & found (${_sectionScopeLabel(_lostFoundScope).toLowerCase()})');
@@ -1693,22 +1937,21 @@ class _FeedScreenState extends State<FeedScreen> {
       final categoryText = _selectedFoodCategories.isEmpty
           ? 'no categories selected'
           : _selectedFoodCategories.map(foodCategoryLabel).join(', ');
-      sections.add(
-        'food ads in $categoryText (${_sectionScopeLabel(_foodAdsScope).toLowerCase()})',
-      );
+      sections.add('food ads in $categoryText');
     }
     if (_organizationsEnabled) {
       final orgText = _selectedOrganizationKinds.isEmpty
           ? 'all organization posts'
           : _selectedOrganizationKinds.map(_organizationKindLabel).join(', ').toLowerCase();
-      sections.add('$orgText (${_sectionScopeLabel(_organizationsScope).toLowerCase()})');
+      sections.add(orgText);
     }
 
-    final postText = sections.isEmpty ? 'no sections selected' : sections.join(' • ');
-    if (_publicDistanceLimitKm != null) {
-      sections.add('public posts within $_publicDistanceLimitKm km');
+    final radiusKm = (_myProfileSummary?['radius_km'] as num?)?.toInt();
+    final sectionText = sections.isEmpty ? 'no sections selected' : sections.join(' • ');
+    if (radiusKm != null) {
+      return 'You are seeing $sectionText. Public posts radius is set in profile: $radiusKm km';
     }
-    return 'You are seeing ${sections.isEmpty ? 'no sections selected' : sections.join(' • ')}';
+    return 'You are seeing $sectionText';
   }
 
   String _postTypeLabel(String value) {
@@ -1737,27 +1980,6 @@ class _FeedScreenState extends State<FeedScreen> {
       default:
         return value;
     }
-  }
-
-  Widget _buildDistanceChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return FilterChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      showCheckmark: false,
-      selectedColor: const Color(0xFF0F766E).withValues(alpha: 0.14),
-      side: BorderSide(
-        color: selected ? const Color(0xFF0F766E) : const Color(0xFFE6DDCE),
-      ),
-      labelStyle: TextStyle(
-        fontWeight: FontWeight.w700,
-        color: selected ? const Color(0xFF0F766E) : null,
-      ),
-    );
   }
 
   Widget _buildFilterWarning(String text) {
@@ -2016,7 +2238,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: () async {
-                      final res = await context.push('/create-post');
+                      final res = await openCreatePostFlow(context);
                       if (!mounted) return;
                       if (res == true) _load(reset: true);
                     },
@@ -2033,13 +2255,11 @@ class _FeedScreenState extends State<FeedScreen> {
                           _generalPostsEnabled = true;
                           _generalPostsScope = 'all';
                           _marketplaceEnabled = true;
-                          _marketplaceScope = 'all';
                           _selectedMarketplaceIntents
                             ..clear()
                             ..addAll({'buying', 'selling'});
                           _selectedMarketplaceCategories.clear();
                           _gigsEnabled = true;
-                          _gigsScope = 'all';
                           _selectedGigTypes
                             ..clear()
                             ..addAll({'service_offer', 'service_request'});
@@ -2047,10 +2267,8 @@ class _FeedScreenState extends State<FeedScreen> {
                           _lostFoundEnabled = true;
                           _lostFoundScope = 'all';
                           _foodAdsEnabled = true;
-                          _foodAdsScope = 'all';
                           _selectedFoodCategories.clear();
                           _organizationsEnabled = false;
-                          _organizationsScope = 'all';
                           _selectedOrganizationKinds.clear();
                         });
                         _saveFilters();
@@ -2409,7 +2627,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }) {
     return RefreshIndicator(
       onRefresh: () async {
-        await _load(reset: true);
+        await _reloadForNewPosts();
         await _refreshUnreadNotifs();
       },
       child: ListView.builder(
@@ -2429,7 +2647,10 @@ class _FeedScreenState extends State<FeedScreen> {
 
           final postIndex = i - 1;
           final p = _posts[postIndex];
-          final badgeText = _getAuthorBadgeType(p);
+          final authorAccountBadge = _getAuthorAccountBadge(p);
+          final authorSubtypeBadge = _getAuthorSubtypeBadge(p);
+          final categoryBadge = _getCategoryBadge(p);
+          final marketplaceIntentBadge = _getMarketplaceIntentBadge(p);
           final isPrivateListing = _isPrivateListing(p);
           final displayPost = _displayPost(p);
           final detailRoute = _detailRouteForPost(displayPost);
@@ -2450,18 +2671,20 @@ class _FeedScreenState extends State<FeedScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 18,
-                            backgroundImage: (p.authorAvatarUrl != null &&
-                                    p.authorAvatarUrl!.isNotEmpty)
-                                ? NetworkImage(p.authorAvatarUrl!)
-                                : null,
-                            child: (p.authorAvatarUrl == null ||
-                                    p.authorAvatarUrl!.isEmpty)
-                                ? const Icon(Icons.person, size: 18)
-                                : null,
-                          ),
-                          const SizedBox(width: 10),
+                          if (!isPrivateListing) ...[
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundImage: (p.authorAvatarUrl != null &&
+                                      p.authorAvatarUrl!.isNotEmpty)
+                                  ? NetworkImage(p.authorAvatarUrl!)
+                                  : null,
+                              child: (p.authorAvatarUrl == null ||
+                                      p.authorAvatarUrl!.isEmpty)
+                                  ? const Icon(Icons.person, size: 18)
+                                  : null,
+                            ),
+                            const SizedBox(width: 10),
+                          ],
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2474,6 +2697,20 @@ class _FeedScreenState extends State<FeedScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
+                                if (!isPrivateListing &&
+                                    p.authorJobTitle != null &&
+                                    p.authorJobTitle!.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      p.authorJobTitle!,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
                                 const SizedBox(height: 6),
                                 Wrap(
                                   spacing: 8,
@@ -2487,9 +2724,29 @@ class _FeedScreenState extends State<FeedScreen> {
                                     if (_locationLabel(p) != null)
                                       _buildFeedMetaText(_locationLabel(p)!),
                                     _buildVisibilityBadge(p.visibility),
-                                    if (p.shareScope != 'none' && (p.sharedPostId ?? '').isEmpty)
+                                    if (_getPostTypeBadge(p) != null)
+                                      _buildPostTypeBadge(_getPostTypeBadge(p)!),
+                                    if (marketplaceIntentBadge != null)
+                                      _buildAuthorBadge(marketplaceIntentBadge),
+                                    if (categoryBadge != null)
+                                      _buildAuthorBadge(categoryBadge),
+                                    if (!isPrivateListing &&
+                                        p.authorBusinessType != null &&
+                                        (p.authorBusinessType == 'trader' ||
+                                            p.authorBusinessType == 'manufacturer'))
+                                      _buildAuthorBadge(
+                                        businessCategoryLabel(p.authorBusinessType!),
+                                      ),
+                                    if (!isPrivateListing &&
+                                        p.shareScope != 'none' &&
+                                        (p.sharedPostId ?? '').isEmpty)
                                       _buildAuthorBadge(_shareScopeLabel(p.shareScope)),
-                                    if (badgeText != null) _buildAuthorBadge(badgeText),
+                                    if (authorAccountBadge != null &&
+                                        _shouldShowAuthorBadge(p))
+                                      _buildAuthorBadge(authorAccountBadge),
+                                    if (authorSubtypeBadge != null &&
+                                        _shouldShowAuthorBadge(p))
+                                      _buildAuthorBadge(authorSubtypeBadge),
                                   ],
                                 ),
                               ],
@@ -2555,10 +2812,12 @@ class _FeedScreenState extends State<FeedScreen> {
                       singleImagePreview: _isMarketplacePost(displayPost) ||
                           _isGigPost(displayPost) ||
                           _isFoodPost(displayPost),
+                      startMuted: true,
+                      showMuteToggle: true,
+                      autoplay: false,
                       onImageTap: _openImagePreview,
                     ),
                   ],
-                  if ((p.sharedPostId ?? '').isEmpty) _buildQaPreview(displayPost),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -2651,6 +2910,24 @@ class _FeedScreenState extends State<FeedScreen> {
             fontWeight: FontWeight.w700,
             height: 1.1,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPostTypeBadge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F766E).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF0F766E),
         ),
       ),
     );
@@ -2853,7 +3130,10 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildSharedPostPreview(Post sharedPost) {
-    final badgeText = _getAuthorBadgeType(sharedPost);
+    final authorAccountBadge = _getAuthorAccountBadge(sharedPost);
+    final authorSubtypeBadge = _getAuthorSubtypeBadge(sharedPost);
+    final categoryBadge = _getCategoryBadge(sharedPost);
+    final marketplaceIntentBadge = _getMarketplaceIntentBadge(sharedPost);
     final detailRoute = _detailRouteForPost(sharedPost);
 
     return Container(
@@ -2899,7 +3179,16 @@ class _FeedScreenState extends State<FeedScreen> {
                         runSpacing: 8,
                         children: [
                           _buildVisibilityBadge(sharedPost.visibility),
-                          if (badgeText != null) _buildAuthorBadge(badgeText),
+                          if (marketplaceIntentBadge != null)
+                            _buildAuthorBadge(marketplaceIntentBadge),
+                          if (categoryBadge != null)
+                            _buildAuthorBadge(categoryBadge),
+                          if (authorAccountBadge != null &&
+                              _shouldShowAuthorBadge(sharedPost))
+                            _buildAuthorBadge(authorAccountBadge),
+                          if (authorSubtypeBadge != null &&
+                              _shouldShowAuthorBadge(sharedPost))
+                            _buildAuthorBadge(authorSubtypeBadge),
                         ],
                       ),
                     ],
@@ -2934,6 +3223,9 @@ class _FeedScreenState extends State<FeedScreen> {
               singleImagePreview: _isMarketplacePost(sharedPost) ||
                   _isGigPost(sharedPost) ||
                   _isFoodPost(sharedPost),
+              startMuted: true,
+              showMuteToggle: true,
+              autoplay: false,
               onImageTap: _openImagePreview,
             ),
           ],
@@ -3021,7 +3313,7 @@ class _FeedScreenState extends State<FeedScreen> {
         if (!isWide) {
           return _buildFeedList(
             showTopFilters: false,
-            showSummaryBanner: false,
+            showSummaryBanner: true,
           );
         }
 
@@ -3061,7 +3353,12 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildRootFeedBody() {
     if (!_useSplitMobileFeeds(context)) {
-      return _buildResponsiveFeedBody();
+      return Stack(
+        children: [
+          _buildResponsiveFeedBody(),
+          _buildStickyFeedStatus(top: 10),
+        ],
+      );
     }
 
     return Stack(
@@ -3071,6 +3368,7 @@ class _FeedScreenState extends State<FeedScreen> {
           onPageChanged: (index) {
             if (!mounted) return;
             setState(() => _mobileFeedPage = index);
+            _updateNewPostsPollingState();
           },
           children: [
             _buildResponsiveFeedBody(),
@@ -3101,6 +3399,7 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
         ),
+        if (_mobileFeedPage == 0) _buildStickyFeedStatus(top: 44),
       ],
     );
   }
@@ -3157,7 +3456,7 @@ class _FeedScreenState extends State<FeedScreen> {
             FloatingActionButton.extended(
               heroTag: 'feed-post',
               onPressed: () async {
-                final res = await context.push('/create-post');
+                final res = await openCreatePostFlow(context);
                 if (!mounted) return;
                 if (res == true) _load(reset: true);
               },
@@ -3168,209 +3467,5 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
       ),
     );
-
-    /*
-    return Scaffold(
-      appBar: GlobalAppBar(
-        title: 'Local Feed',
-        notifBell: _notifBell(),
-        showBackIfPossible: false,
-        homeRoute: '/feed',
-        onBeforeLogout: _onBeforeLogout,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('Feed error:\n$_error'),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: () async {
-                    await _load(reset: true);
-                    await _refreshUnreadNotifs();
-                  },
-                  child: ListView.builder(
-                    controller: _scroll,
-                    itemCount: _posts.length + 2, // filters + footer
-                    itemBuilder: (_, i) {
-                      if (i == 0) return _buildFilters();
-                      if (i == _posts.length + 1) return _buildFooter();
-
-                      final p = _posts[i - 1];
-                      final badgeText = _getAuthorBadgeType(p);
-                      final isPrivateListing = _isPrivateListing(p);
-                      final detailRoute = _detailRouteForPost(p);
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              InkWell(
-                                onTap: isPrivateListing
-                                    ? null
-                                    : () => context.push('/p/${p.userId}'),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 18,
-                                        backgroundImage: (p.authorAvatarUrl != null &&
-                                                p.authorAvatarUrl!.isNotEmpty)
-                                            ? NetworkImage(p.authorAvatarUrl!)
-                                            : null,
-                                        child: (p.authorAvatarUrl == null ||
-                                                p.authorAvatarUrl!.isEmpty)
-                                            ? const Icon(Icons.person, size: 18)
-                                            : null,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          _feedHeaderLabel(p),
-                                          style: const TextStyle(fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                      if (p.distanceKm != null) ...[
-                                        Text(
-                                          '${p.distanceKm!.toStringAsFixed(1)} km',
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      if (_locationLabel(p) != null) ...[
-                                        Text(
-                                          _locationLabel(p)!,
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      if (badgeText != null) ...[
-                                        _buildAuthorBadge(badgeText),
-                                        const SizedBox(width: 6),
-                                      ],
-
-                                      // ✅ NEW: 3-dot menu (Report)
-                                      PopupMenuButton<String>(
-                                        icon: const Icon(Icons.more_vert),
-                                        onSelected: (value) async {
-                                          if (value == 'report') {
-                                            final reported = await showModalBottomSheet<bool>(
-                                              context: context,
-                                              isScrollControlled: true,
-                                              builder: (_) => ReportPostSheet(postId: p.id),
-                                            );
-
-                                            if (reported == true && context.mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text('Thanks — we’ll review it.'),
-                                                ),
-                                              );
-                                            }
-                                          }
-                                        },
-                                        itemBuilder: (context) => [
-                                          if (Supabase.instance.client.auth.currentUser?.id != p.userId)
-                                            const PopupMenuItem(
-                                              value: 'report',
-                                              child: Text('Report'),
-                                            ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(p.content),
-
-                              if (p.videoUrl != null && p.videoUrl!.isNotEmpty) ...[
-                                YoutubePreview(videoUrl: p.videoUrl!),
-                              ],
-
-                              if (p.imageUrl != null) ...[
-                                const SizedBox(height: 10),
-                                InkWell(
-                                  onTap: () => _openImagePreview(p.imageUrl!),
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Image.network(p.imageUrl!, fit: BoxFit.cover),
-                                  ),
-                                ),
-                              ],
-
-                              const SizedBox(height: 6),
-                              _buildReactionsRow(p),
-
-                              const SizedBox(height: 8),
-                              if (p.locationName != null)
-                                Text('📍 ${p.locationName}', style: const TextStyle(fontSize: 12)),
-                              if (p.postType == 'market' &&
-                                  p.marketIntent != null &&
-                                  p.marketIntent!.isNotEmpty)
-                                Text(
-                                  'Type: ${p.marketIntent == 'buying' ? 'Buying' : p.marketIntent == 'selling' ? 'Selling' : p.marketIntent}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              if (p.postType == 'market' &&
-                                  p.marketCategory != null &&
-                                  p.marketCategory!.isNotEmpty)
-                                Text(
-                                  'Category: ${marketCategoryLabel(p.marketCategory!)}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              if (detailRoute != null) ...[
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => context.push(detailRoute),
-                                    icon: Icon(
-                                      p.postType == 'market'
-                                          ? Icons.storefront_outlined
-                                          : (p.postType == 'food_ad' || p.postType == 'food')
-                                              ? Icons.fastfood
-                                              : Icons.miscellaneous_services_outlined,
-                                    ),
-                                    label: Text(
-                                      p.postType == 'market'
-                                          ? 'Open product'
-                                          : (p.postType == 'food_ad' || p.postType == 'food')
-                                              ? 'Open food'
-                                              : 'Open gig',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              Text(
-                                _formatFeedTimestamp(p.createdAt),
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final res = await context.push('/create-post');
-          if (!mounted) return;
-          if (res == true) _load(reset: true);
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Post'),
-      ),
-    );*/
   }
 }

@@ -17,14 +17,17 @@ import '../features/auth/presentation/forgot_password_screen.dart';
 import '../features/auth/presentation/reset_password_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/profile/presentation/complete_profile_screen.dart';
+import '../features/profile/presentation/feed_filter_setup_screen.dart';
 import '../features/profile/presentation/profile_detail_screen.dart';
 import '../features/profile/presentation/follow_list_screen.dart';
 import '../features/profile/presentation/follow_requests_screen.dart';
 import '../features/profile/presentation/managed_ads_screen.dart';
+import '../features/profile/presentation/profile_settings_screen.dart';
 import '../features/moderation/presentation/admin_review_screen.dart';
 
 import '../screens/feed_screen.dart';
 import '../screens/create_post_screen.dart';
+import '../screens/quick_camera_post_screen.dart';
 import '../screens/comments_screen.dart';
 import '../screens/post_detail_screen.dart';
 import '../screens/search_screen.dart';
@@ -46,12 +49,14 @@ import '../features/chat/presentation/offer_chat_screen.dart';
 import '../features/chat/presentation/offer_chat_start_screen.dart';
 
 final appRouterNavigatorKey = GlobalKey<NavigatorState>();
+final appRouteObserver = RouteObserver<ModalRoute<void>>();
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final auth = Supabase.instance.client.auth;
 
   return GoRouter(
     navigatorKey: appRouterNavigatorKey,
+    observers: [appRouteObserver],
     initialLocation: '/login',
     refreshListenable: GoRouterRefreshStream(auth.onAuthStateChange),
 
@@ -66,6 +71,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isAuth =
           path == '/login' || path == '/register' || path == '/forgot-password';
       final isOnboarding = path == '/complete-profile';
+      final isFeedSetup = path == '/feed-setup';
       final isProfile = path == '/profile';
       final isResetPassword = path == '/reset-password';
       final isAdminRoute =
@@ -89,13 +95,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       try {
         profile = await Supabase.instance.client
             .from('profiles')
-            .select('full_name, account_type, latitude, longitude, is_disabled')
+            .select('full_name, account_type, latitude, longitude, is_disabled, feed_filters')
             .eq('id', user.id)
             .maybeSingle();
       } on PostgrestException {
         profile = await Supabase.instance.client
             .from('profiles')
-            .select('full_name, account_type, latitude, longitude')
+            .select('full_name, account_type, latitude, longitude, feed_filters')
             .eq('id', user.id)
             .maybeSingle();
       }
@@ -116,10 +122,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           lat == null ||
           lng == null;
 
+      final hasFeedFilters = (profile?['feed_filters'] is Map) ||
+          (user.userMetadata?['feed_filters'] is Map);
+
       if (incomplete) {
         return isOnboarding ? null : '/complete-profile';
       } else {
-        return isOnboarding ? '/feed' : null;
+        if (!hasFeedFilters) {
+          return isFeedSetup ? null : '/feed-setup';
+        }
+        if (isOnboarding || isFeedSetup) return '/feed';
+        return null;
       }
     },
 
@@ -147,6 +160,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/complete-profile',
         builder: (context, state) => const CompleteProfileScreen(),
+      ),
+
+      GoRoute(
+        path: '/feed-setup',
+        builder: (context, state) => const FeedFilterSetupScreen(),
       ),
 
       GoRoute(
@@ -207,13 +225,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/foods/:id',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return FoodAdDetailScreen(postId: id);
+          final initialTab = state.uri.queryParameters['tab'] == 'qa' ? 1 : 0;
+          return FoodAdDetailScreen(postId: id, initialTab: initialTab);
         },
       ),
 
       GoRoute(
         path: '/create-post',
         builder: (context, state) => const CreatePostScreen(),
+      ),
+
+      GoRoute(
+        path: '/quick-camera-post/:mode',
+        builder: (context, state) {
+          final mode = state.pathParameters['mode'] == 'video'
+              ? QuickCaptureMode.video
+              : QuickCaptureMode.photo;
+          return QuickCameraPostScreen(mode: mode);
+        },
       ),
 
       // 🔐 Admin Moderation Panel
@@ -295,6 +324,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       GoRoute(
+        path: '/profile/settings',
+        builder: (context, state) => const ProfileSettingsScreen(),
+      ),
+
+      GoRoute(
         path: '/profile/my-products',
         builder: (context, state) => const ManagedAdsScreen(mode: ManagedAdsMode.products),
       ),
@@ -341,6 +375,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return FollowListScreen(
             profileId: id,
             mode: FollowListMode.following,
+          );
+        },
+      ),
+
+      GoRoute(
+        path: '/p/:id/connections',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return FollowListScreen(
+            profileId: id,
+            mode: FollowListMode.connections,
           );
         },
       ),

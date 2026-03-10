@@ -5,6 +5,8 @@ class AppNotification {
   final String type; // follow|like|comment
   final String? postId;
   final String? commentId;
+  final String? postType;
+  final String? postOwnerId;
   final DateTime createdAt;
   final DateTime? readAt;
 
@@ -19,6 +21,8 @@ class AppNotification {
     this.actorId,
     this.postId,
     this.commentId,
+    this.postType,
+    this.postOwnerId,
     this.readAt,
     this.actorName,
     this.actorAvatarUrl,
@@ -26,6 +30,7 @@ class AppNotification {
 
   factory AppNotification.fromMap(Map<String, dynamic> map) {
     final actor = map['actor'] as Map<String, dynamic>?;
+    final post = map['post'] as Map<String, dynamic>?;
     return AppNotification(
       id: map['id'] as String,
       recipientId: map['recipient_id'] as String,
@@ -33,6 +38,8 @@ class AppNotification {
       type: map['type'] as String,
       postId: map['post_id'] as String?,
       commentId: map['comment_id'] as String?,
+      postType: post?['post_type'] as String?,
+      postOwnerId: post?['user_id'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       readAt: map['read_at'] == null ? null : DateTime.parse(map['read_at'] as String),
       actorName: actor?['full_name'] as String?,

@@ -5,6 +5,8 @@ import 'dart:math' as math;
 
 import '../core/food_categories.dart';
 import '../models/post_model.dart';
+import '../services/mention_service.dart';
+import '../services/post_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 
@@ -19,6 +21,7 @@ class _FoodsScreenState extends State<FoodsScreen> {
   bool _loading = true;
   String? _error;
   String _selectedCategory = 'all';
+  String _sortBy = 'date_desc';
   String _search = '';
   final _searchCtrl = TextEditingController();
   List<Post> _posts = [];
@@ -36,6 +39,10 @@ class _FoodsScreenState extends State<FoodsScreen> {
     if (count == 2) return 0.64;
     if (count == 3) return 0.8;
     return 0.98;
+  }
+
+  String _plainListingText(String raw) {
+    return MentionService.parseTaggedContent(raw).body;
   }
 
   @override
@@ -66,6 +73,32 @@ class _FoodsScreenState extends State<FoodsScreen> {
     return earth * c;
   }
 
+  void _sortItems(List<Post> items) {
+    switch (_sortBy) {
+      case 'date_asc':
+        items.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        break;
+      case 'price_asc':
+        items.sort((a, b) {
+          final aPrice = a.marketPrice ?? double.infinity;
+          final bPrice = b.marketPrice ?? double.infinity;
+          return aPrice.compareTo(bPrice);
+        });
+        break;
+      case 'price_desc':
+        items.sort((a, b) {
+          final aPrice = a.marketPrice ?? -1;
+          final bPrice = b.marketPrice ?? -1;
+          return bPrice.compareTo(aPrice);
+        });
+        break;
+      case 'date_desc':
+      default:
+        items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        break;
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -86,12 +119,13 @@ class _FoodsScreenState extends State<FoodsScreen> {
 
       final data = await Supabase.instance.client
           .from('posts')
-          .select('*, profiles(full_name, avatar_url, city, zipcode)')
+          .select('*, profiles(full_name, business_name, avatar_url, city, zipcode)')
           .inFilter('post_type', ['food_ad', 'food'])
           .order('created_at', ascending: false)
           .limit(150);
 
-      final rows = (data as List).cast<Map<String, dynamic>>();
+      final rows = await PostService(Supabase.instance.client)
+          .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
       var items = rows.map((e) => Post.fromMap(e)).toList();
 
       if (_selectedCategory != 'all') {
@@ -103,10 +137,13 @@ class _FoodsScreenState extends State<FoodsScreen> {
         items = items.where((p) {
           return (p.marketTitle ?? '').toLowerCase().contains(q) ||
               p.content.toLowerCase().contains(q) ||
+              (p.authorBusinessName ?? '').toLowerCase().contains(q) ||
               (p.authorName ?? '').toLowerCase().contains(q) ||
               foodCategoryLabel(p.marketCategory ?? '').toLowerCase().contains(q);
         }).toList();
       }
+
+      _sortItems(items);
 
       if (!mounted) return;
       setState(() => _posts = items);
@@ -176,6 +213,27 @@ class _FoodsScreenState extends State<FoodsScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: DropdownButtonFormField<String>(
+              initialValue: _sortBy,
+              items: const [
+                DropdownMenuItem(value: 'date_desc', child: Text('Newest first')),
+                DropdownMenuItem(value: 'date_asc', child: Text('Oldest first')),
+                DropdownMenuItem(value: 'price_asc', child: Text('Price: low to high')),
+                DropdownMenuItem(value: 'price_desc', child: Text('Price: high to low')),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _sortBy = v);
+                _load();
+              },
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Sort by',
+              ),
+            ),
+          ),
           const SizedBox(height: 8),
           const Divider(height: 1),
           Expanded(
@@ -203,7 +261,7 @@ class _FoodsScreenState extends State<FoodsScreen> {
                               final distanceKm = _distanceKm(p);
                               final title = (p.marketTitle ?? '').trim().isNotEmpty
                                   ? p.marketTitle!.trim()
-                                  : p.content.trim();
+                                  : _plainListingText(p.content);
                               final price = p.marketPrice != null
                                   ? '€${p.marketPrice!.toStringAsFixed(2)}'
                                   : 'Price on request';
@@ -250,10 +308,10 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                               overflow: TextOverflow.ellipsis,
                                               style: const TextStyle(fontWeight: FontWeight.w600),
                                             ),
-                                            if ((p.authorName ?? '').trim().isNotEmpty) ...[
+                                            if (((p.authorBusinessName ?? p.authorName) ?? '').trim().isNotEmpty) ...[
                                               const SizedBox(height: 4),
                                               Text(
-                                                p.authorName!.trim(),
+                                                ((p.authorBusinessName ?? p.authorName) ?? '').trim(),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(

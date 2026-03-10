@@ -6,6 +6,8 @@ const List<String> businessMainCategories = [
   'consulting',
   'brokerage',
   'dealership',
+  'trader',
+  'manufacturer',
   'auto_garage',
   'notary',
   'real_estate',
@@ -35,6 +37,10 @@ String businessCategoryLabel(String value) {
       return 'Broker';
     case 'dealership':
       return 'Dealer';
+    case 'trader':
+      return 'Trader';
+    case 'manufacturer':
+      return 'Manufacturer';
     case 'auto_garage':
       return 'Auto Garage';
     case 'notary':
