@@ -26,7 +26,7 @@ class PostService {
   static const String postSelect =
       '*, profiles(full_name, avatar_url, city, zipcode, org_kind, business_type, business_name, job_title)';
 
-  Future<String> uploadPostImage({
+  Future<String> _uploadImageXFile({
     required XFile image,
     required String userId,
   }) async {
@@ -48,11 +48,20 @@ class PostService {
     return _db.storage.from('post-images').getPublicUrl(path);
   }
 
-  Future<String> uploadPostVideo({
+  Future<String> uploadPostImage({
+    required XFile image,
+    required String userId,
+  }) async {
+    return _uploadImageXFile(image: image, userId: userId);
+  }
+
+  Future<({String videoUrl, String? thumbnailUrl})> uploadPostVideo({
     required XFile video,
     required String userId,
   }) async {
     final preparedVideo = await MediaCompressionService.compressVideo(video);
+    final thumbnailFile =
+        await MediaCompressionService.generateVideoThumbnail(preparedVideo);
     final ext = preparedVideo.name.split('.').last.toLowerCase();
     final safeExt = ext.isEmpty ? 'mp4' : ext;
 
@@ -83,22 +92,23 @@ class PostService {
           );
     }
 
-    return _db.storage.from('post-images').getPublicUrl(path);
-  }
-
-  String _contentTypeFromExt(String ext) {
-    switch (ext) {
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      case 'gif':
-        return 'image/gif';
-      case 'jpg':
-      case 'jpeg':
-      default:
-        return 'image/jpeg';
+    final videoUrl = _db.storage.from('post-images').getPublicUrl(path);
+    String? thumbnailUrl;
+    if (thumbnailFile != null) {
+      try {
+        thumbnailUrl = await _uploadImageXFile(
+          image: thumbnailFile,
+          userId: userId,
+        );
+      } catch (_) {
+        thumbnailUrl = null;
+      }
     }
+
+    return (
+      videoUrl: videoUrl,
+      thumbnailUrl: thumbnailUrl,
+    );
   }
 
   Future<String?> createPost({
@@ -239,17 +249,7 @@ class PostService {
           'p_comment_id': null,
         });
       } catch (_) {
-        try {
-          await _db.from('notifications').insert({
-            'recipient_id': recipientId,
-            'actor_id': actorId,
-            'post_id': postId,
-            'comment_id': null,
-            'type': 'mention',
-          });
-        } catch (_) {
-          // Mentions are best-effort.
-        }
+        // Mentions are best-effort.
       }
     }
   }

@@ -1295,16 +1295,18 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           children: [
             TextButton.icon(
               onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 try {
                   if (liked) {
                     await react.unlike(p.id);
                   } else {
                     await react.like(p.id);
                   }
-                  if (mounted) setState(() {});
+                  if (!mounted) return;
+                  setState(() {});
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(content: Text('Like error: $e')),
                   );
                 }
@@ -1321,42 +1323,6 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           ],
         );
       },
-    );
-  }
-
-  Widget _followRequestsButtonWithBadge(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: () => context.push('/follow-requests'),
-        icon: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            const Icon(Icons.person_add_alt_1),
-            if (_pendingRequests > 0)
-              Positioned(
-                right: -6,
-                top: -6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _pendingRequests > 99 ? '99+' : '$_pendingRequests',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        label: const Text('Follow Requests'),
-      ),
     );
   }
 

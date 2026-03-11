@@ -207,7 +207,6 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
     final avatarUrl = profile is Map ? profile['avatar_url']?.toString() : null;
     final userId = comment['user_id']?.toString();
     final mine = me != null && userId == me;
-    final isOwner = me != null && me == ownerId;
     final likeCount = (comment['like_count'] as num?)?.toInt() ?? 0;
     final likedByMe = comment['liked_by_me'] == true;
     final commentId = (comment['id'] ?? '').toString();

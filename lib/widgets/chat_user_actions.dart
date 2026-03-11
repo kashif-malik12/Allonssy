@@ -101,6 +101,7 @@ Future<void> openChatUserActions({
   }
 
   if (action == 'delete') {
+    if (!context.mounted) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(

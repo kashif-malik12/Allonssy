@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../widgets/global_bottom_nav.dart';
-import '../../../widgets/chat_user_actions.dart';
 
 import '../services/offer_chat_service.dart';
 
@@ -28,7 +27,6 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
   String _postType = '';
   String? _sellerId;
   String? _buyerId;
-  String? _otherUserId;
   double? _currentOfferAmount;
   String _currentOfferStatus = 'none';
   String? _currentOfferBy;
@@ -106,12 +104,10 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
     final rawTitle = (post['market_title'] as String?)?.trim();
     final content = (post['content'] as String?)?.trim() ?? '';
     if (!mounted) return;
-    final otherUserId = me == conversation['buyer_id'] ? conversation['seller_id'] as String? : conversation['buyer_id'] as String?;
     setState(() {
       _postId = post['id'] as String?;
       _buyerId = conversation['buyer_id'] as String?;
       _sellerId = conversation['seller_id'] as String?;
-      _otherUserId = otherUserId;
       _postType = (post['post_type'] as String?) ?? '';
       _postTitle = (rawTitle != null && rawTitle.isNotEmpty) ? rawTitle : content;
       _currentOfferAmount =

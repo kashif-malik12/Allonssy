@@ -42,6 +42,7 @@ class _AppState extends ConsumerState<App> {
       if (event.event == AuthChangeEvent.passwordRecovery) {
         final context = appRouterNavigatorKey.currentContext;
         if (context != null) {
+          // ignore: use_build_context_synchronously
           context.go('/reset-password');
         }
       }

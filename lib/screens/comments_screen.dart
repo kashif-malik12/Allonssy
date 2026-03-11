@@ -327,7 +327,6 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final displayName = isAnswer ? 'Author' : name.toString();
     final avatarUrl = profile is Map ? profile['avatar_url']?.toString() : null;
     final mine = me != null && userId == me;
-    final isOwner = me != null && me == postOwnerId;
     final likeCount = (comment['like_count'] as num?)?.toInt() ?? 0;
     final likedByMe = comment['liked_by_me'] == true;
     final commentId = (comment['id'] ?? '').toString();

@@ -394,6 +394,7 @@ class _HeaderRow extends StatelessWidget {
         ),
         PopupMenuButton<String>(
           onSelected: (value) async {
+            final messenger = ScaffoldMessenger.of(context);
             if (value == 'report') {
               final reported = await showModalBottomSheet<bool>(
                 context: context,
@@ -401,14 +402,15 @@ class _HeaderRow extends StatelessWidget {
                 builder: (_) => ReportPostSheet(postId: post.id),
               );
 
-              if (reported == true && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
+              if (reported == true) {
+                messenger.showSnackBar(
                   const SnackBar(content: Text("Thanks - we'll review it.")),
                 );
               }
             }
 
             if (value == 'delete') {
+              if (!context.mounted) return;
               await onDelete?.call(context);
             }
           },

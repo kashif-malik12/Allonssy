@@ -161,6 +161,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (picked == null || !mounted) return;
 
     final size = await picked.length();
+    if (!mounted) return;
     if (size > ChatAttachmentService.maxImageBytes) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Photo must be 10 MB or smaller.')),

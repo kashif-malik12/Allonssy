@@ -215,10 +215,12 @@ class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
           userId: supabase.auth.currentUser!.id,
         );
       } else {
-        videoUrl = await service.uploadPostVideo(
+        final upload = await service.uploadPostVideo(
           video: mediaFile,
           userId: supabase.auth.currentUser!.id,
         );
+        videoUrl = upload.videoUrl;
+        imageUrl = upload.thumbnailUrl;
       }
 
       await service.createPost(

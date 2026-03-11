@@ -19,12 +19,18 @@ class MobileVideoFeed extends StatefulWidget {
 
 class _MobileVideoFeedState extends State<MobileVideoFeed> {
   final _pageController = PageController();
+  static const int _videoPageSize = 8;
 
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
   String? _error;
-  String _scope = 'following';
+  String _scope = 'public';
   List<Post> _posts = [];
+  int _activeIndex = 0;
   int _profileRadiusKm = 5;
+  DateTime? _beforeCreatedAt;
+  String? _beforeId;
   final ReactionService _reactionService =
       ReactionService(Supabase.instance.client);
   final Map<String, bool> _likedByMe = {};
@@ -111,31 +117,27 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
   }
 
   Future<void> _primeReactions(List<Post> posts) async {
-    final liked = <String, bool>{};
-    final counts = <String, int>{};
-    await Future.wait(
-      posts.map((post) async {
-        final values = await Future.wait<dynamic>([
-          _reactionService.isLiked(post.id),
-          _reactionService.likesCount(post.id),
-        ]);
-        liked[post.id] = values[0] as bool;
-        counts[post.id] = values[1] as int;
-      }),
-    );
+    final pendingIds = posts
+        .where((post) => !_likedByMe.containsKey(post.id) || !_likeCounts.containsKey(post.id))
+        .map((post) => post.id)
+        .toList();
+    if (pendingIds.isEmpty) return;
 
-    if (!mounted) return;
-    setState(() {
-      _likedByMe
-        ..clear()
-        ..addAll(liked);
-      _likeCounts
-        ..clear()
-        ..addAll(counts);
-      if (_scope == 'trending') {
-        _posts.sort((a, b) => (_likeCounts[b.id] ?? 0).compareTo(_likeCounts[a.id] ?? 0));
-      }
-    });
+    try {
+      final summary = await _reactionService.fetchPostReactionSummary(pendingIds);
+      if (!mounted) return;
+      setState(() {
+        for (final entry in summary.entries) {
+          _likedByMe[entry.key] = entry.value.likedByMe;
+          _likeCounts[entry.key] = entry.value.likeCount;
+        }
+        if (_scope == 'trending') {
+          _posts.sort((a, b) => (_likeCounts[b.id] ?? 0).compareTo(_likeCounts[a.id] ?? 0));
+        }
+      });
+    } catch (_) {
+      // Reaction hydration is best-effort.
+    }
   }
 
   Future<void> _toggleLike(Post post) async {
@@ -174,18 +176,46 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
     }
   }
 
-  Future<void> _load() async {
+  Future<List<Map<String, dynamic>>> _fetchFeedRows({
+    required bool reset,
+  }) async {
+    final rows = await PostService(Supabase.instance.client).fetchPublicFeed(
+      limit: _videoPageSize,
+      scope: _serviceScope(),
+      radiusKmOverride: _scope == 'nearby' ? _profileRadiusKm : null,
+      beforeCreatedAt: reset ? null : _beforeCreatedAt,
+      beforeId: reset ? null : _beforeId,
+    );
+
+    if (rows.isNotEmpty) {
+      final last = rows.last;
+      final createdAtRaw = (last['created_at'] ?? '').toString();
+      _beforeCreatedAt =
+          createdAtRaw.isEmpty ? _beforeCreatedAt : DateTime.tryParse(createdAtRaw);
+      final id = (last['id'] ?? '').toString();
+      _beforeId = id.isEmpty ? _beforeId : id;
+    }
+
+    _hasMore = rows.length == _videoPageSize;
+    return rows.cast<Map<String, dynamic>>();
+  }
+
+  Future<void> _load({bool reset = true}) async {
     setState(() {
-      _loading = true;
+      if (reset) {
+        _loading = true;
+      } else {
+        _loadingMore = true;
+      }
       _error = null;
     });
 
     try {
-      final rows = await PostService(Supabase.instance.client).fetchPublicFeed(
-        limit: 80,
-        scope: _serviceScope(),
-        radiusKmOverride: _scope == 'nearby' ? _profileRadiusKm : null,
-      );
+      if (reset) {
+        _beforeCreatedAt = null;
+        _beforeId = null;
+      }
+      final rows = await _fetchFeedRows(reset: reset);
       final hydrated = await PostService(Supabase.instance.client).attachSharedPosts(rows);
       final posts = hydrated
           .map((row) => Post.fromMap(row))
@@ -193,14 +223,37 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
           .toList();
 
       if (!mounted) return;
-      setState(() => _posts = posts);
-      await _primeReactions(posts);
+      setState(() {
+        if (reset) {
+          _posts = posts;
+          _activeIndex = 0;
+          _likedByMe.clear();
+          _likeCounts.clear();
+        } else {
+          final seen = _posts.map((post) => post.id).toSet();
+          _posts = [
+            ..._posts,
+            ...posts.where((post) => !seen.contains(post.id)),
+          ];
+        }
+        _loading = false;
+        _loadingMore = false;
+      });
+      _primeReactions(reset ? _posts : posts);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+        _loadingMore = false;
+      });
     }
+  }
+
+  Future<void> _maybePrefetchMore(int index) async {
+    if (_loadingMore || !_hasMore) return;
+    if (index < _posts.length - 2) return;
+    await _load(reset: false);
   }
 
   Widget _scopeChip({
@@ -212,7 +265,10 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
       selected: selected,
       onSelected: (_) {
         if (_scope == value) return;
-        setState(() => _scope = value);
+        setState(() {
+          _scope = value;
+          _hasMore = true;
+        });
         _load();
       },
       label: Text(label),
@@ -228,7 +284,53 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
     );
   }
 
-  Widget _buildVideoPlayer(String videoUrl) {
+  Widget _buildVideoPoster(Post post) {
+    final imageUrl = post.imageUrl?.trim();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (imageUrl != null && imageUrl.isNotEmpty)
+          Image.network(
+            imageUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(color: Colors.black),
+          )
+        else
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF10151D), Color(0xFF05070B)],
+              ),
+            ),
+          ),
+        Container(color: Colors.black.withOpacity(0.22)),
+        const Center(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Color(0x88000000),
+              shape: BoxShape.circle,
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(18),
+              child: Icon(
+                Icons.play_arrow,
+                size: 42,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVideoPlayer(Post post, {required bool active}) {
+    final videoUrl = post.videoUrl!.trim();
+    if (!active) {
+      return _buildVideoPoster(post);
+    }
     if (_isYoutubeUrl(videoUrl)) {
       return _InlineYoutubePlayer(
         videoUrl: videoUrl,
@@ -257,10 +359,11 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
             : post.postType == 'food' || post.postType == 'food_ad'
                 ? 'Open food'
                 : 'Open';
+    final active = _posts.isNotEmpty && _posts[_activeIndex].id == post.id;
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(color: Colors.black, child: _buildVideoPlayer(post.videoUrl!.trim())),
+        Container(color: Colors.black, child: _buildVideoPlayer(post, active: active)),
         DecoratedBox(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -511,23 +614,72 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
                         ? Center(
                             child: Padding(
                               padding: const EdgeInsets.all(24),
-                              child: Text(
-                                'No videos found for this filter yet.',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.78),
-                                  fontSize: 16,
+                              child: Container(
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.28),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.08),
+                                  ),
                                 ),
-                                textAlign: TextAlign.center,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'No videos found for this filter yet.',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.82),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: [
+                                          _scopeChip(value: 'following', label: 'Following'),
+                                          const SizedBox(width: 8),
+                                          _scopeChip(
+                                            value: 'nearby',
+                                            label: 'Radius $_profileRadiusKm km',
+                                          ),
+                                          const SizedBox(width: 8),
+                                          _scopeChip(value: 'public', label: 'Public'),
+                                          const SizedBox(width: 8),
+                                          _scopeChip(value: 'trending', label: 'Trending'),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           )
                         : PageView.builder(
                             controller: _pageController,
                             scrollDirection: Axis.vertical,
+                            onPageChanged: (index) {
+                              if (!mounted) return;
+                              setState(() => _activeIndex = index);
+                              _maybePrefetchMore(index);
+                            },
                             itemCount: _posts.length,
                             itemBuilder: (_, index) => _buildPostCard(_posts[index]),
                           ),
           ),
+          if (_loadingMore)
+            const Positioned(
+              right: 16,
+              bottom: 120,
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
         ],
       ),
     );

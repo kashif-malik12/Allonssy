@@ -358,10 +358,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
 
       if (_mediaMode == _ComposerMediaMode.videoFile && _selectedVideo != null) {
-        videoUrl = await service.uploadPostVideo(
+        final upload = await service.uploadPostVideo(
           video: _selectedVideo!,
           userId: supabase.auth.currentUser!.id,
         );
+        videoUrl = upload.videoUrl;
+        imageUrl = upload.thumbnailUrl;
       }
 
       await service.createPost(

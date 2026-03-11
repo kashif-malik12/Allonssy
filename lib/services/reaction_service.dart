@@ -24,6 +24,45 @@ class ReactionService {
     return (rows as List).length;
   }
 
+  Future<Map<String, ({bool likedByMe, int likeCount})>> fetchPostReactionSummary(
+    List<String> postIds,
+  ) async {
+    final ids = postIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return const {};
+
+    final countRows = await _db
+        .from('post_likes')
+        .select('post_id, user_id')
+        .inFilter('post_id', ids);
+
+    final byMeRows = await _db
+        .from('post_likes')
+        .select('post_id')
+        .eq('user_id', _me)
+        .inFilter('post_id', ids);
+
+    final counts = <String, int>{};
+    for (final row in (countRows as List).cast<Map<String, dynamic>>()) {
+      final postId = (row['post_id'] ?? '').toString();
+      if (postId.isEmpty) continue;
+      counts[postId] = (counts[postId] ?? 0) + 1;
+    }
+
+    final likedByMe = (byMeRows as List)
+        .cast<Map<String, dynamic>>()
+        .map((row) => (row['post_id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    return {
+      for (final id in ids)
+        id: (
+          likedByMe: likedByMe.contains(id),
+          likeCount: counts[id] ?? 0,
+        ),
+    };
+  }
+
   Future<void> like(String postId) async {
     await _db.from('post_likes').insert({'post_id': postId, 'user_id': _me});
   }
@@ -204,17 +243,7 @@ class ReactionService {
           'p_comment_id': commentId,
         });
       } catch (_) {
-        try {
-          await _db.from('notifications').insert({
-            'recipient_id': recipientId,
-            'actor_id': _me,
-            'post_id': postId,
-            'comment_id': commentId,
-            'type': 'mention',
-          });
-        } catch (_) {
-          // Mentions are best-effort.
-        }
+        // Mentions are best-effort.
       }
     }
   }

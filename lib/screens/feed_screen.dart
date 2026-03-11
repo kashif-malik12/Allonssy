@@ -956,16 +956,18 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           children: [
             TextButton.icon(
               onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 try {
                   if (liked) {
                     await react.unlike(p.id);
                   } else {
                     await react.like(p.id);
                   }
-                  if (mounted) setState(() {});
+                  if (!mounted) return;
+                  setState(() {});
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(content: Text('Like error: $e')),
                   );
                 }
@@ -983,6 +985,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
               const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   try {
                     await postService.sharePost(
                       originalPostId: p.id,
@@ -993,13 +996,13 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                       originalLocationName: p.locationName,
                     );
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       const SnackBar(content: Text('Post shared')),
                     );
                     await _load(reset: true);
                   } catch (e) {
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       SnackBar(content: Text('Share error: $e')),
                     );
                   }
@@ -2756,14 +2759,15 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                             icon: const Icon(Icons.more_vert),
                             onSelected: (value) async {
                               if (value == 'report') {
+                                final messenger = ScaffoldMessenger.of(context);
                                 final reported = await showModalBottomSheet<bool>(
                                   context: context,
                                   isScrollControlled: true,
                                   builder: (_) => ReportPostSheet(postId: p.id),
                                 );
 
-                                if (reported == true && context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                if (reported == true) {
+                                  messenger.showSnackBar(
                                     const SnackBar(
                                       content: Text('Thanks â€” weâ€™ll review it.'),
                                     ),

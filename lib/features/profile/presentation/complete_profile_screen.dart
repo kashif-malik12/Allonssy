@@ -88,10 +88,19 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       final data = jsonDecode(res.body);
       if (data is! List || data.isEmpty) return null;
 
-      return (data[0]['address']?['city'] ??
-              data[0]['address']?['town'] ??
-              data[0]['address']?['village'] ??
-              data[0]['display_name']?.toString().split(',').first)
+      final first = data.first;
+      if (first is! Map) return null;
+
+      final row = Map<String, dynamic>.from(first);
+      final address = row['address'] is Map
+          ? Map<String, dynamic>.from(row['address'] as Map)
+          : const <String, dynamic>{};
+      final displayName = row['display_name']?.toString();
+
+      return (address['city'] ??
+              address['town'] ??
+              address['village'] ??
+              displayName?.split(',').first)
           ?.toString()
           .trim();
     }
@@ -152,36 +161,37 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       }
 
       if (data == null || !mounted) return;
+      final profile = data;
 
       setState(() {
-        _name.text = (data?['full_name'] as String?) ?? '';
-        _bio.text = (data?['bio'] as String?) ?? '';
-        _businessName.text = (data?['business_name'] as String?) ?? '';
-        _jobTitle.text = (data?['job_title'] as String?) ?? '';
-        _businessProfile.text = (data?['business_profile'] as String?) ?? '';
-        _zipCtrl.text = (data?['zipcode'] as String?) ?? '';
-        _cityCtrl.text = (data?['city'] as String?) ?? '';
-        _savedZip = (data?['zipcode'] as String?)?.trim();
+        _name.text = (profile['full_name'] as String?) ?? '';
+        _bio.text = (profile['bio'] as String?) ?? '';
+        _businessName.text = (profile['business_name'] as String?) ?? '';
+        _jobTitle.text = (profile['job_title'] as String?) ?? '';
+        _businessProfile.text = (profile['business_profile'] as String?) ?? '';
+        _zipCtrl.text = (profile['zipcode'] as String?) ?? '';
+        _cityCtrl.text = (profile['city'] as String?) ?? '';
+        _savedZip = (profile['zipcode'] as String?)?.trim();
         _zipLocked = _savedZip != null && RegExp(r'^\d{5}$').hasMatch(_savedZip!);
 
-        _avatarUrl = (data?['avatar_url'] as String?);
+        _avatarUrl = profile['avatar_url'] as String?;
 
-        _lat = (data?['latitude'] as num?)?.toDouble();
-        _lng = (data?['longitude'] as num?)?.toDouble();
+        _lat = (profile['latitude'] as num?)?.toDouble();
+        _lng = (profile['longitude'] as num?)?.toDouble();
 
-        _accountType = (data?['profile_type'] as String?) ??
-            (data?['account_type'] as String?) ??
+        _accountType = (profile['profile_type'] as String?) ??
+            (profile['account_type'] as String?) ??
             'person';
 
-        _orgKind = data?['org_kind'] as String?;
-        _isRestaurant = data?['is_restaurant'] == true;
-        _restaurantType = data?['restaurant_type'] as String?;
-        _businessType = data?['business_type'] as String?;
-        _radiusKm = (data?['radius_km'] as int?) ?? 5;
+        _orgKind = profile['org_kind'] as String?;
+        _isRestaurant = profile['is_restaurant'] == true;
+        _restaurantType = profile['restaurant_type'] as String?;
+        _businessType = profile['business_type'] as String?;
+        _radiusKm = (profile['radius_km'] as int?) ?? 5;
       });
 
-      final zip = (data['zipcode'] as String?)?.trim() ?? '';
-      final city = (data['city'] as String?)?.trim() ?? '';
+      final zip = (profile['zipcode'] as String?)?.trim() ?? '';
+      final city = (profile['city'] as String?)?.trim() ?? '';
       if (city.isEmpty && zip.isNotEmpty) {
         await _backfillCityIfMissing(userId: user.id, zip: zip);
       }

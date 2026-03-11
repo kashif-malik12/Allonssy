@@ -1,5 +1,4 @@
 import 'dart:io' show File;
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -63,21 +62,6 @@ class ChatAttachmentService {
     }
 
     return _db.storage.from(_bucket).getPublicUrl(path);
-  }
-
-  String _imageContentType(String ext) {
-    switch (ext) {
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      case 'gif':
-        return 'image/gif';
-      case 'jpg':
-      case 'jpeg':
-      default:
-        return 'image/jpeg';
-    }
   }
 
   String _fileContentType(String? ext) {

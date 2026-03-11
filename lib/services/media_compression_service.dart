@@ -91,6 +91,39 @@ class MediaCompressionService {
     }
   }
 
+  static Future<XFile?> generateVideoThumbnail(XFile video) async {
+    if (kIsWeb) return null;
+    if (!(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+      return null;
+    }
+
+    final sourcePath = video.path;
+    if (sourcePath.isEmpty) return null;
+
+    final outputPath =
+        '${Directory.systemTemp.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final command =
+        '-y -i "${_escapePath(sourcePath)}" -ss 00:00:00.500 -vframes 1 '
+        '-vf "scale=\'min(1280,iw)\':-2" "${_escapePath(outputPath)}"';
+
+    try {
+      final session = await FFmpegKit.execute(command);
+      final returnCode = await session.getReturnCode();
+      final outputFile = File(outputPath);
+      if (!ReturnCode.isSuccess(returnCode) || !outputFile.existsSync()) {
+        return null;
+      }
+
+      return XFile(
+        outputFile.path,
+        mimeType: 'image/jpeg',
+        name: 'video_thumbnail.jpg',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   static String _escapePath(String value) => value.replaceAll('"', r'\"');
 
   static String _imageContentType(String ext) {

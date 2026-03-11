@@ -48,3 +48,4 @@ lib/core/config/env.dart
 .env.local
 supabase/.env.local
 scripts/.env.local
+.gemini/
