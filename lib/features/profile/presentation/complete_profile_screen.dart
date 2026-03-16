@@ -1,14 +1,16 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/business_categories.dart';
+import '../../../core/platform/platform_info.dart';
 import '../../../core/restaurant_categories.dart';
-import '../../../services/media_limits.dart';
 import '../../../services/profile_service.dart';
 import '../../../widgets/global_app_bar.dart'; // ✅ NEW
 import '../../../widgets/global_bottom_nav.dart';
@@ -21,6 +23,7 @@ class CompleteProfileScreen extends StatefulWidget {
 }
 
 class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
+  final _imagePicker = ImagePicker();
   final _name = TextEditingController();
   final _bio = TextEditingController();
   final _businessName = TextEditingController();
@@ -42,7 +45,6 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   int _radiusKm = 5;
 
   // ✅ Avatar
-  final _picker = ImagePicker();
   String? _avatarUrl;
   bool _uploadingAvatar = false;
 
@@ -50,6 +52,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   String? _error;
 
   bool get _isZipLocked => _zipLocked;
+  bool get _useMobileImagePicker => !kIsWeb && (isAndroidPlatform || isIOSPlatform);
 
   @override
   void initState() {
@@ -188,10 +191,17 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     if (user == null) return;
 
     try {
-      final image = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: MediaLimits.avatarImageQuality,
-      );
+      XFile? image;
+      if (_useMobileImagePicker) {
+        image = await _imagePicker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 85,
+        );
+      } else {
+        final result = await FilePicker.platform.pickFiles(type: FileType.image);
+        if (result == null || result.files.isEmpty || result.files.first.path == null) return;
+        image = XFile(result.files.first.path!);
+      }
       if (image == null) return;
 
       if (!mounted) return;
@@ -421,7 +431,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     return Scaffold(
       // ✅ Global sticky app bar (title clickable -> /feed)
       appBar: const GlobalAppBar(
-        title: 'Local Feed ✅',
+        title: 'Allonssy!',
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),

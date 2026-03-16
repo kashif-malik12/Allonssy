@@ -1649,7 +1649,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
     if (_error != null) {
       return Scaffold(
-        appBar: const GlobalAppBar(title: 'Local Feed ✅'),
+        appBar: const GlobalAppBar(title: 'Allonssy!'),
         bottomNavigationBar: const GlobalBottomNav(),
         body: Padding(
           padding: const EdgeInsets.all(16),
@@ -1669,7 +1669,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
     return Scaffold(
       appBar: GlobalAppBar(
-        title: 'Local Feed ✅',
+        title: 'Allonssy!',
         showBackIfPossible: true,
         homeRoute: '/feed',
         actions: [

@@ -1,20 +1,22 @@
-import 'dart:io' show File;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/food_categories.dart';
 import '../core/market_categories.dart';
+import '../core/platform/local_image_provider.dart';
+import '../core/platform/platform_info.dart';
 import '../core/post_types.dart';
 import '../core/service_categories.dart';
+import '../services/media_compression_service.dart';
 import '../services/media_limits.dart';
 import '../services/mention_service.dart';
 import '../services/post_service.dart';
 import '../widgets/global_bottom_nav.dart';
-import '../widgets/local_video_preview.dart';
 import '../widgets/mention_picker_sheet.dart';
 
 enum _ComposerMediaMode { none, photos, videoFile, youtube }
@@ -29,14 +31,13 @@ class CreatePostScreen extends StatefulWidget {
 class _CreatePostScreenState extends State<CreatePostScreen> {
   static const int _maxPhotoCount = 2;
   static const int _maxPhotoBytes = MediaLimits.maxPhotoBytes;
-  static const int _maxVideoBytes = MediaLimits.maxVideoBytes;
+  static const MethodChannel _cameraChannel = MethodChannel('com.local_social/camera');
 
   final _contentCtrl = TextEditingController();
   final _videoUrlCtrl = TextEditingController();
   final _marketTitleCtrl = TextEditingController();
   final _marketPriceCtrl = TextEditingController();
 
-  final _picker = ImagePicker();
   final _mentionService = MentionService(Supabase.instance.client);
 
   String _visibility = 'public';
@@ -53,8 +54,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   _ComposerMediaMode _mediaMode = _ComposerMediaMode.none;
   List<XFile> _selectedImages = const [];
   XFile? _selectedVideo;
+  Future<XFile?>? _selectedVideoThumbnailFuture;
   List<MentionCandidate> _selectedMentions = const [];
 
+  bool get _isAndroid => !kIsWeb && isAndroidPlatform;
   bool get _isMarketPost => _selectedPostType == PostType.market;
   bool get _isServicePost =>
       _selectedPostType == PostType.serviceOffer ||
@@ -129,6 +132,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       if (mode != _ComposerMediaMode.videoFile) {
         _selectedVideo = null;
+        _selectedVideoThumbnailFuture = null;
       }
       if (mode != _ComposerMediaMode.youtube) {
         _videoUrlCtrl.clear();
@@ -163,9 +167,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _pickPhotos() async {
-    final files = await _picker.pickMultiImage(
-      imageQuality: MediaLimits.postImageQuality,
-    );
+    List<XFile> files;
+    if (_isAndroid) {
+      final paths = await _cameraChannel.invokeListMethod<String>('pickImages');
+      if (paths == null || paths.isEmpty) return;
+      files = paths.whereType<String>().where((path) => path.isNotEmpty).map(XFile.new).toList();
+    } else {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      files = result.files
+          .where((f) => f.path != null)
+          .map((f) => XFile(f.path!))
+          .toList();
+    }
     if (files.isEmpty) return;
 
     final chosen = files.take(_maxPhotoCount).toList();
@@ -192,23 +209,73 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _pickVideoFile() async {
-    final file = await _picker.pickVideo(source: ImageSource.gallery);
-    if (file == null) return;
-
-    final size = await _fileLength(file);
-    if (size > _maxVideoBytes) {
-      if (!mounted) return;
-      _showError('Size limit exceeded. Video must be under ${_formatMb(_maxVideoBytes)} MB.');
-      return;
+    XFile? file;
+    if (_isAndroid) {
+      final path = await _cameraChannel.invokeMethod<String>('pickVideoFromGallery');
+      if (path == null || path.isEmpty) return;
+      file = XFile(path);
+    } else {
+      final result = await FilePicker.platform.pickFiles(type: FileType.video);
+      if (result == null || result.files.isEmpty || result.files.first.path == null) return;
+      file = XFile(result.files.first.path!);
     }
 
     if (!mounted) return;
     setState(() {
       _mediaMode = _ComposerMediaMode.videoFile;
       _selectedVideo = file;
+      _selectedVideoThumbnailFuture = MediaCompressionService.generateVideoThumbnail(file!);
       _selectedImages = const [];
       _videoUrlCtrl.clear();
     });
+  }
+
+  Widget _buildVideoPreviewThumbnail(XFile video) {
+    return FutureBuilder<XFile?>(
+      future: _selectedVideoThumbnailFuture,
+      builder: (context, snapshot) {
+        final thumbnail = snapshot.data;
+        final imageProvider = thumbnail != null
+            ? (kIsWeb
+                ? NetworkImage(thumbnail.path)
+                : localImageProvider(thumbnail.path))
+            : null;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: double.infinity,
+                height: 220,
+                color: Colors.black,
+                child: imageProvider != null
+                    ? Image(image: imageProvider, fit: BoxFit.cover)
+                    : const Center(child: CircularProgressIndicator()),
+              ),
+              Container(color: Colors.black.withOpacity(0.24)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  video.name.isNotEmpty ? video.name : 'Video selected',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<Map<String, dynamic>?> _loadProfileLocation(SupabaseClient supabase) async {
@@ -322,7 +389,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           builder: (ctx) => AlertDialog(
             title: const Text('Location required'),
             content: const Text(
-              'To post in the local feed, please set your location in your profile.',
+              'To post on Allonssy!, please set your location in your profile.',
             ),
             actions: [
               TextButton(
@@ -400,7 +467,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildPhotoPreview(XFile file) {
     final imageProvider = kIsWeb
         ? NetworkImage(file.path)
-        : FileImage(File(file.path)) as ImageProvider;
+        : localImageProvider(file.path);
     return Stack(
       children: [
         ClipRRect(
@@ -495,7 +562,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           const SizedBox(height: 8),
           _mediaModeTile(
             title: 'Video file',
-            subtitle: '1 video, ${_formatMb(_maxVideoBytes)} MB max',
+            subtitle: '1 video from gallery',
             icon: Icons.video_library_outlined,
             mode: _ComposerMediaMode.videoFile,
             enabled: true,
@@ -569,12 +636,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ),
               child: Column(
                 children: [
-                  LocalVideoPreview(file: _selectedVideo!, height: 220),
+                  _buildVideoPreviewThumbnail(_selectedVideo!),
                   Align(
                     alignment: Alignment.centerRight,
                     child: IconButton(
                       onPressed: () => setState(() {
                         _selectedVideo = null;
+                        _selectedVideoThumbnailFuture = null;
                         _mediaMode = _ComposerMediaMode.none;
                       }),
                       icon: const Icon(Icons.close),

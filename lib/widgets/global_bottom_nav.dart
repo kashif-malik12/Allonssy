@@ -261,7 +261,7 @@ class GlobalBottomNav extends ConsumerWidget {
               context: context,
               icon: Icons.search,
               label: 'Search',
-              onTap: () => context.push('/search'),
+              onTap: () => context.go('/search'),
             ),
             ValueListenableBuilder<int>(
               valueListenable: unreadBadgeController.unread,
@@ -273,7 +273,7 @@ class GlobalBottomNav extends ConsumerWidget {
                   badgeCount: unread,
                   onTap: () {
                     unreadBadgeController.refresh();
-                    context.push('/chats');
+                    context.go('/chats');
                   },
                 );
               },
@@ -285,7 +285,7 @@ class GlobalBottomNav extends ConsumerWidget {
               badgeCount: unreadNotifications,
               onTap: () {
                 ref.read(notificationUnreadProvider.notifier).refresh();
-                context.push('/notifications');
+                context.go('/notifications');
               },
             ),
             _navItem(

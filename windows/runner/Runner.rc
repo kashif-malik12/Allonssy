@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "local_social" "\0"
+            VALUE "FileDescription", "Allonssy" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "local_social" "\0"
+            VALUE "InternalName", "Allonssy" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "local_social.exe" "\0"
-            VALUE "ProductName", "local_social" "\0"
+            VALUE "OriginalFilename", "Allonssy.exe" "\0"
+            VALUE "ProductName", "Allonssy" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

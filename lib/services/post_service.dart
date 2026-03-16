@@ -9,10 +9,8 @@
 // - This assumes posts.id is UUID (string). Cursor uses created_at + id.
 // - For perfect tie-break, always pass both beforeCreatedAt and beforeId when paginating.
 
-import 'dart:io' show File;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -68,29 +66,15 @@ class PostService {
     final fileName = '${DateTime.now().millisecondsSinceEpoch}.$safeExt';
     final path = '$userId/$fileName';
 
-    if (kIsWeb) {
-      final Uint8List bytes = await preparedVideo.readAsBytes();
-
-      await _db.storage.from('post-images').uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(
-              upsert: false,
-              contentType: _videoContentTypeFromExt(safeExt),
-            ),
-          );
-    } else {
-      final file = File(preparedVideo.path);
-
-      await _db.storage.from('post-images').upload(
-            path,
-            file,
-            fileOptions: FileOptions(
-              upsert: false,
-              contentType: _videoContentTypeFromExt(safeExt),
-            ),
-          );
-    }
+    final Uint8List bytes = await preparedVideo.readAsBytes();
+    await _db.storage.from('post-images').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: false,
+            contentType: _videoContentTypeFromExt(safeExt),
+          ),
+        );
 
     final videoUrl = _db.storage.from('post-images').getPublicUrl(path);
     String? thumbnailUrl;

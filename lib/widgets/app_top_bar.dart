@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'brand_wordmark.dart';
+
 class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final bool showBack;
@@ -8,7 +10,7 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
 
   const AppTopBar({
     super.key,
-    this.title = 'Local Social',
+    this.title = 'Allonssy!',
     this.showBack = true,
     this.actions,
   });
@@ -39,7 +41,22 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title),
+              title == 'Allonssy!'
+                  ? const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        BrandMark(size: 24),
+                        SizedBox(width: 8),
+                        BrandWordmark(
+                          fontSize: 20,
+                          color: Color(0xFF12211D),
+                          accentColor: Color(0xFF0F766E),
+                          letterSpacing: -0.5,
+                          showIcon: false,
+                        ),
+                      ],
+                    )
+                  : Text(title),
               const SizedBox(width: 6),
               const Icon(Icons.home, size: 18),
             ],

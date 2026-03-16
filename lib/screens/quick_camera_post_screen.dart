@@ -1,15 +1,17 @@
-import 'dart:io' show File;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_player/video_player.dart';
 
+import '../core/platform/local_image_provider.dart';
+import '../core/platform/local_video_controller.dart';
+import '../services/media_compression_service.dart';
 import '../services/mention_service.dart';
 import '../services/post_service.dart';
 import '../widgets/global_bottom_nav.dart';
-import '../widgets/local_video_preview.dart';
 import '../widgets/mention_picker_sheet.dart';
 
 enum QuickCaptureMode { photo, video }
@@ -25,7 +27,6 @@ class QuickCameraPostScreen extends StatefulWidget {
 
 class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
   final _contentCtrl = TextEditingController();
-  final _picker = ImagePicker();
   final _mentionService = MentionService(Supabase.instance.client);
 
   String _visibility = 'public';
@@ -34,6 +35,9 @@ class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
   bool _capturing = true;
   bool _isOrganization = false;
   XFile? _mediaFile;
+  Future<XFile?>? _videoThumbnailFuture;
+  VideoPlayerController? _videoController;
+  bool _videoPlaying = false;
   List<MentionCandidate> _selectedMentions = const [];
 
   @override
@@ -50,6 +54,7 @@ class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
   @override
   void dispose() {
     _contentCtrl.dispose();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -85,32 +90,33 @@ class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
 
   Future<void> _captureMedia() async {
     if (!mounted) return;
+    _videoController?.dispose();
     setState(() {
       _capturing = true;
       _mediaFile = null;
+      _videoThumbnailFuture = null;
+      _videoController = null;
+      _videoPlaying = false;
     });
 
     try {
-      XFile? captured;
-      if (widget.mode == QuickCaptureMode.photo) {
-        captured = await _picker.pickImage(
-          source: ImageSource.camera,
-          imageQuality: 78,
-        );
-      } else {
-        captured = await _picker.pickVideo(
-          source: ImageSource.camera,
-          maxDuration: const Duration(seconds: 10),
-        );
-      }
+      const channel = MethodChannel('com.local_social/camera');
+      final String? path = await channel.invokeMethod<String>(
+        widget.mode == QuickCaptureMode.photo ? 'capturePhoto' : 'captureVideo',
+      );
 
       if (!mounted) return;
-      if (captured == null) {
+      if (path == null) {
         Navigator.pop(context, false);
         return;
       }
 
-      setState(() => _mediaFile = captured);
+      setState(() {
+        _mediaFile = XFile(path);
+        _videoThumbnailFuture = widget.mode == QuickCaptureMode.video
+            ? MediaCompressionService.generateVideoThumbnail(_mediaFile!)
+            : null;
+      });
     } catch (e) {
       if (mounted) {
         _showError('Camera failed: $e');
@@ -180,7 +186,7 @@ class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
           builder: (ctx) => AlertDialog(
             title: const Text('Location required'),
             content: const Text(
-              'To post in the local feed, please set your location in your profile.',
+              'To post on Allonssy!, please set your location in your profile.',
             ),
             actions: [
               TextButton(
@@ -256,7 +262,7 @@ class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
     if (widget.mode == QuickCaptureMode.photo) {
       final provider = kIsWeb
           ? NetworkImage(mediaFile.path)
-          : FileImage(File(mediaFile.path)) as ImageProvider;
+          : localImageProvider(mediaFile.path);
       return ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Image(
@@ -268,7 +274,118 @@ class _QuickCameraPostScreenState extends State<QuickCameraPostScreen> {
       );
     }
 
-    return LocalVideoPreview(file: mediaFile, height: 260);
+    // If video player is initialised and playing, show it
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              height: 320,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _videoController!.value.size.width,
+                  height: _videoController!.value.size.height,
+                  child: VideoPlayer(_videoController!),
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (_videoController!.value.isPlaying) {
+                    _videoController!.pause();
+                    _videoPlaying = false;
+                  } else {
+                    _videoController!.play();
+                    _videoPlaying = true;
+                  }
+                });
+              },
+              child: AnimatedOpacity(
+                opacity: _videoPlaying ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return FutureBuilder<XFile?>(
+      future: _videoThumbnailFuture,
+      builder: (context, snapshot) {
+        final thumbnail = snapshot.data;
+        final imageProvider = thumbnail != null
+            ? (kIsWeb
+                ? NetworkImage(thumbnail.path)
+                : localImageProvider(thumbnail.path))
+            : null;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: double.infinity,
+                height: 320,
+                color: Colors.black,
+                child: imageProvider != null
+                    ? Image(
+                        image: imageProvider,
+                        fit: BoxFit.cover,
+                      )
+                    : const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+              ),
+              if (snapshot.connectionState == ConnectionState.done)
+                GestureDetector(
+                  onTap: () async {
+                    final mediaFile = _mediaFile;
+                    if (mediaFile == null) return;
+                    final controller = createLocalVideoController(mediaFile.path);
+                    await controller.initialize();
+                    if (!mounted) {
+                      controller.dispose();
+                      return;
+                    }
+                    setState(() {
+                      _videoController = controller;
+                      _videoPlaying = true;
+                    });
+                    controller.play();
+                  },
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
+                  ),
+                )
+              else
+                Container(color: Colors.black.withOpacity(0.24)),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override

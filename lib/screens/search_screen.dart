@@ -407,7 +407,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       // ✅ Global sticky app bar (title clickable -> /feed)
       appBar: const GlobalAppBar(
-        title: 'Local Feed ✅',
+        title: 'Allonssy!',
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),

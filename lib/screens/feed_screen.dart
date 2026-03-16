@@ -65,6 +65,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   bool _showScrollTop = false;
   DateTime? _cursorCreatedAt;
   String? _cursorId;
+  int _activeMediaIndex = 0;
 
   // ✅ Filters
   bool _generalPostsEnabled = true;
@@ -97,6 +98,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _topPosts = [];
   final PageController _mobileFeedPager = PageController();
   int _mobileFeedPage = 0;
+  bool _mobileVideoFeedActivated = false;
   bool _feedSummaryExpanded = false;
   AppLifecycleState? _appLifecycleState;
   bool _pollingStateInitialized = false;
@@ -108,9 +110,10 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     _appLifecycleState = WidgetsBinding.instance.lifecycleState;
     _scroll.addListener(_onScroll);
     _initFeed();
-    _initNotificationsUnread();
-    _subscribePostsRealtime();
-    _loadSidebarData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_runDeferredStartupWork());
+    });
   }
 
   @override
@@ -159,8 +162,14 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
     final shouldShowTop = pos.pixels > 320;
+    final estimatedIndex = (pos.pixels / 640).floor().clamp(0, _posts.isEmpty ? 0 : _posts.length - 1);
     if (shouldShowTop != _showScrollTop && mounted) {
-      setState(() => _showScrollTop = shouldShowTop);
+      setState(() {
+        _showScrollTop = shouldShowTop;
+        _activeMediaIndex = estimatedIndex;
+      });
+    } else if (estimatedIndex != _activeMediaIndex && mounted) {
+      setState(() => _activeMediaIndex = estimatedIndex);
     }
     if (pos.pixels >= pos.maxScrollExtent - 350) {
       _loadMore();
@@ -170,6 +179,14 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   Future<void> _initFeed() async {
     await _restoreSavedFilters();
     await _load(reset: true);
+  }
+
+  Future<void> _runDeferredStartupWork() async {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+    unawaited(_initNotificationsUnread());
+    _subscribePostsRealtime();
+    unawaited(_loadSidebarData());
   }
 
   Future<void> _restoreSavedFilters() async {
@@ -1195,17 +1212,22 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         (sum, row) => sum + (((row['unread_count'] as num?)?.toInt()) ?? 0),
       );
       final react = ReactionService(Supabase.instance.client);
-      final ranked = <Map<String, dynamic>>[];
-      for (final row in topPostRows) {
-        final id = (row['id'] ?? '').toString();
-        if (id.isEmpty) continue;
-        final likes = await react.likesCount(id);
-        final comments = await react.commentsCount(id);
-        ranked.add({
-          ...row,
-          'engagement': likes + comments,
-        });
-      }
+      final ranked = (await Future.wait<Map<String, dynamic>?>(
+        topPostRows.map((row) async {
+          final id = (row['id'] ?? '').toString();
+          if (id.isEmpty) return null;
+          final counts = await Future.wait<int>([
+            react.likesCount(id),
+            react.commentsCount(id),
+          ]);
+          return {
+            ...row,
+            'engagement': counts[0] + counts[1],
+          };
+        }),
+      ))
+          .whereType<Map<String, dynamic>>()
+          .toList();
       ranked.sort((a, b) => ((b['engagement'] as int?) ?? 0).compareTo((a['engagement'] as int?) ?? 0));
 
       if (!mounted) return;
@@ -2635,6 +2657,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       },
       child: ListView.builder(
         controller: _scroll,
+        cacheExtent: 900,
         itemCount: _posts.length + 2,
         itemBuilder: (_, i) {
           if (showTopFilters) {
@@ -2657,6 +2680,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           final isPrivateListing = _isPrivateListing(p);
           final displayPost = _displayPost(p);
           final detailRoute = _detailRouteForPost(displayPost);
+          final shouldEagerLoadMedia = (postIndex - _activeMediaIndex).abs() <= 1;
 
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -2808,18 +2832,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                       (displayPost.secondImageUrl ?? '').isNotEmpty ||
                       (displayPost.videoUrl ?? '').isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    PostMediaView(
-                      imageUrl: displayPost.imageUrl,
-                      secondImageUrl: displayPost.secondImageUrl,
-                      videoUrl: displayPost.videoUrl,
-                      maxHeight: 360,
-                      singleImagePreview: _isMarketplacePost(displayPost) ||
-                          _isGigPost(displayPost) ||
-                          _isFoodPost(displayPost),
-                      startMuted: true,
-                      showMuteToggle: true,
-                      autoplay: false,
-                      onImageTap: _openImagePreview,
+                    _buildDeferredPostMedia(
+                      post: displayPost,
+                      loadFullMedia: shouldEagerLoadMedia,
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -2991,6 +3006,93 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   }
 
   Post _displayPost(Post post) => post.sharedPost ?? post;
+
+  Widget _buildDeferredPostMedia({
+    required Post post,
+    required bool loadFullMedia,
+  }) {
+    if (loadFullMedia) {
+      return PostMediaView(
+        imageUrl: post.imageUrl,
+        secondImageUrl: post.secondImageUrl,
+        videoUrl: post.videoUrl,
+        maxHeight: 360,
+        singleImagePreview: _isMarketplacePost(post) ||
+            _isGigPost(post) ||
+            _isFoodPost(post),
+        startMuted: true,
+        showMuteToggle: true,
+        autoplay: false,
+        onImageTap: _openImagePreview,
+      );
+    }
+
+    final previewImage = ((post.imageUrl ?? '').trim().isNotEmpty
+            ? post.imageUrl
+            : post.secondImageUrl)
+        ?.trim();
+    final hasVideo = (post.videoUrl ?? '').trim().isNotEmpty;
+
+    return InkWell(
+      onTap: () => context.push('/post/${post.id}'),
+      borderRadius: BorderRadius.circular(12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              constraints: const BoxConstraints(maxHeight: 280),
+              width: double.infinity,
+              color: Colors.black.withOpacity(0.06),
+              child: previewImage != null && previewImage.isNotEmpty
+                  ? Image.network(
+                      previewImage,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(color: Colors.black12),
+                    )
+                  : Container(
+                      height: 220,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF12211D), Color(0xFF425B56)],
+                        ),
+                      ),
+                    ),
+            ),
+            Container(color: Colors.black.withOpacity(hasVideo ? 0.26 : 0.14)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.56),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    hasVideo ? Icons.play_arrow_rounded : Icons.photo_outlined,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    hasVideo ? 'Load video' : 'Load media',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSharedPostSection(Post wrapperPost) {
     final shared = wrapperPost.sharedPost;
@@ -3367,17 +3469,65 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
 
     return Stack(
       children: [
-        PageView(
+        PageView.builder(
           controller: _mobileFeedPager,
+          itemCount: 2,
           onPageChanged: (index) {
             if (!mounted) return;
-            setState(() => _mobileFeedPage = index);
+            setState(() {
+              _mobileFeedPage = index;
+              if (index == 1) {
+                _mobileVideoFeedActivated = true;
+              }
+            });
             _updateNewPostsPollingState();
           },
-          children: [
-            _buildResponsiveFeedBody(),
-            const MobileVideoFeed(),
-          ],
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return _buildResponsiveFeedBody();
+            }
+
+            if (_mobileVideoFeedActivated || _mobileFeedPage == 1) {
+              return const MobileVideoFeed();
+            }
+
+            return Container(
+              color: const Color(0xFF08111C),
+              alignment: Alignment.center,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.play_circle_outline,
+                      size: 56,
+                      color: Colors.white70,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Swipe to open the video feed.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'The video page now loads only when you actually open it.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.72),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
         Positioned(
           top: 10,
@@ -3424,7 +3574,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: GlobalAppBar(
-        title: 'Local Feed',
+        title: 'Allonssy!',
         notifBell: _notifBell(),
         showBackIfPossible: false,
         homeRoute: '/feed',

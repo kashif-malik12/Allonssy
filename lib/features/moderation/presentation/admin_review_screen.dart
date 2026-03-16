@@ -16,6 +16,10 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   final _password = TextEditingController();
   final _passwordFocus = FocusNode();
   final _userSearchCtrl = TextEditingController();
+  final _pushRecipientSearchCtrl = TextEditingController();
+  final _pushTitleCtrl = TextEditingController();
+  final _pushBodyCtrl = TextEditingController();
+  final _pushRouteCtrl = TextEditingController(text: '/notifications');
 
   late final TabController _tab;
 
@@ -26,6 +30,7 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   String _statusFilter = 'pending'; // pending | reviewed | dismissed
 
   bool _loadingStats = true;
+  bool _sendingPush = false;
   final Set<String> _busyUserIds = <String>{};
   final Set<String> _busyPostIds = <String>{};
 
@@ -41,11 +46,13 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   Map<String, int> _userReportCounts = const {};
   Map<String, int> _userBlockedByCounts = const {};
   Map<String, int> _userBlocksMadeCounts = const {};
+  String _pushAudience = 'specific';
+  String? _selectedPushUserId;
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 6, vsync: this);
+    _tab = TabController(length: 7, vsync: this);
     _init();
   }
 
@@ -56,6 +63,10 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
     _password.dispose();
     _passwordFocus.dispose();
     _userSearchCtrl.dispose();
+    _pushRecipientSearchCtrl.dispose();
+    _pushTitleCtrl.dispose();
+    _pushBodyCtrl.dispose();
+    _pushRouteCtrl.dispose();
     super.dispose();
   }
 
@@ -194,8 +205,582 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
           .order('created_at', ascending: false)
           .limit(100);
       _allUsers = (rows as List).cast<Map<String, dynamic>>();
+      _selectedPushUserId ??=
+          _allUsers.isNotEmpty ? (_allUsers.first['id'] ?? '').toString() : null;
     } catch (e) {
       print('Load users error: $e');
+    }
+  }
+
+  String _pushAudienceLabel(String value) {
+    switch (value) {
+      case 'all':
+        return 'All users';
+      case 'persons':
+        return 'All persons';
+      case 'businesses':
+        return 'All businesses';
+      case 'organizations':
+        return 'All organizations';
+      default:
+        return 'Specific user';
+    }
+  }
+
+  bool _isOrganizationUser(Map<String, dynamic> user) {
+    final profileType = (user['profile_type'] ?? '').toString().toLowerCase();
+    final accountType = (user['account_type'] ?? '').toString().toLowerCase();
+    final orgKind = (user['org_kind'] ?? '').toString().trim().toLowerCase();
+    return orgKind.isNotEmpty ||
+        profileType.contains('org') ||
+        accountType.contains('org');
+  }
+
+  bool _isBusinessUser(Map<String, dynamic> user) {
+    if (_isOrganizationUser(user)) return false;
+    final profileType = (user['profile_type'] ?? '').toString().toLowerCase();
+    final accountType = (user['account_type'] ?? '').toString().toLowerCase();
+    final businessName = (user['business_name'] ?? '').toString().trim();
+    return businessName.isNotEmpty ||
+        profileType.contains('business') ||
+        accountType.contains('business') ||
+        accountType.contains('vendor') ||
+        accountType.contains('restaurant');
+  }
+
+  bool _matchesPushAudience(Map<String, dynamic> user, String audience) {
+    switch (audience) {
+      case 'all':
+        return true;
+      case 'persons':
+        return !_isOrganizationUser(user) && !_isBusinessUser(user);
+      case 'businesses':
+        return _isBusinessUser(user);
+      case 'organizations':
+        return _isOrganizationUser(user);
+      case 'specific':
+      default:
+        return true;
+    }
+  }
+
+  String _displayUserName(Map<String, dynamic> user) {
+    final fullName = (user['full_name'] ?? '').toString().trim();
+    final businessName = (user['business_name'] ?? '').toString().trim();
+    if (fullName.isNotEmpty) return fullName;
+    if (businessName.isNotEmpty) return businessName;
+    return (user['id'] ?? '').toString();
+  }
+
+  bool _matchesPushQuery(Map<String, dynamic> user, String query) {
+    if (query.isEmpty) return true;
+    final fullName = (user['full_name'] ?? '').toString().toLowerCase();
+    final businessName = (user['business_name'] ?? '').toString().toLowerCase();
+    final userId = (user['id'] ?? '').toString().toLowerCase();
+    final authInfo =
+        _userAuthStatus[(user['id'] ?? '').toString()] ?? const <String, dynamic>{};
+    final email = (authInfo['email'] ?? '').toString().toLowerCase();
+    return fullName.contains(query) ||
+        businessName.contains(query) ||
+        userId.contains(query) ||
+        email.contains(query);
+  }
+
+  List<Map<String, dynamic>> _filteredPushUsers() {
+    final query = _pushRecipientSearchCtrl.text.trim().toLowerCase();
+    return _allUsers.where((user) {
+      if (!_matchesPushAudience(user, _pushAudience)) return false;
+      return _matchesPushQuery(user, query);
+    }).toList();
+  }
+
+  Future<void> _pickSpecificPushRecipient() async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        final searchCtrl = TextEditingController(
+          text: _pushRecipientSearchCtrl.text,
+        );
+        var query = searchCtrl.text.trim().toLowerCase();
+
+        List<Map<String, dynamic>> visibleUsers() {
+          if (query.length < 2) return const <Map<String, dynamic>>[];
+          return _allUsers.where((user) {
+            final userId = (user['id'] ?? '').toString();
+            if (userId.isEmpty) return false;
+            return _matchesPushQuery(user, query);
+          }).take(12).toList();
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final users = visibleUsers();
+            return AlertDialog(
+              title: const Text('Select recipient'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: searchCtrl,
+                      autofocus: true,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          query = value.trim().toLowerCase();
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Search name, business, email, or user ID',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: query.length < 2
+                          ? const Center(
+                              child: Text('Type at least 2 characters to search.'),
+                            )
+                          : users.isEmpty
+                          ? const Center(child: Text('No users found.'))
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: users.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final user = users[index];
+                                final userId = (user['id'] ?? '').toString();
+                                final authInfo =
+                                    _userAuthStatus[userId] ?? const <String, dynamic>{};
+                                final email =
+                                    (authInfo['email'] ?? '').toString().trim();
+                                final subtitle = <String>[
+                                  (user['profile_type'] ?? 'user').toString(),
+                                  if (email.isNotEmpty) email,
+                                ].join(' - ');
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    _displayUserName(user),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    subtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing: userId == _selectedPushUserId
+                                      ? const Icon(Icons.check_circle, color: Colors.teal)
+                                      : null,
+                                  onTap: () => Navigator.of(dialogContext).pop(userId),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || picked == null || picked.isEmpty) return;
+    setState(() {
+      _selectedPushUserId = picked;
+      final selectedUser = _allUsers.cast<Map<String, dynamic>?>().firstWhere(
+            (user) => (user?['id'] ?? '').toString() == picked,
+            orElse: () => null,
+          );
+      if (selectedUser != null) {
+        _pushRecipientSearchCtrl.text = _displayUserName(selectedUser);
+      }
+    });
+  }
+
+  Widget _buildPushAudienceComposerV2() {
+    final allRecipients = _allUsers
+        .where((u) => (u['id'] ?? '').toString().isNotEmpty)
+        .toList();
+    final width = MediaQuery.of(context).size.width;
+    final showPreview = width > 880;
+    final searchQuery = _pushRecipientSearchCtrl.text.trim().toLowerCase();
+    final matchedUserCount = _pushAudience == 'specific'
+        ? (_selectedPushUserId == null ? 0 : 1)
+        : _allUsers.where((user) {
+            if (!_matchesPushAudience(user, _pushAudience)) return false;
+            return _matchesPushQuery(user, searchQuery);
+          }).length;
+
+    Map<String, dynamic>? selectedUser;
+    try {
+      selectedUser = _allUsers.firstWhere(
+        (u) => (u['id'] ?? '').toString() == (_selectedPushUserId ?? ''),
+      );
+    } catch (_) {
+      selectedUser = null;
+    }
+
+    if (allRecipients.isEmpty) {
+      return const Center(child: Text('No users available for push delivery.'));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Wrap(
+          spacing: 20,
+          runSpacing: 20,
+          crossAxisAlignment: WrapCrossAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: showPreview ? 640 : double.infinity,
+                minWidth: showPreview ? 520 : 0,
+              ),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Admin Push Sender',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Only admins can send manual push notifications. Delivery uses stored FCM device tokens and can target one user or a selected audience.',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Audience',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ('specific', 'Specific user'),
+                          ('all', 'All users'),
+                          ('persons', 'All persons'),
+                          ('businesses', 'All businesses'),
+                          ('organizations', 'All organizations'),
+                        ].map((item) {
+                          final value = item.$1;
+                          final label = item.$2;
+                          return ChoiceChip(
+                            label: Text(label),
+                            selected: _pushAudience == value,
+                            onSelected: _sendingPush
+                                ? null
+                                : (selected) {
+                                    if (!selected) return;
+                                    setState(() {
+                                      _pushAudience = value;
+                                      _pushRecipientSearchCtrl.clear();
+                                      if (value != 'specific') {
+                                        _selectedPushUserId = null;
+                                      }
+                                    });
+                                  },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushRecipientSearchCtrl,
+                        readOnly: _pushAudience == 'specific',
+                        onTap: _pushAudience == 'specific'
+                            ? _pickSpecificPushRecipient
+                            : null,
+                        onChanged: _pushAudience == 'specific'
+                            ? null
+                            : (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: _pushAudience == 'specific'
+                              ? 'Recipient'
+                              : 'Search within ${_pushAudienceLabel(_pushAudience).toLowerCase()}',
+                          hintText: _pushAudience == 'specific'
+                              ? 'Tap to select a user'
+                              : 'Name, business, email, or user ID',
+                          prefixIcon: Icon(
+                            _pushAudience == 'specific'
+                                ? Icons.person_search
+                                : Icons.search,
+                          ),
+                          suffixIcon: _pushAudience == 'specific'
+                              ? const Icon(Icons.arrow_drop_down)
+                              : null,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _pushAudience == 'specific'
+                            ? (selectedUser == null
+                                ? 'No recipient selected'
+                                : 'Selected: ${_displayUserName(selectedUser)}')
+                            : searchQuery.isEmpty
+                            ? 'Audience: ${_pushAudienceLabel(_pushAudience)} ($matchedUserCount user${matchedUserCount == 1 ? '' : 's'})'
+                            : 'Audience: ${_pushAudienceLabel(_pushAudience)} ($matchedUserCount matched user${matchedUserCount == 1 ? '' : 's'})',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushTitleCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Notification title',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushBodyCtrl,
+                        minLines: 3,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Message',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushRouteCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'App route on open',
+                          helperText: 'Example: /notifications or /chat',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _sendingPush ? null : _sendAdminPush,
+                            icon: _sendingPush
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send_outlined),
+                            label: Text(_sendingPush ? 'Sending...' : 'Send Push'),
+                          ),
+                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            onPressed: _sendingPush
+                                ? null
+                                : () {
+                                    _pushAudience = 'specific';
+                                    _pushRecipientSearchCtrl.clear();
+                                    _selectedPushUserId = null;
+                                    _pushTitleCtrl.clear();
+                                    _pushBodyCtrl.clear();
+                                    _pushRouteCtrl.text = '/notifications';
+                                    setState(() {});
+                                  },
+                            child: const Text('Reset'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (showPreview)
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Card(
+                  color: Colors.grey.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.notifications_active_outlined),
+                            SizedBox(width: 8),
+                            Text(
+                              'Preview',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Allonssy!',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.teal,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _pushTitleCtrl.text.trim().isEmpty
+                                    ? 'Notification title'
+                                    : _pushTitleCtrl.text.trim(),
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _pushBodyCtrl.text.trim().isEmpty
+                                    ? 'Message preview appears here.'
+                                    : _pushBodyCtrl.text.trim(),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _pushRouteCtrl.text.trim().isEmpty
+                                    ? 'Opens app'
+                                    : 'Route: ${_pushRouteCtrl.text.trim()}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _sendAdminPush() async {
+    final title = _pushTitleCtrl.text.trim();
+    final body = _pushBodyCtrl.text.trim();
+    final route = _pushRouteCtrl.text.trim();
+    final audienceUsers = _filteredPushUsers();
+    final recipientIds = _pushAudience == 'specific'
+        ? [(_selectedPushUserId ?? '').trim()].where((id) => id.isNotEmpty).toList()
+        : audienceUsers
+            .map((user) => (user['id'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
+
+    if (recipientIds.isEmpty) {
+      _snack(
+        _pushAudience == 'specific'
+            ? 'Select a recipient'
+            : 'No users matched the selected audience',
+      );
+      return;
+    }
+    if (title.isEmpty || body.isEmpty) {
+      _snack('Title and message are required');
+      return;
+    }
+
+    setState(() => _sendingPush = true);
+    try {
+      final accessToken = _db.auth.currentSession?.accessToken;
+      if (accessToken == null || accessToken.isEmpty) {
+        throw 'Not authenticated';
+      }
+
+      final response = await _db.functions.invoke(
+        'push-dispatch',
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: {
+          if (_pushAudience == 'specific')
+            'recipientId': recipientIds.first
+          else
+            'recipientIds': recipientIds,
+          'title': title,
+          'body': body,
+          'data': {
+            if (route.isNotEmpty) 'route': route,
+          },
+        },
+      );
+
+      if (response.status < 200 || response.status >= 300) {
+        final payload = response.data;
+        if (payload is Map && payload['error'] != null) {
+          throw payload['error'].toString();
+        }
+        throw 'Push send failed';
+      }
+
+      final payload = response.data;
+      if (payload is Map && payload['failed'] is num && (payload['failed'] as num) > 0) {
+        throw 'Push send reported failures';
+      }
+
+      final sentCount = payload is Map && payload['sent'] is num
+          ? (payload['sent'] as num).toInt()
+          : 0;
+      _snack(
+        _pushAudience == 'specific'
+            ? 'Push sent'
+            : 'Push sent to $sentCount device${sentCount == 1 ? '' : 's'}',
+      );
+    } catch (e) {
+      _snack('Push failed: $e');
+    } finally {
+      if (mounted) setState(() => _sendingPush = false);
+    }
+  }
+
+  Widget _buildActiveTab() {
+    switch (_tab.index) {
+      case 0:
+        return _buildDashboard();
+      case 1:
+        return _buildUserManagementTable();
+      case 2:
+        return _buildPostModerationTab(_marketplacePosts, 'market');
+      case 3:
+        return _buildPostModerationTab(_gigPosts, 'gig');
+      case 4:
+        return _buildPostModerationTab(_foodPosts, 'food');
+      case 5:
+        return _buildPushTab();
+      case 6:
+        return _buildReportsTab();
+      default:
+        return const SizedBox.shrink();
     }
   }
 
@@ -336,6 +921,330 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
     } finally {
       if (mounted) setState(() => _busyPostIds.remove(postId));
     }
+  }
+
+  Widget _buildPushAudienceComposer() {
+    return _buildPushAudienceComposerV2();
+    final allRecipients = _allUsers
+        .where((u) => (u['id'] ?? '').toString().isNotEmpty)
+        .toList();
+    final recipients = _filteredPushUsers();
+    final selectedRecipient = recipients.any(
+      (u) => (u['id'] ?? '').toString() == _selectedPushUserId,
+    )
+        ? _selectedPushUserId
+        : (recipients.isNotEmpty ? (recipients.first['id'] ?? '').toString() : null);
+    final matchedUserCount = recipients.length;
+    final width = MediaQuery.of(context).size.width;
+    final showPreview = width > 880;
+
+    if (allRecipients.isEmpty) {
+      return const Center(child: Text('No users available for push delivery.'));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Wrap(
+          spacing: 20,
+          runSpacing: 20,
+          crossAxisAlignment: WrapCrossAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: showPreview ? 640 : double.infinity,
+                minWidth: showPreview ? 520 : 0,
+              ),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Admin Push Sender',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Only admins can send manual push notifications. Delivery uses stored FCM device tokens and can target one user or a selected audience.',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Audience',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ('specific', 'Specific user'),
+                          ('all', 'All users'),
+                          ('persons', 'All persons'),
+                          ('businesses', 'All businesses'),
+                          ('organizations', 'All organizations'),
+                        ].map((item) {
+                          final value = item.$1;
+                          final label = item.$2;
+                          return ChoiceChip(
+                            label: Text(label),
+                            selected: _pushAudience == value,
+                            onSelected: _sendingPush
+                                ? null
+                                : (selected) {
+                                    if (!selected) return;
+                                    setState(() {
+                                      _pushAudience = value;
+                                      _pushRecipientSearchCtrl.clear();
+                                      final visibleUsers = _filteredPushUsers();
+                                      _selectedPushUserId = visibleUsers.isNotEmpty
+                                          ? (visibleUsers.first['id'] ?? '').toString()
+                                          : null;
+                                    });
+                                  },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushRecipientSearchCtrl,
+                        onChanged: (_) {
+                          setState(() {
+                            if (_pushAudience == 'specific') {
+                              final visibleUsers = _filteredPushUsers();
+                              final stillVisible = visibleUsers.any(
+                                (u) => (u['id'] ?? '').toString() == _selectedPushUserId,
+                              );
+                              if (!stillVisible) {
+                                _selectedPushUserId = visibleUsers.isNotEmpty
+                                    ? (visibleUsers.first['id'] ?? '').toString()
+                                    : null;
+                              }
+                            }
+                          });
+                        },
+                        decoration: InputDecoration(
+                          labelText: _pushAudience == 'specific'
+                              ? 'Search recipient'
+                              : 'Search within ${_pushAudienceLabel(_pushAudience).toLowerCase()}',
+                          hintText: 'Name, business, email, or user ID',
+                          prefixIcon: const Icon(Icons.search),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _pushAudience == 'specific'
+                            ? 'Matched users: $matchedUserCount'
+                            : 'Audience: ${_pushAudienceLabel(_pushAudience)} ($matchedUserCount matched user${matchedUserCount == 1 ? '' : 's'})',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (_pushAudience == 'specific') ...[
+                        const SizedBox(height: 16),
+                        if (recipients.isEmpty)
+                          const Text('No user matches the current search.')
+                        else
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 260),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.black12),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: recipients.length > 8 ? 8 : recipients.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final user = recipients[index];
+                                final userId = (user['id'] ?? '').toString();
+                                final authInfo =
+                                    _userAuthStatus[userId] ?? const <String, dynamic>{};
+                                final email = (authInfo['email'] ?? '').toString().trim();
+                                final profileType =
+                                    (user['profile_type'] ?? 'user').toString();
+                                final label = _displayUserName(user);
+                                final businessName =
+                                    (user['business_name'] ?? '').toString().trim();
+                                final subtitleParts = <String>[
+                                  profileType,
+                                  if (businessName.isNotEmpty && businessName != label)
+                                    businessName,
+                                  if (email.isNotEmpty) email,
+                                ];
+                                return RadioListTile<String>(
+                                  dense: true,
+                                  value: userId,
+                                  groupValue: selectedRecipient,
+                                  onChanged: _sendingPush
+                                      ? null
+                                      : (value) => setState(() => _selectedPushUserId = value),
+                                  title: Text(
+                                    label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    subtitleParts.join(' • '),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushTitleCtrl,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Notification title',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushBodyCtrl,
+                        minLines: 3,
+                        maxLines: 5,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Message',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushRouteCtrl,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'App route on open',
+                          helperText: 'Example: /notifications or /chat',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _sendingPush ? null : _sendAdminPush,
+                            icon: _sendingPush
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send_outlined),
+                            label: Text(_sendingPush ? 'Sending...' : 'Send Push'),
+                          ),
+                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            onPressed: _sendingPush
+                                ? null
+                                : () {
+                                    _pushAudience = 'specific';
+                                    _pushRecipientSearchCtrl.clear();
+                                    _selectedPushUserId = allRecipients.isNotEmpty
+                                        ? (allRecipients.first['id'] ?? '').toString()
+                                        : null;
+                                    _pushTitleCtrl.clear();
+                                    _pushBodyCtrl.clear();
+                                    _pushRouteCtrl.text = '/notifications';
+                                    setState(() {});
+                                  },
+                            child: const Text('Reset'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (showPreview)
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Card(
+                  color: Colors.grey.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.notifications_active_outlined),
+                            SizedBox(width: 8),
+                            Text(
+                              'Preview',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Allonssy!',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.teal,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _pushTitleCtrl.text.trim().isEmpty
+                                    ? 'Notification title'
+                                    : _pushTitleCtrl.text.trim(),
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _pushBodyCtrl.text.trim().isEmpty
+                                    ? 'Message preview appears here.'
+                                    : _pushBodyCtrl.text.trim(),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _pushRouteCtrl.text.trim().isEmpty
+                                    ? 'Opens app'
+                                    : 'Route: ${_pushRouteCtrl.text.trim()}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 
   Future<void> _setUserDisabled(String userId, bool disabled) async {
@@ -778,20 +1687,14 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
             Tab(text: 'Marketplace'),
             Tab(text: 'Gigs'),
             Tab(text: 'Food Ads'),
+            Tab(text: 'Push'),
             Tab(text: 'Reports'),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: [
-          _buildDashboard(),
-          _buildUserManagementTable(),
-          _buildPostModerationTab(_marketplacePosts, 'market'),
-          _buildPostModerationTab(_gigPosts, 'gig'),
-          _buildPostModerationTab(_foodPosts, 'food'),
-          _buildReportsTab(),
-        ],
+      body: AnimatedBuilder(
+        animation: _tab,
+        builder: (context, _) => _buildActiveTab(),
       ),
     );
   }
@@ -824,16 +1727,18 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
           Wrap(
             spacing: 12,
             runSpacing: 12,
-            children: [
-              _QuickNavCard(title: 'Manage Users', icon: Icons.people_alt_outlined, color: Colors.purple, onTap: () => _tab.animateTo(1)),
-              _QuickNavCard(title: 'Marketplace', icon: Icons.storefront, color: Colors.blue, onTap: () => _tab.animateTo(2)),
-              _QuickNavCard(title: 'Service Gigs', icon: Icons.work_outline, color: Colors.orange, onTap: () => _tab.animateTo(3)),
-              _QuickNavCard(title: 'Food Ads', icon: Icons.restaurant, color: Colors.green, onTap: () => _tab.animateTo(4)),
-            ],
-          ),
-        ],
-      ),
-    );
+              children: [
+                _QuickNavCard(title: 'Manage Users', icon: Icons.people_alt_outlined, color: Colors.purple, onTap: () => _tab.animateTo(1)),
+                  _QuickNavCard(title: 'Marketplace', icon: Icons.storefront, color: Colors.blue, onTap: () => _tab.animateTo(2)),
+                  _QuickNavCard(title: 'Service Gigs', icon: Icons.work_outline, color: Colors.orange, onTap: () => _tab.animateTo(3)),
+                  _QuickNavCard(title: 'Food Ads', icon: Icons.restaurant, color: Colors.green, onTap: () => _tab.animateTo(4)),
+                  _QuickNavCard(title: 'Send Push', icon: Icons.notifications_active_outlined, color: Colors.redAccent, onTap: () => _tab.animateTo(5)),
+                  _QuickNavCard(title: 'Reports', icon: Icons.flag_outlined, color: Colors.red, onTap: () => _tab.animateTo(6)),
+                ],
+              ),
+          ],
+        ),
+      );
   }
 
   Widget _buildPostModerationTab(List<Map<String, dynamic>> posts, String category) {
@@ -1165,6 +2070,250 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
                     ),
                   ),
                 ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPushTab() {
+    return _buildPushAudienceComposer();
+    final recipients = _allUsers
+        .where((u) => (u['id'] ?? '').toString().isNotEmpty)
+        .toList();
+
+    if (recipients.isEmpty) {
+      return const Center(child: Text('No users available for push delivery.'));
+    }
+
+    final selectedRecipient = recipients.any(
+      (u) => (u['id'] ?? '').toString() == _selectedPushUserId,
+    )
+        ? _selectedPushUserId
+        : (recipients.first['id'] ?? '').toString();
+
+    final width = MediaQuery.of(context).size.width;
+    final showPreview = width > 880;
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Wrap(
+          spacing: 20,
+          runSpacing: 20,
+          crossAxisAlignment: WrapCrossAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: showPreview ? 640 : double.infinity,
+                minWidth: showPreview ? 520 : 0,
+              ),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Admin Push Sender',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Only admins can send manual push notifications. Delivery uses stored FCM device tokens for the selected user.',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 20),
+                      DropdownButtonFormField<String>(
+                        value: selectedRecipient,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Recipient',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: recipients.map((user) {
+                          final userId = (user['id'] ?? '').toString();
+                          final fullName = (user['full_name'] ?? '').toString().trim();
+                          final businessName =
+                              (user['business_name'] ?? '').toString().trim();
+                          final profileType =
+                              (user['profile_type'] ?? 'user').toString();
+                          final label = fullName.isNotEmpty
+                              ? fullName
+                              : (businessName.isNotEmpty ? businessName : userId);
+                          final subtitle = businessName.isNotEmpty &&
+                                  businessName != label
+                              ? ' • $businessName'
+                              : '';
+                          return DropdownMenuItem<String>(
+                            value: userId,
+                            child: Text(
+                              '$label ($profileType)$subtitle',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: _sendingPush
+                            ? null
+                            : (value) {
+                                setState(() => _selectedPushUserId = value);
+                              },
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushTitleCtrl,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Notification title',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushBodyCtrl,
+                        minLines: 3,
+                        maxLines: 5,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Message',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _pushRouteCtrl,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'App route on open',
+                          helperText: 'Example: /notifications or /chat',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _sendingPush ? null : _sendAdminPush,
+                            icon: _sendingPush
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send_outlined),
+                            label: Text(
+                              _sendingPush ? 'Sending...' : 'Send Push',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            onPressed: _sendingPush
+                                ? null
+                                : () {
+                                    _pushTitleCtrl.clear();
+                                    _pushBodyCtrl.clear();
+                                    _pushRouteCtrl.text = '/notifications';
+                                    setState(() {});
+                                  },
+                            child: const Text('Reset'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (showPreview)
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Card(
+                  color: Colors.grey.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.notifications_active_outlined),
+                            SizedBox(width: 8),
+                            Text(
+                              'Preview',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 16,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Allonssy!',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.teal,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _pushTitleCtrl.text.trim().isEmpty
+                                    ? 'Notification title'
+                                    : _pushTitleCtrl.text.trim(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _pushBodyCtrl.text.trim().isEmpty
+                                    ? 'Message preview appears here.'
+                                    : _pushBodyCtrl.text.trim(),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _pushRouteCtrl.text.trim().isEmpty
+                                    ? 'Opens app'
+                                    : 'Route: ${_pushRouteCtrl.text.trim()}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
     );

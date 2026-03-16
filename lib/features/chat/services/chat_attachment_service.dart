@@ -1,7 +1,4 @@
-import 'dart:io' show File;
-
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -23,7 +20,7 @@ class ChatAttachmentService {
 
     final compressed = await MediaCompressionService.compressImage(image);
     final safeExt = compressed.extension;
-    final path = 'chat_attachments/$userId/${DateTime.now().millisecondsSinceEpoch}_image.$safeExt';
+    final path = '$userId/chat_attachments/${DateTime.now().millisecondsSinceEpoch}_image.$safeExt';
 
     await _db.storage.from(_bucket).uploadBinary(
           path,
@@ -37,29 +34,19 @@ class ChatAttachmentService {
   Future<String> uploadFile(PlatformFile file) async {
     final userId = _db.auth.currentUser?.id;
     if (userId == null) throw Exception('Not logged in');
+    if ((file.bytes == null) && ((file.path ?? '').isEmpty)) {
+      throw Exception('File bytes unavailable');
+    }
 
     final safeName = file.name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    final path = 'chat_attachments/$userId/${DateTime.now().millisecondsSinceEpoch}_$safeName';
+    final path = '$userId/chat_attachments/${DateTime.now().millisecondsSinceEpoch}_$safeName';
 
-    if (kIsWeb) {
-      final bytes = file.bytes;
-      if (bytes == null) throw Exception('File bytes unavailable');
-      await _db.storage.from(_bucket).uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(contentType: _fileContentType(file.extension)),
-          );
-    } else {
-      final filePath = file.path;
-      if (filePath == null || filePath.isEmpty) {
-        throw Exception('File path unavailable');
-      }
-      await _db.storage.from(_bucket).upload(
-            path,
-            File(filePath),
-            fileOptions: FileOptions(contentType: _fileContentType(file.extension)),
-          );
-    }
+    final bytes = file.bytes ?? await XFile(file.path ?? '').readAsBytes();
+    await _db.storage.from(_bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: _fileContentType(file.extension)),
+        );
 
     return _db.storage.from(_bucket).getPublicUrl(path);
   }

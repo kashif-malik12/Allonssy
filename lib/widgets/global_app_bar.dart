@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app/chat_singletons.dart';
 import '../features/moderation/providers/admin_access_provider.dart';
 import '../features/notifications/providers/notification_unread_provider.dart';
+import 'brand_wordmark.dart';
 
 class GlobalAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
@@ -122,7 +123,22 @@ class GlobalAppBar extends ConsumerWidget implements PreferredSizeWidget {
           : null,
       title: InkWell(
         onTap: () => context.go(homeRoute),
-        child: Text(title),
+        child: title == 'Allonssy!'
+            ? const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  BrandMark(size: 26),
+                  SizedBox(width: 8),
+                  BrandWordmark(
+                    fontSize: 22,
+                    color: Color(0xFF12211D),
+                    accentColor: Color(0xFF0F766E),
+                    letterSpacing: -0.6,
+                    showIcon: false,
+                  ),
+                ],
+              )
+            : Text(title),
       ),
       actions: [
         ...?actions,

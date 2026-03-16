@@ -1,6 +1,6 @@
-# local_social
+# Allonssy
 
-A new Flutter project.
+Flutter app for the Allonssy community platform.
 
 ## Getting Started
 

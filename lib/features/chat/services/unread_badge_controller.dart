@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UnreadBadgeController {
@@ -11,24 +13,49 @@ class UnreadBadgeController {
 
   StreamSubscription<List<Map<String, dynamic>>>? _sub1;
   StreamSubscription<List<Map<String, dynamic>>>? _sub2;
+  Timer? _fallbackRefreshTimer;
+  bool _initialized = false;
 
   Future<void> init() async {
+    if (_initialized) {
+      await refresh();
+      return;
+    }
+
+    _initialized = true;
     await refresh();
 
-    // ✅ Simple + reliable: whenever messages change, refresh unread counter via RPC
-    // (We can't perfectly filter realtime by "my conversations" without extra schema,
-    // so we refresh by RPC on any insert/update seen by RLS.)
+    _fallbackRefreshTimer ??=
+        Timer.periodic(const Duration(seconds: 45), (_) => refresh());
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      debugPrint('Unread badge realtime skipped on Android; using polling fallback');
+      return;
+    }
+
     _sub1 = _db
         .from('messages')
         .stream(primaryKey: ['id'])
         .order('created_at')
-        .listen((_) => refresh());
+        .listen(
+          (_) => refresh(),
+          onError: _handleRealtimeError,
+          cancelOnError: false,
+        );
 
     _sub2 = _db
         .from('offer_messages')
         .stream(primaryKey: ['id'])
         .order('created_at')
-        .listen((_) => refresh());
+        .listen(
+          (_) => refresh(),
+          onError: _handleRealtimeError,
+          cancelOnError: false,
+        );
+  }
+
+  void _handleRealtimeError(Object error, [StackTrace? stackTrace]) {
+    debugPrint('Unread badge realtime degraded: $error');
   }
 
   Future<void> refresh() async {
@@ -47,13 +74,18 @@ class UnreadBadgeController {
 
       unread.value = dmUnread + offerUnread;
     } catch (_) {
-      // ignore; keep last value
+      // Keep the last known value if refresh fails.
     }
   }
 
   void dispose() {
     _sub1?.cancel();
+    _sub1 = null;
     _sub2?.cancel();
+    _sub2 = null;
+    _fallbackRefreshTimer?.cancel();
+    _fallbackRefreshTimer = null;
+    _initialized = false;
     unread.value = 0;
   }
 }

@@ -1,9 +1,9 @@
-import 'dart:io' show File;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
+
+import '../core/platform/local_video_controller.dart';
 
 class LocalVideoPreview extends StatefulWidget {
   const LocalVideoPreview({
@@ -51,7 +51,7 @@ class _LocalVideoPreviewState extends State<LocalVideoPreview> {
   Future<void> _init() async {
     final controller = kIsWeb
         ? VideoPlayerController.networkUrl(Uri.parse(widget.file.path))
-        : VideoPlayerController.file(File(widget.file.path));
+        : createLocalVideoController(widget.file.path);
 
     try {
       await controller.initialize();
