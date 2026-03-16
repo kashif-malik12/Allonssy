@@ -1,5 +1,5 @@
 class FirebaseWebConfig {
-  static const apiKey = 'AIzaSyBUbvBNIC3ePdkmvxjaDwxf2KLF1ikA5iA';
+  static const apiKey = 'AIzaSyBn6VHGz1Srkcd-nO85NaWe9N8NykTP0Mo';
   static const appId = '1:460437609061:web:8b0b6e5c136fab52d8c48c';
   static const messagingSenderId = '460437609061';
   static const projectId = 'allonssy';

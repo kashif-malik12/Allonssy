@@ -49,3 +49,7 @@ lib/core/config/env.dart
 supabase/.env.local
 scripts/.env.local
 .gemini/
+
+# Firebase credentials — never commit
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
