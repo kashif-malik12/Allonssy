@@ -38,22 +38,22 @@ class LegalScreen extends StatelessWidget {
   String get _title {
     switch (page) {
       case LegalPage.about:
-        return 'About Us';
+        return 'À propos / About Us';
       case LegalPage.terms:
-        return 'Terms & Conditions';
+        return 'CGU / Terms & Conditions';
       case LegalPage.privacy:
-        return 'Privacy Policy';
+        return 'Confidentialité / Privacy Policy';
     }
   }
 
   List<Widget> _buildContent(BuildContext context, ThemeData theme) {
     switch (page) {
       case LegalPage.about:
-        return _aboutContent(theme);
+        return [..._aboutContentFr(theme), _langDivider(), ..._aboutContentEn(theme)];
       case LegalPage.terms:
-        return _termsContent(theme);
+        return [..._termsContentFr(theme), _langDivider(), ..._termsContentEn(theme)];
       case LegalPage.privacy:
-        return _privacyContent(theme);
+        return [..._privacyContentFr(theme), _langDivider(), ..._privacyContentEn(theme)];
     }
   }
 
@@ -109,7 +109,37 @@ class LegalScreen extends StatelessWidget {
         child: Divider(),
       );
 
-  Widget _contactBox() => Container(
+  Widget _langDivider() => Container(
+        margin: const EdgeInsets.symmetric(vertical: 36),
+        child: Row(
+          children: [
+            const Expanded(child: Divider()),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF147A74).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF147A74).withValues(alpha: 0.3)),
+                ),
+                child: const Text(
+                  'English version below · Version anglaise ci-dessous',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF147A74),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            ),
+            const Expanded(child: Divider()),
+          ],
+        ),
+      );
+
+  Widget _contactBox({bool french = false}) => Container(
         margin: const EdgeInsets.only(top: 24),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -119,24 +149,61 @@ class LegalScreen extends StatelessWidget {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text(
-              'Contact',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              french ? 'Contact' : 'Contact',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
-            SizedBox(height: 6),
-            Text('Tradister SAS', style: TextStyle(fontWeight: FontWeight.w600)),
-            Text('SIREN: 988 318 945'),
-            Text('Ris-Orangis, France'),
-            SizedBox(height: 6),
-            Text('Email: hello@allonssy.com'),
+            const SizedBox(height: 6),
+            const Text('Tradister SAS', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text('SIREN: 988 318 945'),
+            const Text('Ris-Orangis, France'),
+            const SizedBox(height: 6),
+            const Text('Email: hello@allonssy.com'),
           ],
         ),
       );
 
-  // ─── About Us ───────────────────────────────────────────────────────────────
+  // ─── About Us — FRENCH ──────────────────────────────────────────────────────
 
-  List<Widget> _aboutContent(ThemeData theme) => [
+  List<Widget> _aboutContentFr(ThemeData theme) => [
+        _h1(theme, 'À propos d\'Allonssy'),
+        _body(
+          'Allonssy est une plateforme sociale locale qui connecte les habitants de leur quartier — '
+          'permettant aux résidents de partager, découvrir, échanger et collaborer avec leurs voisins proches.',
+        ),
+        _body(
+          'La plateforme réunit un fil d\'actualité social, un marché pour acheter et vendre, '
+          'une bourse de services locaux, des annonces alimentaires, et un chat en temps réel avec '
+          'négociation d\'offres — le tout ancré là où vous vivez réellement.',
+        ),
+        _h2(theme, 'Notre Mission'),
+        _body(
+          'Nous croyons que les communautés fortes se construisent sur la confiance et la proximité. '
+          'Notre objectif est de rendre véritablement facile le fait de trouver un voisin de confiance, '
+          'vendre quelque chose localement, découvrir un talent caché à proximité, ou simplement rester '
+          'informé de ce qui se passe autour de vous.',
+        ),
+        _h2(theme, 'La Société'),
+        _body(
+          'Allonssy est développée et exploitée par Tradister SAS, une société par actions simplifiée '
+          'de droit français immatriculée en France.',
+        ),
+        _bullet('Dénomination sociale : Tradister SAS'),
+        _bullet('SIREN : 988 318 945'),
+        _bullet('Siège social : Ris-Orangis, France'),
+        _divider(),
+        _h2(theme, 'Nous contacter'),
+        _body(
+          'Pour toute question, assistance, demande de partenariat ou préoccupation concernant '
+          'la plateforme, contactez-nous à :',
+        ),
+        _contactBox(french: true),
+      ];
+
+  // ─── About Us — ENGLISH ─────────────────────────────────────────────────────
+
+  List<Widget> _aboutContentEn(ThemeData theme) => [
         _h1(theme, 'About Allonssy'),
         _body(
           'Allonssy is a local social platform that connects people within their community — '
@@ -170,9 +237,91 @@ class LegalScreen extends StatelessWidget {
         _contactBox(),
       ];
 
-  // ─── Terms & Conditions ──────────────────────────────────────────────────────
+  // ─── Terms & Conditions — FRENCH ────────────────────────────────────────────
 
-  List<Widget> _termsContent(ThemeData theme) => [
+  List<Widget> _termsContentFr(ThemeData theme) => [
+        _h1(theme, 'Conditions Générales d\'Utilisation (CGU)'),
+        _body('Dernière mise à jour : mars 2026'),
+        _body(
+          'Les présentes Conditions Générales d\'Utilisation (« CGU ») régissent votre accès à et '
+          'votre utilisation de la plateforme Allonssy, incluant l\'application mobile et le site web '
+          '(collectivement, le « Service »), exploités par Tradister SAS (« nous », « notre »).',
+        ),
+        _body(
+          'En créant un compte ou en utilisant le Service, vous confirmez avoir lu, compris et '
+          'accepté d\'être lié par les présentes CGU. Si vous n\'acceptez pas ces conditions, '
+          'n\'utilisez pas le Service.',
+        ),
+        _h2(theme, '1. Éligibilité'),
+        _body(
+          'Vous devez avoir au moins 16 ans pour créer un compte et utiliser le Service. '
+          'En vous inscrivant, vous déclarez remplir cette condition.',
+        ),
+        _h2(theme, '2. Votre Compte'),
+        _bullet('Vous êtes responsable de la confidentialité de vos identifiants de connexion.'),
+        _bullet('Vous êtes responsable de toute activité effectuée depuis votre compte.'),
+        _bullet('Vous devez fournir des informations exactes et à jour lors de votre inscription.'),
+        _bullet('Vous ne pouvez pas transférer ou partager votre compte avec des tiers.'),
+        _bullet('Vous devez nous informer immédiatement à hello@allonssy.com en cas d\'accès non autorisé suspecté.'),
+        _h2(theme, '3. Utilisation Acceptable'),
+        _body('Vous vous engagez à n\'utiliser le Service qu\'à des fins légales. Il vous est interdit de :'),
+        _bullet('Publier des contenus illégaux, nuisibles, abusifs, harcelants, diffamatoires ou frauduleux.'),
+        _bullet('Utiliser le Service pour distribuer du spam, des logiciels malveillants ou des messages commerciaux non sollicités.'),
+        _bullet('Usurper l\'identité d\'une personne ou d\'une entité, ou faussement prétendre à une affiliation.'),
+        _bullet('Tenter d\'obtenir un accès non autorisé au Service ou à ses systèmes associés.'),
+        _bullet('Extraire ou aspirer des données du Service de manière systématique sans notre consentement écrit.'),
+        _bullet('Utiliser le Service pour mener ou faciliter des transactions illégales.'),
+        _h2(theme, '4. Contenu Utilisateur'),
+        _body(
+          'Vous conservez la propriété des contenus que vous publiez sur Allonssy. En publiant un contenu, '
+          'vous nous accordez une licence non exclusive, mondiale et libre de redevances pour utiliser, '
+          'stocker, afficher, reproduire et distribuer ce contenu uniquement dans le cadre de l\'exploitation '
+          'et de l\'amélioration du Service.',
+        ),
+        _body(
+          'Nous ne cautionnons aucun contenu généré par les utilisateurs. Nous nous réservons le droit de '
+          'supprimer tout contenu contraire aux présentes CGU ou susceptible de nuire à la communauté, '
+          'sans préavis.',
+        ),
+        _h2(theme, '5. Marché et Transactions'),
+        _body(
+          'Allonssy fournit une plateforme permettant aux utilisateurs de découvrir des annonces locales '
+          'et de communiquer à leur sujet. Nous ne sommes pas partie aux transactions entre utilisateurs. '
+          'Nous ne garantissons pas la qualité, la sécurité, la légalité ou l\'exactitude d\'une annonce. '
+          'Toute transaction conclue avec un autre utilisateur est réalisée entre vous et cet utilisateur uniquement.',
+        ),
+        _h2(theme, '6. Modération et Suspension de Compte'),
+        _body(
+          'Nous nous réservons le droit de suspendre ou résilier les comptes qui violent les présentes CGU, '
+          'se livrent à des activités frauduleuses ou nuisent à la communauté, à notre seule discrétion '
+          'et sans préavis préalable lorsque les circonstances l\'exigent.',
+        ),
+        _h2(theme, '7. Limitation de Responsabilité'),
+        _body(
+          'Dans la mesure maximale permise par la loi applicable, Tradister SAS ne saurait être tenue '
+          'responsable de dommages indirects, accessoires, spéciaux, consécutifs ou punitifs résultant '
+          'de votre utilisation ou de votre impossibilité d\'utiliser le Service.',
+        ),
+        _h2(theme, '8. Modifications des CGU'),
+        _body(
+          'Nous pouvons mettre à jour les présentes CGU de temps à autre. Nous vous informerons des '
+          'modifications importantes par une notification dans l\'application ou par e-mail. La poursuite '
+          'de l\'utilisation du Service après l\'entrée en vigueur des modifications vaut acceptation '
+          'des CGU révisées.',
+        ),
+        _h2(theme, '9. Droit Applicable'),
+        _body(
+          'Les présentes CGU sont régies et interprétées conformément au droit français. '
+          'Tout litige sera soumis à la compétence exclusive des tribunaux français.',
+        ),
+        _h2(theme, '10. Contact'),
+        _body('Pour toute question relative aux présentes CGU, contactez-nous :'),
+        _contactBox(french: true),
+      ];
+
+  // ─── Terms & Conditions — ENGLISH ───────────────────────────────────────────
+
+  List<Widget> _termsContentEn(ThemeData theme) => [
         _h1(theme, 'Terms & Conditions'),
         _body('Last updated: March 2026'),
         _body(
@@ -248,9 +397,94 @@ class LegalScreen extends StatelessWidget {
         _contactBox(),
       ];
 
-  // ─── Privacy Policy ──────────────────────────────────────────────────────────
+  // ─── Privacy Policy — FRENCH ────────────────────────────────────────────────
 
-  List<Widget> _privacyContent(ThemeData theme) => [
+  List<Widget> _privacyContentFr(ThemeData theme) => [
+        _h1(theme, 'Politique de Confidentialité'),
+        _body('Dernière mise à jour : mars 2026'),
+        _body(
+          'Tradister SAS (« nous », « notre ») exploite la plateforme Allonssy. La présente Politique '
+          'de Confidentialité explique comment nous collectons, utilisons, stockons et protégeons vos '
+          'données personnelles lorsque vous utilisez notre Service, ainsi que vos droits au titre '
+          'de la réglementation applicable en matière de protection des données, notamment le '
+          'Règlement Général sur la Protection des Données (RGPD).',
+        ),
+        _h2(theme, '1. Responsable du Traitement'),
+        _body(
+          'Le responsable du traitement de vos données personnelles est :\n'
+          'Tradister SAS — SIREN 988 318 945 — Ris-Orangis, France\n'
+          'E-mail : hello@allonssy.com',
+        ),
+        _h2(theme, '2. Données Collectées'),
+        _body('Nous collectons les catégories de données personnelles suivantes :'),
+        _bullet('Données de compte : adresse e-mail, mot de passe (haché), nom d\'affichage, photo de profil, ville et code postal.'),
+        _bullet('Données de localisation : ville/code postal approximatif renseigné dans votre profil, utilisé pour vous afficher du contenu local. Nous ne suivons pas en continu la localisation de votre appareil.'),
+        _bullet('Données de contenu : publications, commentaires, annonces de marché, annonces de services, annonces alimentaires et messages de chat que vous créez.'),
+        _bullet('Données d\'utilisation : interactions avec l\'application, type d\'appareil, système d\'exploitation et journaux d\'erreurs collectés pour améliorer le Service.'),
+        _bullet('Données d\'authentification : si vous vous connectez avec Google, nous recevons votre nom, adresse e-mail et photo de profil de la part de Google.'),
+        _h2(theme, '3. Utilisation de vos Données'),
+        _bullet('Créer et gérer votre compte et vous authentifier de manière sécurisée.'),
+        _bullet('Vous fournir du contenu, des annonces et des résultats de recherche localisés pertinents pour votre zone géographique.'),
+        _bullet('Permettre la messagerie et la négociation d\'offres entre utilisateurs.'),
+        _bullet('Vous envoyer des notifications in-app et push selon vos préférences.'),
+        _bullet('Modérer les contenus, détecter les fraudes et faire respecter nos CGU.'),
+        _bullet('Améliorer la plateforme grâce à l\'analyse et au suivi des erreurs.'),
+        _h2(theme, '4. Base Légale du Traitement'),
+        _bullet('Contrat : traitement nécessaire à la fourniture du Service que vous avez demandé.'),
+        _bullet('Intérêts légitimes : prévention de la fraude, sécurité et amélioration du Service.'),
+        _bullet('Consentement : lorsque vous avez explicitement donné votre accord (ex. : notifications push).'),
+        _h2(theme, '5. Partage des Données'),
+        _body('Nous ne vendons pas vos données personnelles. Nous pouvons partager des données avec :'),
+        _bullet('Prestataires d\'infrastructure (ex. : hébergement et services de base de données) dans le cadre de contrats de traitement des données.'),
+        _bullet('Autres utilisateurs : votre profil public, vos publications et annonces sont visibles des autres utilisateurs conformément à la finalité de la plateforme.'),
+        _bullet('Autorités compétentes : si la loi applicable l\'exige ou pour protéger nos droits.'),
+        _h2(theme, '6. Conservation des Données'),
+        _body(
+          'Nous conservons vos données personnelles aussi longtemps que votre compte est actif. '
+          'Si vous supprimez votre compte, nous supprimerons ou anonymiserons vos données personnelles '
+          'dans un délai de 30 jours, sauf obligation légale de conservation.',
+        ),
+        _h2(theme, '7. Vos Droits (RGPD)'),
+        _body('Conformément au RGPD, vous disposez des droits suivants :'),
+        _bullet('Droit d\'accès : demander une copie des données personnelles que nous détenons sur vous.'),
+        _bullet('Droit de rectification : demander la correction de données inexactes.'),
+        _bullet('Droit à l\'effacement : demander la suppression de vos données (« droit à l\'oubli »).'),
+        _bullet('Droit à la limitation : demander que nous limitions le traitement de vos données.'),
+        _bullet('Droit à la portabilité : recevoir vos données dans un format structuré et lisible par machine.'),
+        _bullet('Droit d\'opposition : vous opposer au traitement fondé sur nos intérêts légitimes.'),
+        _bullet('Droit de retirer votre consentement : retirer votre consentement à tout moment sans affecter le traitement antérieur.'),
+        _body(
+          'Pour exercer l\'un de ces droits, contactez-nous à hello@allonssy.com. '
+          'Nous vous répondrons dans un délai de 30 jours. Vous avez également le droit d\'introduire '
+          'une réclamation auprès de votre autorité nationale de protection des données '
+          '(en France : CNIL — www.cnil.fr).',
+        ),
+        _h2(theme, '8. Cookies et Traçage'),
+        _body(
+          'L\'application web Allonssy peut utiliser des cookies de session à des fins d\'authentification '
+          'et de fonctionnement. Nous n\'utilisons pas de cookies publicitaires ou de traçage tiers.',
+        ),
+        _h2(theme, '9. Sécurité'),
+        _body(
+          'Nous appliquons des mesures techniques et organisationnelles appropriées pour protéger vos '
+          'données personnelles contre tout accès non autorisé, perte ou divulgation. Toutes les données '
+          'sont transmises via des connexions chiffrées (HTTPS/TLS).',
+        ),
+        _h2(theme, '10. Modifications de la Politique'),
+        _body(
+          'Nous pouvons mettre à jour la présente Politique de Confidentialité de temps à autre. '
+          'Nous vous informerons des modifications importantes par une notification dans l\'application '
+          'ou par e-mail. La poursuite de l\'utilisation du Service après les modifications vaut '
+          'acceptation de la politique mise à jour.',
+        ),
+        _h2(theme, '11. Contact'),
+        _body('Pour toute question relative à la confidentialité ou pour exercer vos droits, contactez-nous :'),
+        _contactBox(french: true),
+      ];
+
+  // ─── Privacy Policy — ENGLISH ───────────────────────────────────────────────
+
+  List<Widget> _privacyContentEn(ThemeData theme) => [
         _h1(theme, 'Privacy Policy'),
         _body('Last updated: March 2026'),
         _body(
@@ -284,9 +518,7 @@ class LegalScreen extends StatelessWidget {
         _bullet('Legitimate interests: fraud prevention, security, and service improvement.'),
         _bullet('Consent: where you have explicitly opted in (e.g. push notifications).'),
         _h2(theme, '5. Data Sharing'),
-        _body(
-          'We do not sell your personal data. We may share data with:',
-        ),
+        _body('We do not sell your personal data. We may share data with:'),
         _bullet('Infrastructure providers (e.g. hosting and database services) under data processing agreements.'),
         _bullet('Other users: your public profile, posts, and listings are visible to other users as intended by the platform.'),
         _bullet('Law enforcement: if required by applicable law or to protect our legal rights.'),
