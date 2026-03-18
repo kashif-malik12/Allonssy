@@ -42,9 +42,24 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   Map<String, int> _stats = const {};
   
   List<Map<String, dynamic>> _marketplacePosts = [];
+  int _marketOffset = 0;
+  bool _marketHasMore = true;
+  bool _marketLoadingMore = false;
+
   List<Map<String, dynamic>> _gigPosts = [];
+  int _gigOffset = 0;
+  bool _gigHasMore = true;
+  bool _gigLoadingMore = false;
+
   List<Map<String, dynamic>> _foodPosts = [];
+  int _foodOffset = 0;
+  bool _foodHasMore = true;
+  bool _foodLoadingMore = false;
+
   List<Map<String, dynamic>> _allUsers = [];
+  int _usersOffset = 0;
+  bool _usersHasMore = true;
+  bool _usersLoadingMore = false;
   Map<String, Map<String, dynamic>> _userAuthStatus = const {};
   Map<String, int> _userReportCounts = const {};
   Map<String, int> _userBlockedByCounts = const {};
@@ -213,34 +228,124 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
     }
   }
 
+  static const int _kPostsPageSize = 50;
+  static const int _kUsersPageSize = 100;
+
   Future<void> _loadCategorizedPosts() async {
+    _marketOffset = 0; _marketHasMore = true;
+    _gigOffset = 0; _gigHasMore = true;
+    _foodOffset = 0; _foodHasMore = true;
     try {
       final results = await Future.wait([
-        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').eq('post_type', 'market').order('created_at', ascending: false).limit(50),
-        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['service_offer', 'service_request']).order('created_at', ascending: false).limit(50),
-        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['food_ad', 'food']).order('created_at', ascending: false).limit(50),
+        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').eq('post_type', 'market').order('created_at', ascending: false).range(0, _kPostsPageSize - 1),
+        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['service_offer', 'service_request']).order('created_at', ascending: false).range(0, _kPostsPageSize - 1),
+        _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['food_ad', 'food']).order('created_at', ascending: false).range(0, _kPostsPageSize - 1),
       ]);
 
-      _marketplacePosts = (results[0] as List).cast<Map<String, dynamic>>();
-      _gigPosts = (results[1] as List).cast<Map<String, dynamic>>();
-      _foodPosts = (results[2] as List).cast<Map<String, dynamic>>();
+      final m = (results[0] as List).cast<Map<String, dynamic>>();
+      final g = (results[1] as List).cast<Map<String, dynamic>>();
+      final f = (results[2] as List).cast<Map<String, dynamic>>();
+      _marketplacePosts = m; _marketHasMore = m.length == _kPostsPageSize;
+      _gigPosts = g; _gigHasMore = g.length == _kPostsPageSize;
+      _foodPosts = f; _foodHasMore = f.length == _kPostsPageSize;
     } catch (e) {
       debugPrint('Categorized posts error: $e');
     }
   }
 
+  Future<void> _loadMoreCategoryPosts(String category) async {
+    final isLoading = category == 'market' ? _marketLoadingMore
+        : category == 'gig' ? _gigLoadingMore : _foodLoadingMore;
+    final hasMore = category == 'market' ? _marketHasMore
+        : category == 'gig' ? _gigHasMore : _foodHasMore;
+    if (isLoading || !hasMore) return;
+
+    if (mounted) setState(() {
+      if (category == 'market') _marketLoadingMore = true;
+      else if (category == 'gig') _gigLoadingMore = true;
+      else _foodLoadingMore = true;
+    });
+
+    try {
+      final currentOffset = category == 'market' ? _marketOffset
+          : category == 'gig' ? _gigOffset : _foodOffset;
+      final from = currentOffset + _kPostsPageSize;
+      final to = from + _kPostsPageSize - 1;
+
+      final List<Map<String, dynamic>> rows;
+      if (category == 'market') {
+        rows = ((await _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').eq('post_type', 'market').order('created_at', ascending: false).range(from, to)) as List).cast();
+      } else if (category == 'gig') {
+        rows = ((await _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['service_offer', 'service_request']).order('created_at', ascending: false).range(from, to)) as List).cast();
+      } else {
+        rows = ((await _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['food_ad', 'food']).order('created_at', ascending: false).range(from, to)) as List).cast();
+      }
+
+      if (mounted) setState(() {
+        if (category == 'market') {
+          _marketplacePosts = [..._marketplacePosts, ...rows];
+          _marketOffset = from;
+          _marketHasMore = rows.length == _kPostsPageSize;
+          _marketLoadingMore = false;
+        } else if (category == 'gig') {
+          _gigPosts = [..._gigPosts, ...rows];
+          _gigOffset = from;
+          _gigHasMore = rows.length == _kPostsPageSize;
+          _gigLoadingMore = false;
+        } else {
+          _foodPosts = [..._foodPosts, ...rows];
+          _foodOffset = from;
+          _foodHasMore = rows.length == _kPostsPageSize;
+          _foodLoadingMore = false;
+        }
+      });
+    } catch (e) {
+      debugPrint('Load more $category posts error: $e');
+      if (mounted) setState(() {
+        if (category == 'market') _marketLoadingMore = false;
+        else if (category == 'gig') _gigLoadingMore = false;
+        else _foodLoadingMore = false;
+      });
+    }
+  }
+
   Future<void> _loadAllUsers() async {
+    _usersOffset = 0; _usersHasMore = true;
     try {
       final rows = await _db
           .from('profiles')
           .select('id, full_name, business_name, job_title, profile_type, account_type, org_kind, is_disabled, avatar_url')
           .order('created_at', ascending: false)
-          .limit(100);
+          .range(0, _kUsersPageSize - 1);
       _allUsers = (rows as List).cast<Map<String, dynamic>>();
+      _usersHasMore = _allUsers.length == _kUsersPageSize;
       _selectedPushUserId ??=
           _allUsers.isNotEmpty ? (_allUsers.first['id'] ?? '').toString() : null;
     } catch (e) {
       debugPrint('Load users error: $e');
+    }
+  }
+
+  Future<void> _loadMoreUsers() async {
+    if (_usersLoadingMore || !_usersHasMore) return;
+    if (mounted) setState(() => _usersLoadingMore = true);
+    try {
+      final from = _usersOffset + _kUsersPageSize;
+      final to = from + _kUsersPageSize - 1;
+      final rows = ((await _db
+          .from('profiles')
+          .select('id, full_name, business_name, job_title, profile_type, account_type, org_kind, is_disabled, avatar_url')
+          .order('created_at', ascending: false)
+          .range(from, to)) as List).cast<Map<String, dynamic>>();
+      if (mounted) setState(() {
+        _allUsers = [..._allUsers, ...rows];
+        _usersOffset = from;
+        _usersHasMore = rows.length == _kUsersPageSize;
+        _usersLoadingMore = false;
+      });
+    } catch (e) {
+      debugPrint('Load more users error: $e');
+      if (mounted) setState(() => _usersLoadingMore = false);
     }
   }
 
@@ -1778,11 +1883,30 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   }
 
   Widget _buildPostModerationTab(List<Map<String, dynamic>> posts, String category) {
-    if (posts.isEmpty) return const Center(child: Text('No posts found.'));
+    final hasMore = category == 'market' ? _marketHasMore
+        : category == 'gig' ? _gigHasMore : _foodHasMore;
+    final loadingMore = category == 'market' ? _marketLoadingMore
+        : category == 'gig' ? _gigLoadingMore : _foodLoadingMore;
+
+    if (posts.isEmpty && !loadingMore) return const Center(child: Text('No posts found.'));
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: posts.length,
+      itemCount: posts.length + (hasMore || loadingMore ? 1 : 0),
       itemBuilder: (context, i) {
+        if (i == posts.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: loadingMore
+                  ? const CircularProgressIndicator()
+                  : TextButton.icon(
+                      onPressed: () => _loadMoreCategoryPosts(category),
+                      icon: const Icon(Icons.expand_more),
+                      label: const Text('Load more'),
+                    ),
+            ),
+          );
+        }
         final p = posts[i];
         final profile = p['profiles'] as Map<String, dynamic>?;
         final authorName = profile?['full_name'] ?? profile?['business_name'] ?? 'Unknown';
@@ -2107,6 +2231,19 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
                   ),
                 ),
         ),
+        if (_usersHasMore || _usersLoadingMore)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: _usersLoadingMore
+                  ? const CircularProgressIndicator()
+                  : TextButton.icon(
+                      onPressed: _loadMoreUsers,
+                      icon: const Icon(Icons.expand_more),
+                      label: Text('Load more users (showing ${_allUsers.length})'),
+                    ),
+            ),
+          ),
       ],
     );
   }
