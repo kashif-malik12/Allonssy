@@ -45,13 +45,20 @@ if [ ! -f "build/web/index.html" ]; then
   echo "Copied and patched web/index.html to build/web/"
 fi
 
+# Flutter does not automatically emit web/.well-known files into build/web.
+if [ -d "web/.well-known" ]; then
+  mkdir -p "build/web/.well-known"
+  cp -r web/.well-known/* "build/web/.well-known/"
+  echo "Copied web/.well-known into build/web/.well-known/"
+fi
+
 echo "Web build complete."
 
 # Deploy to VPS
 if [ "$DEPLOY" = true ]; then
   echo "Deploying to ${VPS_USER}@${VPS_HOST}:${VPS_PATH}..."
   ssh "${VPS_USER}@${VPS_HOST}" "rm -rf ${VPS_PATH}/*"
-  scp -r build/web/* "${VPS_USER}@${VPS_HOST}:${VPS_PATH}/"
+  scp -r build/web/. "${VPS_USER}@${VPS_HOST}:${VPS_PATH}/"
   # Remove template file from server (not needed at runtime)
   ssh "${VPS_USER}@${VPS_HOST}" "rm -f ${VPS_PATH}/firebase-messaging-sw.js.template"
   echo "Deploy complete. Live at https://app.allonssy.com"

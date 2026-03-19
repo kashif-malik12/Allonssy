@@ -363,3 +363,19 @@ All five display locations use this rule:
 | `lib/screens/gigs_screen.dart` | Grid card price label updated to show range. |
 | `lib/screens/marketplace_product_detail_screen.dart` | Detail price row updated. |
 | `lib/screens/gig_detail_screen.dart` | Detail price row updated. |
+
+## 2026-03-18 Android release signing
+
+### Release keystore
+- Created dedicated Android upload keystore at `android/allonssy-upload-keystore.jks`.
+- Local signing config stored at `android/key.properties`.
+- Both files are gitignored and must be backed up securely outside the repo.
+
+### Gradle signing
+- `android/app/build.gradle.kts` now loads `key.properties` and signs `release` builds with the dedicated upload keystore instead of the debug keystore.
+- Release artifact builds successfully as `build/app/outputs/bundle/release/app-release.aab`.
+
+### App Links fingerprint
+- `web/.well-known/assetlinks.json` must use the release keystore SHA-256 fingerprint, not the debug keystore fingerprint.
+- Current production fingerprint: `46:D4:62:90:E1:98:25:4E:E1:0C:D2:87:20:54:59:8B:00:45:E8:AC:9D:D8:73:18:BD:CE:DE:67:DD:79:52:05`
+- Any older notes referring to the debug-keystore fingerprint are superseded by this entry.

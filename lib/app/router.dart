@@ -27,6 +27,8 @@ import '../features/moderation/presentation/admin_review_screen.dart';
 
 import '../screens/feed_screen.dart';
 import '../screens/legal_screen.dart';
+import '../screens/child_safety_screen.dart';
+import '../screens/delete_account_screen.dart';
 import '../screens/create_post_screen.dart';
 import '../screens/quick_camera_post_screen.dart';
 import '../screens/comments_screen.dart';
@@ -77,7 +79,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       final path = state.uri.path;
       final isPublicPage =
-          path == '/about' || path == '/terms' || path == '/privacy';
+          path == '/about' ||
+          path == '/terms' ||
+          path == '/privacy' ||
+          path == '/delete-account' ||
+          path == '/child-safety';
 
       final isAuth =
           path == '/login' || path == '/register' || path == '/forgot-password';
@@ -218,6 +224,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/privacy',
         builder: (context, state) => const LegalScreen(page: LegalPage.privacy),
+      ),
+      GoRoute(
+        path: '/delete-account',
+        builder: (context, state) => const DeleteAccountScreen(),
+      ),
+      GoRoute(
+        path: '/child-safety',
+        builder: (context, state) => const ChildSafetyScreen(),
       ),
 
       // ── Persistent tab shell ─────────────────────────────────────────────

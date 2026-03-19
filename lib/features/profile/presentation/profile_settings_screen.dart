@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/localization/app_localizations.dart';
 import '../../../services/app_settings_service.dart';
@@ -233,6 +234,40 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     subtitle: l10n.tr('push_admin_updates_subtitle'),
                   ),
                 ],
+              ),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Account',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Manage account deletion and privacy requests.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.delete_outline),
+                        title: const Text('Delete account'),
+                        subtitle: const Text(
+                          'Open the account deletion request page.',
+                        ),
+                        trailing: const Icon(Icons.open_in_new),
+                        onTap: () => context.push('/delete-account'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

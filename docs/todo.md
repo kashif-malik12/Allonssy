@@ -34,3 +34,17 @@ The load-average critical alert was intentionally disabled while the app runs on
 **Fix later**: Re-enable load-based critical alerting once the backend is moved to the larger production VPS, ideally with either a higher threshold or repeated-failure logic instead of a single sample.
 
 **Priority**: Medium before launch infrastructure cutover.
+
+---
+
+## Android Media Permissions - Reduce Play Policy Surface
+
+**Files**: `android/app/src/main/AndroidManifest.xml`, `android/app/src/main/kotlin/com/allonssy/app/MainActivity.kt`, `lib/screens/create_post_screen.dart`, `lib/features/profile/presentation/complete_profile_screen.dart`, `lib/features/chat/presentation/chat_screen.dart`
+
+The app currently declares `READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` in the Android manifest for Android 13+, while part of the app already uses Android's system photo picker flows.
+
+**Fix later**: Audit all image/video selection flows and migrate them fully to Android photo picker or equivalent picker-only flows where possible. If direct media read permissions are no longer required, remove `READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` from the manifest.
+
+**Why**: This lowers Play Console policy friction for photo/video permissions and reduces review risk for future Android releases.
+
+**Priority**: Medium after initial Play Store release.

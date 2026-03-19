@@ -67,18 +67,22 @@ Do not add new APIs to the key without documenting it here and in `decision_log.
 
 ## Android App Links — SHA-256 Signing Fingerprint
 
-The release build currently signs with the **debug keystore** (`signingConfig = signingConfigs.getByName("debug")` in `android/app/build.gradle.kts`).
+Android release builds now sign with the dedicated upload keystore configured in `android/key.properties` and `android/app/build.gradle.kts`.
 
-The SHA-256 fingerprint in `web/.well-known/assetlinks.json` matches this keystore:
+The SHA-256 fingerprint in `web/.well-known/assetlinks.json` must match this keystore:
 ```
-7A:70:86:F0:EC:30:94:64:FB:40:02:14:95:11:74:99:B4:F6:2F:F5:80:6E:DE:89:21:72:8F:6F:49:0D:D0:A9
+46:D4:62:90:E1:98:25:4E:E1:0C:D2:87:20:54:59:8B:00:45:E8:AC:9D:D8:73:18:BD:CE:DE:67:DD:79:52:05
 ```
 
-**If a dedicated release keystore is ever created:**
-1. Get the new fingerprint: `keytool -list -v -keystore your-release.keystore`
+**If the release keystore is ever rotated:**
+1. Get the new fingerprint: `keytool -list -v -keystore android/allonssy-upload-keystore.jks`
 2. Replace the SHA-256 in `web/.well-known/assetlinks.json`
-3. Deploy to VPS: `scp web/.well-known/assetlinks.json deploy@87.106.13.170:/var/www/local_social_web/.well-known/assetlinks.json`
+3. Redeploy web so `https://app.allonssy.com/.well-known/assetlinks.json` updates
 4. Update this file and `decision_log.md` with the new fingerprint
+
+**Back up these two files securely before any machine change:**
+- `android/allonssy-upload-keystore.jks`
+- `android/key.properties`
 
 ---
 

@@ -54,3 +54,8 @@ scripts/.env.local
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 web/firebase-messaging-sw.js
+android/key.properties
+android/*.jks
+android/*.keystore
+.claude/
+flutter_01.png
