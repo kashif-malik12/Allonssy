@@ -61,6 +61,12 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   bool _usersHasMore = true;
   bool _usersLoadingMore = false;
   Map<String, Map<String, dynamic>> _userAuthStatus = const {};
+
+  List<Map<String, dynamic>> _bannedEmails = [];
+  int _bannedOffset = 0;
+  bool _bannedHasMore = true;
+  bool _bannedLoadingMore = false;
+  static const int _kBannedPageSize = 50;
   Map<String, int> _userReportCounts = const {};
   Map<String, int> _userBlockedByCounts = const {};
   Map<String, int> _userBlocksMadeCounts = const {};
@@ -70,7 +76,7 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 7, vsync: this);
+    _tab = TabController(length: 8, vsync: this);
     _init();
   }
 
@@ -104,6 +110,7 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
         _loadUserReports(),
         _loadCategorizedPosts(),
         _loadUserModerationCounts(),
+        _loadBannedEmails(),
       ]);
       await _loadAllUsers();
       await _loadUserAuthStatuses();
@@ -346,6 +353,89 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
     } catch (e) {
       debugPrint('Load more users error: $e');
       if (mounted) setState(() => _usersLoadingMore = false);
+    }
+  }
+
+  Future<void> _loadBannedEmails() async {
+    _bannedOffset = 0;
+    _bannedHasMore = true;
+    try {
+      final rows = await _db
+          .from('banned_emails')
+          .select('id, email, banned_at, reason, banned_by')
+          .order('banned_at', ascending: false)
+          .range(0, _kBannedPageSize - 1);
+      if (mounted) {
+        setState(() {
+          _bannedEmails = (rows as List).cast<Map<String, dynamic>>();
+          _bannedHasMore = _bannedEmails.length == _kBannedPageSize;
+        });
+      }
+    } catch (e) {
+      debugPrint('Load banned emails error: $e');
+    }
+  }
+
+  Future<void> _loadMoreBannedEmails() async {
+    if (_bannedLoadingMore || !_bannedHasMore) return;
+    if (mounted) setState(() => _bannedLoadingMore = true);
+    try {
+      final from = _bannedOffset + _kBannedPageSize;
+      final to = from + _kBannedPageSize - 1;
+      final rows = ((await _db
+          .from('banned_emails')
+          .select('id, email, banned_at, reason, banned_by')
+          .order('banned_at', ascending: false)
+          .range(from, to)) as List).cast<Map<String, dynamic>>();
+      if (mounted) {
+        setState(() {
+          _bannedEmails = [..._bannedEmails, ...rows];
+          _bannedOffset = from;
+          _bannedHasMore = rows.length == _kBannedPageSize;
+          _bannedLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Load more banned emails error: $e');
+      if (mounted) setState(() => _bannedLoadingMore = false);
+    }
+  }
+
+  Future<void> _banEmail(String email) async {
+    final myId = _db.auth.currentUser?.id;
+    try {
+      await _db.from('banned_emails').insert({
+        'email': email.toLowerCase().trim(),
+        'banned_by': myId,
+      });
+      await _loadBannedEmails();
+      _snack('$email has been banned');
+    } catch (e) {
+      // Duplicate — already banned
+      if (e.toString().contains('duplicate') || e.toString().contains('unique')) {
+        _snack('$email is already banned');
+      } else {
+        _snack('Failed to ban email: $e');
+      }
+    }
+  }
+
+  Future<void> _unbanEmail(String banId, String email) async {
+    final ok = await _confirm(
+      title: 'Unban email?',
+      message: '$email will be allowed to register again.',
+      confirmText: 'Unban',
+      danger: false,
+    );
+    if (!ok) return;
+    try {
+      await _db.from('banned_emails').delete().eq('id', banId);
+      if (mounted) {
+        setState(() => _bannedEmails.removeWhere((r) => r['id'] == banId));
+      }
+      _snack('$email has been unbanned');
+    } catch (e) {
+      _snack('Failed to unban: $e');
     }
   }
 
@@ -916,6 +1006,8 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
         return _buildPushTab();
       case 6:
         return _buildReportsTab();
+      case 7:
+        return _buildBannedTab();
       default:
         return const SizedBox.shrink();
     }
@@ -1422,6 +1514,10 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
       return;
     }
 
+    // Look up email before showing dialog
+    final authInfo = _userAuthStatus[userId] ?? const {};
+    final userEmail = (authInfo['email'] ?? '').toString().trim();
+
     final ok = await _confirm(
       title: 'Delete user?',
       message: 'This action is permanent and cannot be undone.',
@@ -1470,8 +1566,36 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
           };
         });
       }
-      await _refreshAll();
       _snack('User deleted permanently');
+
+      // Offer to ban the email so they cannot re-register
+      if (userEmail.isNotEmpty && mounted) {
+        final banToo = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Ban email address?'),
+            content: Text(
+              'Do you also want to ban "$userEmail" so this person cannot re-register with the same email?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('No, skip'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Yes, ban email'),
+              ),
+            ],
+          ),
+        );
+        if (banToo == true) {
+          await _banEmail(userEmail);
+        }
+      }
+
+      await _refreshAll();
     } catch (e) {
       _snack('Failed: $e');
     } finally {
@@ -1830,6 +1954,7 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
             Tab(text: 'Food Ads'),
             Tab(text: 'Push'),
             Tab(text: 'Reports'),
+            Tab(text: 'Banned'),
           ],
         ),
       ),
@@ -1875,6 +2000,7 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
                   _QuickNavCard(title: 'Food Ads', icon: Icons.restaurant, color: Colors.green, onTap: () => _tab.animateTo(4)),
                   _QuickNavCard(title: 'Send Push', icon: Icons.notifications_active_outlined, color: Colors.redAccent, onTap: () => _tab.animateTo(5)),
                   _QuickNavCard(title: 'Reports', icon: Icons.flag_outlined, color: Colors.red, onTap: () => _tab.animateTo(6)),
+                  _QuickNavCard(title: 'Banned Emails', icon: Icons.block_outlined, color: Colors.brown, onTap: () => _tab.animateTo(7)),
                 ],
               ),
           ],
@@ -2569,6 +2695,133 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
 
   Widget _buildAccessDeniedScreen() {
     return const Scaffold(body: Center(child: Text('Access Denied. Admins only.')));
+  }
+
+  Widget _buildBannedTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.block, color: Colors.red),
+              const SizedBox(width: 8),
+              Text(
+                'Banned Emails (${_bannedEmails.length}${_bannedHasMore ? '+' : ''})',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _loadBannedEmails,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Refresh'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: () async {
+                  final ctrl = TextEditingController();
+                  final email = await showDialog<String>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Ban email address'),
+                      content: TextField(
+                        controller: ctrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Email address',
+                          hintText: 'user@example.com',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        autofocus: true,
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                          child: const Text('Ban'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (email != null && email.isNotEmpty) {
+                    await _banEmail(email);
+                  }
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Ban email'),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _bannedEmails.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle_outline, size: 48, color: Colors.green),
+                      SizedBox(height: 12),
+                      Text('No banned emails', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _bannedEmails.length + (_bannedHasMore || _bannedLoadingMore ? 1 : 0),
+                  itemBuilder: (context, i) {
+                    if (i == _bannedEmails.length) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: _bannedLoadingMore
+                              ? const CircularProgressIndicator()
+                              : TextButton.icon(
+                                  onPressed: _loadMoreBannedEmails,
+                                  icon: const Icon(Icons.expand_more),
+                                  label: const Text('Load more'),
+                                ),
+                        ),
+                      );
+                    }
+                    final ban = _bannedEmails[i];
+                    final banId = (ban['id'] ?? '').toString();
+                    final email = (ban['email'] ?? '').toString();
+                    final bannedAt = ban['banned_at'] != null
+                        ? DateTime.tryParse(ban['banned_at'].toString())
+                        : null;
+                    final dateStr = bannedAt != null
+                        ? '${bannedAt.year}-${bannedAt.month.toString().padLeft(2, '0')}-${bannedAt.day.toString().padLeft(2, '0')}'
+                        : '—';
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.red,
+                          child: Icon(Icons.block, color: Colors.white, size: 18),
+                        ),
+                        title: Text(
+                          email,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text('Banned on $dateStr'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, color: Colors.orange),
+                          tooltip: 'Unban',
+                          onPressed: () => _unbanEmail(banId, email),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
   }
 }
 
