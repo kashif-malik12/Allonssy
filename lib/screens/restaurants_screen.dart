@@ -19,6 +19,7 @@ class RestaurantsScreen extends StatefulWidget {
 class _RestaurantsScreenState extends State<RestaurantsScreen> {
   static const int _kPageSize = 30;
 
+  bool _isFrench = false;
   bool _loading = true;
   String? _error;
   String _search = '';
@@ -90,7 +91,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
             (r['bio'] ?? '').toString().toLowerCase().contains(q) ||
             (r['business_profile'] ?? '').toString().toLowerCase().contains(q) ||
             (r['city'] ?? '').toString().toLowerCase().contains(q) ||
-            restaurantCategoryLabel((r['restaurant_type'] ?? '').toString())
+            restaurantCategoryLabel((r['restaurant_type'] ?? '').toString(), isFrench: _isFrench)
                 .toLowerCase()
                 .contains(q);
       }).toList();
@@ -232,6 +233,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    _isFrench = l10n.isFrench;
     final restaurants = _filteredRestaurants;
 
     return Scaffold(
@@ -275,7 +277,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
               items: [
                 DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_types'))),
                 ...restaurantMainCategories.map(
-                  (c) => DropdownMenuItem(value: c, child: Text(restaurantCategoryLabel(c))),
+                  (c) => DropdownMenuItem(value: c, child: Text(restaurantCategoryLabel(c, isFrench: _isFrench))),
                 ),
               ],
               onChanged: (v) {
@@ -389,7 +391,7 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
                                             ),
                                           ),
                                         Text(
-                                          '${(r['restaurant_type'] ?? '').toString().isNotEmpty ? restaurantCategoryLabel((r['restaurant_type'] ?? '').toString()) : l10n.tr('restaurant')}'
+                                          '${(r['restaurant_type'] ?? '').toString().isNotEmpty ? restaurantCategoryLabel((r['restaurant_type'] ?? '').toString(), isFrench: _isFrench) : l10n.tr('restaurant')}'
                                           '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
                                           '${(r['city'] ?? '').toString().isNotEmpty ? ' • ${(r['city'] ?? '').toString()}' : ''}',
                                         ),

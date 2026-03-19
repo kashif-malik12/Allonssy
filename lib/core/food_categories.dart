@@ -13,32 +13,36 @@ const List<String> foodMainCategories = [
   'other',
 ];
 
-String foodCategoryLabel(String value) {
+String foodCategoryLabel(String value, {bool isFrench = false}) {
+  return localizedFoodCategoryLabel(value, isFrench: isFrench);
+}
+
+String localizedFoodCategoryLabel(String value, {bool isFrench = false}) {
   switch (value) {
     case 'indian':
-      return 'Indian';
+      return isFrench ? 'Indien' : 'Indian';
     case 'high_protein':
-      return 'High Protein';
+      return isFrench ? 'Riche en protéines' : 'High Protein';
     case 'starters':
-      return 'Starters';
+      return isFrench ? 'Entrées' : 'Starters';
     case 'pizza':
-      return 'Pizza';
+      return isFrench ? 'Pizza' : 'Pizza';
     case 'burger':
-      return 'Burger';
+      return isFrench ? 'Burger' : 'Burger';
     case 'pasta':
-      return 'Pasta';
+      return isFrench ? 'Pâtes' : 'Pasta';
     case 'rice_bowl':
-      return 'Rice Bowl';
+      return isFrench ? 'Bol de riz' : 'Rice Bowl';
     case 'sandwich_wrap':
-      return 'Sandwich & Wrap';
+      return isFrench ? 'Sandwich et wrap' : 'Sandwich & Wrap';
     case 'dessert':
-      return 'Dessert';
+      return isFrench ? 'Dessert' : 'Dessert';
     case 'drinks':
-      return 'Drinks';
+      return isFrench ? 'Boissons' : 'Drinks';
     case 'vegan':
-      return 'Vegan';
+      return isFrench ? 'Végan' : 'Vegan';
     case 'other':
-      return 'Other';
+      return isFrench ? 'Autre' : 'Other';
     default:
       return value;
   }

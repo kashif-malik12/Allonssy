@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/food_categories.dart';
+import '../../../core/localization/app_localizations.dart';
 import '../../../core/market_categories.dart';
 import '../../../core/service_categories.dart';
 import '../../../services/feed_filter_service.dart';
@@ -126,6 +127,7 @@ class _FeedFilterSetupScreenState extends State<FeedFilterSetupScreen> {
       );
     }
 
+    final isFrench = context.l10n.isFrench;
     return Scaffold(
       backgroundColor: const Color(0xFFF5F1E8),
       body: SafeArea(
@@ -192,7 +194,7 @@ class _FeedFilterSetupScreenState extends State<FeedFilterSetupScreen> {
                             _buildMultiSelectSection(
                               title: 'Marketplace categories',
                               options: marketMainCategories
-                                  .map((c) => (c, marketCategoryLabel(c)))
+                                  .map((c) => (c, marketCategoryLabel(c, isFrench: isFrench)))
                                   .toList(),
                               selected: _selectedMarketplaceCategories,
                             ),
@@ -226,7 +228,7 @@ class _FeedFilterSetupScreenState extends State<FeedFilterSetupScreen> {
                             _buildMultiSelectSection(
                               title: 'Service categories',
                               options: serviceMainCategories
-                                  .map((c) => (c, serviceCategoryLabel(c)))
+                                  .map((c) => (c, serviceCategoryLabel(c, isFrench: isFrench)))
                                   .toList(),
                               selected: _selectedGigCategories,
                             ),
@@ -266,7 +268,7 @@ class _FeedFilterSetupScreenState extends State<FeedFilterSetupScreen> {
                             _buildMultiSelectSection(
                               title: 'Food categories',
                               options: foodMainCategories
-                                  .map((c) => (c, foodCategoryLabel(c)))
+                                  .map((c) => (c, foodCategoryLabel(c, isFrench: isFrench)))
                                   .toList(),
                               selected: _selectedFoodCategories,
                             ),

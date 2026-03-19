@@ -21,6 +21,7 @@ class GigsScreen extends StatefulWidget {
 class _GigsScreenState extends State<GigsScreen> {
   static const int _kPageSize = 20;
 
+  bool _isFrench = false;
   bool _loading = true;
   String? _error;
   String _selectedCategory = 'all';
@@ -180,7 +181,7 @@ class _GigsScreenState extends State<GigsScreen> {
         final title = (p.marketTitle ?? '').toLowerCase();
         final content = p.content.toLowerCase();
         final provider = (p.authorName ?? '').toLowerCase();
-        final category = serviceCategoryLabel(p.marketCategory ?? '').toLowerCase();
+        final category = serviceCategoryLabel(p.marketCategory ?? '', isFrench: _isFrench).toLowerCase();
         return title.contains(q) ||
             content.contains(q) ||
             provider.contains(q) ||
@@ -273,6 +274,7 @@ class _GigsScreenState extends State<GigsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    _isFrench = l10n.isFrench;
     return Scaffold(
       appBar: GlobalAppBar(
         title: l10n.tr('gigs'),
@@ -384,7 +386,7 @@ class _GigsScreenState extends State<GigsScreen> {
                                   ...serviceMainCategories.map(
                                     (c) => DropdownMenuItem(
                                       value: c,
-                                      child: Text(serviceCategoryLabel(c)),
+                                      child: Text(serviceCategoryLabel(c, isFrench: _isFrench)),
                                     ),
                                   ),
                                 ],
@@ -624,7 +626,7 @@ class _GigsScreenState extends State<GigsScreen> {
                                               ),
                                               const SizedBox(height: 4),
                                               Text(
-                                                serviceCategoryLabel(p.marketCategory ?? ''),
+                                                serviceCategoryLabel(p.marketCategory ?? '', isFrench: _isFrench),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(

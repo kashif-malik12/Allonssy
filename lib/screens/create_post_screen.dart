@@ -716,6 +716,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final isFrench = l10n.isFrench;
     return Scaffold(
       appBar: AppBar(title: Text(l10n.tr('create_post'))),
       bottomNavigationBar: const GlobalBottomNav(),
@@ -786,7 +787,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     initialValue: _selectedPostType,
                     items: PostType.values
                         .where((t) => _isRestaurantAuthor || t != PostType.foodAd)
-                        .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
+                        .map((t) => DropdownMenuItem(value: t, child: Text(t.localizedLabel(isFrench: isFrench))))
                         .toList(),
                     onChanged: (v) {
                       if (v == null) return;
@@ -913,7 +914,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     DropdownButtonFormField<String>(
                       initialValue: _selectedMarketCategory,
                       items: marketMainCategories
-                          .map((c) => DropdownMenuItem(value: c, child: Text(marketCategoryLabel(c))))
+                          .map((c) => DropdownMenuItem(value: c, child: Text(marketCategoryLabel(c, isFrench: isFrench))))
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;
@@ -930,7 +931,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     DropdownButtonFormField<String>(
                       initialValue: _selectedServiceCategory,
                       items: serviceMainCategories
-                          .map((c) => DropdownMenuItem(value: c, child: Text(serviceCategoryLabel(c))))
+                          .map((c) => DropdownMenuItem(value: c, child: Text(serviceCategoryLabel(c, isFrench: isFrench))))
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;
@@ -947,7 +948,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     DropdownButtonFormField<String>(
                       initialValue: _selectedFoodCategory,
                       items: foodMainCategories
-                          .map((c) => DropdownMenuItem(value: c, child: Text(foodCategoryLabel(c))))
+                          .map((c) => DropdownMenuItem(value: c, child: Text(foodCategoryLabel(c, isFrench: isFrench))))
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;

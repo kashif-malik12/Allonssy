@@ -25,20 +25,22 @@ extension PostTypeX on PostType {
     }
   }
 
-  String get label {
+  String get label => localizedLabel(isFrench: false);
+
+  String localizedLabel({bool isFrench = false}) {
     switch (this) {
       case PostType.post:
-        return 'Posts';
+        return isFrench ? 'Publication' : 'Posts';
       case PostType.market:
-        return 'Buy & Sell';
+        return isFrench ? 'Achat & Vente' : 'Buy & Sell';
       case PostType.serviceOffer:
-        return 'Offer Service';
+        return isFrench ? 'Offre de service' : 'Offer Service';
       case PostType.serviceRequest:
-        return 'Request Service';
+        return isFrench ? 'Demande de service' : 'Request Service';
       case PostType.lostFound:
-        return 'Lost & Found';
+        return isFrench ? 'Objets perdus & trouvés' : 'Lost & Found';
       case PostType.foodAd:
-        return 'Food Ad';
+        return isFrench ? 'Annonce alimentaire' : 'Food Ad';
     }
   }
 }

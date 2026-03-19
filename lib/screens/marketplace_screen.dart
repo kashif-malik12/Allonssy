@@ -21,6 +21,7 @@ class MarketplaceScreen extends StatefulWidget {
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   static const int _kPageSize = 20;
 
+  bool _isFrench = false;
   bool _loading = true;
   String? _error;
   String _selectedCategory = 'all';
@@ -244,7 +245,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         final title = (p.marketTitle ?? '').toLowerCase();
         final content = p.content.toLowerCase();
         final seller = (p.authorName ?? '').toLowerCase();
-        final category = marketCategoryLabel(p.marketCategory ?? '').toLowerCase();
+        final category = marketCategoryLabel(p.marketCategory ?? '', isFrench: _isFrench).toLowerCase();
         return title.contains(q) ||
             content.contains(q) ||
             seller.contains(q) ||
@@ -337,6 +338,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    _isFrench = l10n.isFrench;
     return Scaffold(
       appBar: GlobalAppBar(
         title: l10n.tr('marketplace'),
@@ -444,7 +446,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                               ...marketMainCategories.map(
                                 (c) => DropdownMenuItem(
                                   value: c,
-                                  child: Text(marketCategoryLabel(c)),
+                                  child: Text(marketCategoryLabel(c, isFrench: _isFrench)),
                                 ),
                               ),
                             ],
@@ -641,7 +643,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                               ),
                                               const SizedBox(height: 4),
                                               Text(
-                                                marketCategoryLabel(p.marketCategory ?? ''),
+                                                marketCategoryLabel(p.marketCategory ?? '', isFrench: _isFrench),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(

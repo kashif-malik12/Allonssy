@@ -21,6 +21,7 @@ class FoodsScreen extends StatefulWidget {
 class _FoodsScreenState extends State<FoodsScreen> {
   static const int _kPageSize = 24;
 
+  bool _isFrench = false;
   bool _loading = true;
   String? _error;
   String _selectedCategory = 'all';
@@ -133,7 +134,7 @@ class _FoodsScreenState extends State<FoodsScreen> {
             p.content.toLowerCase().contains(q) ||
             (p.authorBusinessName ?? '').toLowerCase().contains(q) ||
             (p.authorName ?? '').toLowerCase().contains(q) ||
-            foodCategoryLabel(p.marketCategory ?? '').toLowerCase().contains(q);
+            foodCategoryLabel(p.marketCategory ?? '', isFrench: _isFrench).toLowerCase().contains(q);
       }).toList();
     }
 
@@ -222,6 +223,7 @@ class _FoodsScreenState extends State<FoodsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    _isFrench = l10n.isFrench;
     return Scaffold(
       appBar: GlobalAppBar(
         title: l10n.tr('food_ads'),
@@ -263,7 +265,7 @@ class _FoodsScreenState extends State<FoodsScreen> {
               items: [
                 DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_food_categories'))),
                 ...foodMainCategories.map(
-                  (c) => DropdownMenuItem(value: c, child: Text(foodCategoryLabel(c))),
+                  (c) => DropdownMenuItem(value: c, child: Text(foodCategoryLabel(c, isFrench: _isFrench))),
                 ),
               ],
               onChanged: (v) {
@@ -428,7 +430,7 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                               ),
                                               const SizedBox(height: 4),
                                               Text(
-                                                foodCategoryLabel(p.marketCategory ?? ''),
+                                                foodCategoryLabel(p.marketCategory ?? '', isFrench: _isFrench),
                                                 style: TextStyle(
                                                   fontSize: 12,
                                                   color: Colors.grey.shade700,

@@ -11,8 +11,8 @@ const List<String> restaurantMainCategories = [
   'other',
 ];
 
-String restaurantCategoryLabel(String value) {
-  return localizedRestaurantCategoryLabel(value);
+String restaurantCategoryLabel(String value, {bool isFrench = false}) {
+  return localizedRestaurantCategoryLabel(value, isFrench: isFrench);
 }
 
 String localizedRestaurantCategoryLabel(String value, {bool isFrench = false}) {

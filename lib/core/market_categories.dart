@@ -14,34 +14,38 @@ const List<String> marketMainCategories = [
   'other',
 ];
 
-String marketCategoryLabel(String value) {
+String marketCategoryLabel(String value, {bool isFrench = false}) {
+  return localizedMarketCategoryLabel(value, isFrench: isFrench);
+}
+
+String localizedMarketCategoryLabel(String value, {bool isFrench = false}) {
   switch (value) {
     case 'house_sale':
-      return 'House for Sale';
+      return isFrench ? 'Maison à vendre' : 'House for Sale';
     case 'house_rent':
-      return 'House for Rent';
+      return isFrench ? 'Maison à louer' : 'House for Rent';
     case 'mobile_phone':
-      return 'Mobile Phone';
+      return isFrench ? 'Téléphone mobile' : 'Mobile Phone';
     case 'computers':
-      return 'Computers';
+      return isFrench ? 'Informatique' : 'Computers';
     case 'bikes':
-      return 'Bikes';
+      return isFrench ? 'Vélos' : 'Bikes';
     case 'electronics':
-      return 'Electronics';
+      return isFrench ? 'Électronique' : 'Electronics';
     case 'fashion':
-      return 'Fashion';
+      return isFrench ? 'Mode' : 'Fashion';
     case 'home_garden':
-      return 'Home & Garden';
+      return isFrench ? 'Maison et jardin' : 'Home & Garden';
     case 'vehicles':
-      return 'Vehicles';
+      return isFrench ? 'Véhicules' : 'Vehicles';
     case 'sports':
-      return 'Sports';
+      return isFrench ? 'Sports' : 'Sports';
     case 'books':
-      return 'Books';
+      return isFrench ? 'Livres' : 'Books';
     case 'toys':
-      return 'Toys';
+      return isFrench ? 'Jouets' : 'Toys';
     case 'other':
-      return 'Other';
+      return isFrench ? 'Autre' : 'Other';
     default:
       return value;
   }

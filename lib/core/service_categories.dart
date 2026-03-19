@@ -12,30 +12,34 @@ const List<String> serviceMainCategories = [
   'other',
 ];
 
-String serviceCategoryLabel(String value) {
+String serviceCategoryLabel(String value, {bool isFrench = false}) {
+  return localizedServiceCategoryLabel(value, isFrench: isFrench);
+}
+
+String localizedServiceCategoryLabel(String value, {bool isFrench = false}) {
   switch (value) {
     case 'marketing':
-      return 'Marketing';
+      return isFrench ? 'Marketing' : 'Marketing';
     case 'finance':
-      return 'Finance';
+      return isFrench ? 'Finance' : 'Finance';
     case 'business_services':
-      return 'Business Services';
+      return isFrench ? 'Services aux entreprises' : 'Business Services';
     case 'home_services':
-      return 'Home Services';
+      return isFrench ? 'Services à domicile' : 'Home Services';
     case 'tech':
-      return 'Tech';
+      return isFrench ? 'Technologie' : 'Tech';
     case 'design':
-      return 'Design';
+      return isFrench ? 'Design' : 'Design';
     case 'education':
-      return 'Education';
+      return isFrench ? 'Éducation' : 'Education';
     case 'beauty_wellness':
-      return 'Beauty & Wellness';
+      return isFrench ? 'Beauté et bien-être' : 'Beauty & Wellness';
     case 'events':
-      return 'Events';
+      return isFrench ? 'Événements' : 'Events';
     case 'transport':
-      return 'Transport';
+      return isFrench ? 'Transport' : 'Transport';
     case 'other':
-      return 'Other';
+      return isFrench ? 'Autre' : 'Other';
     default:
       return value;
   }
