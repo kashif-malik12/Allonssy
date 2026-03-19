@@ -631,6 +631,8 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
                                     final kind = (m['message_type'] as String?) ?? 'text';
                                     final amount = (m['offer_amount'] as num?)?.toDouble();
                                     final content = (m['content'] as String?) ?? '';
+                                    final msgReadAt = m['read_at'] as String?;
+                                    final msgCreatedAt = m['created_at'] as String?;
 
                                     final text = switch (kind) {
                                       'offer' => 'Made offer: EUR ${amount?.toStringAsFixed(2) ?? '--'}',
@@ -639,6 +641,15 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
                                       'rejected' => 'Offer rejected',
                                       _ => content,
                                     };
+
+                                    // Format time
+                                    String? timeStr;
+                                    if (msgCreatedAt != null) {
+                                      try {
+                                        final dt = DateTime.parse(msgCreatedAt).toLocal();
+                                        timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                                      } catch (_) {}
+                                    }
 
                                     return Align(
                                       alignment:
@@ -660,9 +671,39 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
                                               color: const Color(0xFFE6DDCE),
                                             ),
                                           ),
-                                          child: Text(
-                                            text,
-                                            style: const TextStyle(height: 1.35),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                text,
+                                                style: const TextStyle(height: 1.35),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (timeStr != null)
+                                                    Text(
+                                                      timeStr,
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.grey.shade600,
+                                                      ),
+                                                    ),
+                                                  if (isMe) ...[
+                                                    const SizedBox(width: 4),
+                                                    Icon(
+                                                      msgReadAt != null ? Icons.done_all : Icons.done,
+                                                      size: 14,
+                                                      color: msgReadAt != null
+                                                          ? const Color(0xFF0F766E)
+                                                          : Colors.grey.shade500,
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),

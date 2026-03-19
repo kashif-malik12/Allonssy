@@ -376,7 +376,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessageBubble(bool isMe, ChatMessagePayload payload) {
+  Widget _buildMessageBubble(
+    bool isMe,
+    ChatMessagePayload payload, {
+    String? createdAt,
+    String? readAt,
+  }) {
+    final timeStr = _formatTime(createdAt);
+    final seen = readAt != null;
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -426,9 +434,50 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ],
+          // Timestamp + read receipt row (own messages only)
+          if (isMe) ...[
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (timeStr != null)
+                  Text(
+                    timeStr,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                Icon(
+                  seen ? Icons.done_all : Icons.done,
+                  size: 14,
+                  color: seen ? const Color(0xFF0F766E) : Colors.grey.shade500,
+                ),
+              ],
+            ),
+          ] else if (timeStr != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              timeStr,
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String? _formatTime(String? isoString) {
+    if (isoString == null) return null;
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -505,7 +554,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           return Align(
                             alignment:
                                 isMe ? Alignment.centerRight : Alignment.centerLeft,
-                            child: _buildMessageBubble(isMe, payload),
+                            child: _buildMessageBubble(
+                              isMe,
+                              payload,
+                              createdAt: m['created_at'] as String?,
+                              readAt: m['read_at'] as String?,
+                            ),
                           );
                         },
                       ),
