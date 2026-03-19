@@ -1,19 +1,24 @@
 # Play Store Release Pack
 
-## Current Release Blocker
+## Release Status
 
-Before uploading to Google Play, fix Android release signing in [android/app/build.gradle.kts](/C:/Users/ALI/Documents/VS%20Projects/Allonssy/android/app/build.gradle.kts).
+- App is live on Google Play internal testing track.
+- Android release signing uses the dedicated upload keystore at `android/allonssy-upload-keystore.jks` (gitignored — back up securely).
+- Google Play App Signing is active — Google re-signs the AAB with their own delivery certificate. SHA-1 and SHA-256 fingerprints for both the upload keystore and the Play Store delivery certificate must be registered in Google Cloud Console (Android OAuth client) and Firebase.
 
-Current state:
-- `release` still uses `signingConfigs.getByName("debug")`
+### SHA keys registered
 
-This is not a proper production Play Store setup. Create a dedicated release keystore and switch the release build to that signing config before first production upload.
+| Certificate | SHA-1 | SHA-256 | Registered in |
+|-------------|-------|---------|---------------|
+| Debug keystore | `BB:E5:B1:A4:01:7C:10:A1:37:BA:03:15:34:E4:ED:87:D3:D5:AE:F8` | — | Firebase (debug builds) |
+| Upload keystore | — | `46:D4:62:90:E1:98:25:4E:E1:0C:D2:87:20:54:59:8B:00:45:E8:AC:9D:D8:73:18:BD:CE:DE:67:DD:79:52:05` | `assetlinks.json` |
+| Play Store delivery | (from Play Console) | (from Play Console) | Google Cloud Console Android OAuth + Firebase |
 
 ---
 
 ## App Identity
 
-- App name: `Allonssy`
+- App name: `Allonssy!`
 - Package name: `com.allonssy.app`
 - Website: `https://app.allonssy.com`
 - Company: `Tradister SAS`
@@ -138,31 +143,28 @@ Before taking screenshots:
 
 ---
 
-## Release Checklist
+## Version History
 
-1. Create a real Android release keystore.
-2. Update `android/app/build.gradle.kts` to use release signing.
-3. Increase `versionCode` and `versionName` if needed.
-4. Build an Android App Bundle:
-   `flutter build appbundle --release`
-5. Test the release build on a real Android device.
-6. Prepare Play Store graphics:
-   - app icon
-   - feature graphic
-   - phone screenshots
-7. Paste short and full descriptions from this doc.
-8. Complete Play Console data safety, privacy policy, app access, and content rating.
-9. Upload the `.aab`.
-10. Roll out to internal testing first before production.
+| Version | Build | Date | Notes |
+|---------|-------|------|-------|
+| 1.0.1+2 | 2 | 2026-03-19 | Google Sign-In SHA fix for Play Store (Play Store delivery SHA-1 added to Google Cloud Console Android OAuth, SHA-256 to Firebase). Debug SHA-1 added as a second Android OAuth client. |
+| 1.0.2+3 | 3 | 2026-03-19 | French translations for marketplace/gigs/foods/restaurants/businesses categories, post types, create post launcher, detail screens. Chat read receipt ticks + timestamps. Banned emails admin feature. |
+| 1.0.3+4 | 4 | 2026-03-19 | Fixed app name showing "Allonssy" instead of "Allonssy!" after install (restored `android:label="Allonssy!"`). |
+
+---
+
+## Release Checklist (for future releases)
+
+1. Bump `version` in `pubspec.yaml` (name+number).
+2. Build: `flutter build appbundle --release`
+3. Commit + push.
+4. Go to Play Console → Internal testing → Create new release → Upload `.aab`.
+5. Add release notes → Save → Review → Start rollout.
+
+AAB output: `build/app/outputs/bundle/release/app-release.aab`
 
 ---
 
 ## Recommendation
 
-Do not push directly to production Play release from the current signing setup.
-
-First do:
-- dedicated release keystore
-- release AAB test on device
-- fresh screenshots with current Allonssy branding
-- internal test track upload
+Roll out new versions to internal testing first, then promote to production once verified on device.

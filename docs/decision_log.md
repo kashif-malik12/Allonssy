@@ -379,3 +379,71 @@ All five display locations use this rule:
 - `web/.well-known/assetlinks.json` must use the release keystore SHA-256 fingerprint, not the debug keystore fingerprint.
 - Current production fingerprint: `46:D4:62:90:E1:98:25:4E:E1:0C:D2:87:20:54:59:8B:00:45:E8:AC:9D:D8:73:18:BD:CE:DE:67:DD:79:52:05`
 - Any older notes referring to the debug-keystore fingerprint are superseded by this entry.
+
+---
+
+## Google Play App Signing & SHA Keys (2026-03-19)
+
+- Google Play App Signing re-signs the AAB with Google's own delivery certificate — the SHA keys for the delivery certificate differ from the upload keystore.
+- **Google Cloud Console Android OAuth client** must have the Play Store delivery SHA-1 (from Play Console → Setup → App signing → App signing key certificate).
+- **Firebase** must have both: the upload keystore SHA-256 AND the Play Store delivery SHA-256. Firebase supports multiple SHA fingerprints per Android app.
+- A **second** Android OAuth client (debug) was created in Google Cloud Console with the debug SHA-1 (`BB:E5:B1:A4:01:7C:10:A1:37:BA:03:15:34:E4:ED:87:D3:D5:AE:F8`) so that debug builds still work after the Play Store SHA replaced the original client's SHA-1.
+- As of 2026-03-19: Firebase has 2 SHA-1s + 2 SHA-256s. Google Cloud Console has 2 Android OAuth clients (debug + production).
+
+---
+
+## Banned Emails (2026-03-19)
+
+- Migration `supabase/migrations/20260319120000_add_banned_emails.sql` creates a `banned_emails` table with a unique index on `lower(email)`.
+- A `BEFORE INSERT` trigger `check_banned_email_on_signup()` on `auth.users` raises an exception if the email matches any banned entry, blocking re-registration at the DB level.
+- RLS policy: admins only (via `profiles.is_admin`).
+- Applied to VPS via SSH + docker exec.
+- Admin UI in `lib/features/moderation/presentation/admin_review_screen.dart`:
+  - New "Banned" tab (tab 8 — `TabController(length: 8)`).
+  - Paginated banned list with unban buttons and a manual add form.
+  - When deleting a user, admin is prompted "Ban email address?" — if yes, email is immediately added to `banned_emails`.
+  - "Banned Emails" quick-nav card added to admin dashboard.
+
+---
+
+## White Hover Fix — Chips & FilledButton (2026-03-19)
+
+- `ChipThemeData` has no `overlayColor` property. The hover tint on chips is controlled via `color: WidgetStateProperty.resolveWith(...)` — this sets the chip background per state (selected/hovered/pressed) rather than a separate overlay.
+- `FilledButtonThemeData` now uses `ButtonStyle` with `overlayColor: WidgetStateProperty.resolveWith(...)` using a dark (black) tint, which darkens the teal background on hover instead of flashing white (Material 3 default uses `onPrimary` = white).
+- `OutlinedButtonThemeData`: added `overlayColor` with teal-tinted press state.
+
+---
+
+## French Category Translations (2026-03-19)
+
+- All 5 category label functions now accept `{bool isFrench = false}`:
+  - `marketCategoryLabel` (`lib/core/market_categories.dart`)
+  - `serviceCategoryLabel` (`lib/core/service_categories.dart`)
+  - `foodCategoryLabel` (`lib/core/food_categories.dart`)
+  - `restaurantCategoryLabel` (`lib/core/restaurant_categories.dart`)
+  - `businessCategoryLabel` (`lib/core/business_categories.dart`)
+- All list screens (`marketplace_screen`, `gigs_screen`, `foods_screen`, `restaurants_screen`, `businesses_screen`) store `bool _isFrench` set from `context.l10n.isFrench` in `build()` and pass it to every label call.
+- All detail screens (`marketplace_product_detail_screen`, `gig_detail_screen`, `food_ad_detail_screen`) use `final isFrench = context.l10n.isFrench;` and pass it to label calls. Missing `app_localizations.dart` import was added to each.
+- `create_post_screen.dart`: post type dropdown uses `t.localizedLabel(isFrench: isFrench)`, sub-category dropdowns pass `isFrench`.
+- `feed_filter_setup_screen.dart`: was missing `app_localizations.dart` import — added. All 3 category chip sections now pass `isFrench`.
+- `PostTypeX.localizedLabel({bool isFrench = false})` added to `lib/core/post_types.dart`. Old `label` getter delegates to it for backward compatibility.
+- `lib/core/create_post_launcher.dart` fully translated (Create post → Créer une publication, Camera → Appareil photo, etc.).
+- `feed_screen.dart` `_getPostTypeBadge()` and `_getCategoryBadge()` and `_intentLabel()` updated for French.
+
+---
+
+## Chat Read Receipt Ticks (2026-03-19)
+
+- `read_at` column already existed on both `messages` and `offer_messages` tables and was returned by the `get_messages` RPC.
+- UI only changes:
+  - `chat_screen.dart`: `_buildMessageBubble` accepts `createdAt` and `readAt` params. Own messages show `Icons.done` (grey = sent) or `Icons.done_all` (teal = seen). Timestamp shown on all messages. `_formatTime(String? isoString)` helper converts ISO to `HH:mm` local time.
+  - `offer_chat_screen.dart`: same inline tick + timestamp logic.
+- Realtime UPDATE subscription was already in place — ticks update live when recipient reads.
+
+---
+
+## App Name Fix (2026-03-19)
+
+- `android:label` in `AndroidManifest.xml` was set to `"Allonssy"` (without `!`) in a pre-release cleanup commit.
+- Restored to `android:label="Allonssy!"`.
+- Version bumped to `1.0.3+4`; AAB rebuilt and uploaded to Play Store internal testing.
