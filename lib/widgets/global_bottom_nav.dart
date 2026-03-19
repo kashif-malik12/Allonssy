@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app/chat_singletons.dart';
 import '../core/localization/app_localizations.dart';
-import '../features/moderation/providers/admin_access_provider.dart';
 import '../features/notifications/providers/notification_unread_provider.dart';
 
 class GlobalBottomNav extends ConsumerWidget {
@@ -111,7 +110,21 @@ class GlobalBottomNav extends ConsumerWidget {
   Future<void> _openOptions(BuildContext context) async {
     final l10n = context.l10n;
     final currentPath = GoRouterState.of(context).uri.path;
-    final isAdmin = await ProviderScope.containerOf(context).read(adminAccessProvider.future);
+    // Query is_admin fresh each time — avoids stale cached provider values.
+    bool isAdmin = false;
+    try {
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid != null) {
+        final row = await Supabase.instance.client
+            .from('profiles')
+            .select('is_admin')
+            .eq('id', uid)
+            .maybeSingle();
+        isAdmin = row?['is_admin'] == true;
+      }
+    } catch (_) {
+      isAdmin = false;
+    }
 
     if (!context.mounted) return;
 
