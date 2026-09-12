@@ -13,7 +13,6 @@
 | Debug keystore | `BB:E5:B1:A4:01:7C:10:A1:37:BA:03:15:34:E4:ED:87:D3:D5:AE:F8` | — | Firebase (debug builds) |
 | Upload keystore | — | `46:D4:62:90:E1:98:25:4E:E1:0C:D2:87:20:54:59:8B:00:45:E8:AC:9D:D8:73:18:BD:CE:DE:67:DD:79:52:05` | `assetlinks.json` |
 | Play Store delivery | (from Play Console) | (from Play Console) | Google Cloud Console Android OAuth + Firebase |
-
 ---
 
 ## App Identity
@@ -151,6 +150,7 @@ Before taking screenshots:
 | 1.0.2+3 | 3 | 2026-03-19 | French translations for marketplace/gigs/foods/restaurants/businesses categories, post types, create post launcher, detail screens. Chat read receipt ticks + timestamps. Banned emails admin feature. |
 | 1.0.3+4 | 4 | 2026-03-19 | Fixed app name showing "Allonssy" instead of "Allonssy!" after install (restored `android:label="Allonssy!"`). |
 | 1.1.0+5 | 5 | 2026-04-03 | Emoji picker in chat, offer chat, comments, and create post. Message reply (long-press → reply with quoted bubble). Message likes (long-press → ❤️). **First production release.** |
+| 1.1.1+6 | 6 | 2026-04-07 | Resubmission after Play policy clearance. Installed app name aligned to `Allonssy!` on iOS and Android. |
 
 ---
 
