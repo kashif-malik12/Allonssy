@@ -475,3 +475,66 @@ All five display locations use this rule:
 - `android:label` in `AndroidManifest.xml` was set to `"Allonssy"` (without `!`) in a pre-release cleanup commit.
 - Restored to `android:label="Allonssy!"`.
 - Version bumped to `1.0.3+4`; AAB rebuilt and uploaded to Play Store internal testing.
+
+---
+
+## Terminology Updates: Business or Service Provider & Professionals (2026-09-12)
+
+- Updated account type registration/edit label from `"Business"` to `"Business or Service Provider"` (French: `"Entreprise ou prestataire de services"`) in `AppLocalizations`.
+- Updated feed screen "Local directory" section to show `"Professionals"` (French: `"Professionnels"`) instead of `"Businesses"`, with subtitle `"Explore nearby local professionals."` (French: `"Explorez les professionnels locaux a proximite."`).
+- Updated top title of the businesses screen (`lib/screens/businesses_screen.dart`) to `"Professionals and Service Providers"` (French: `"Professionnels et prestataires de services"`).
+- Files updated: `lib/core/localization/app_localizations.dart`, `lib/screens/feed_screen.dart`, `lib/screens/businesses_screen.dart`.
+
+---
+
+## Web OAuth Redirect & Root Route Fix (2026-09-12)
+
+- Google OAuth on web redirects back to root with auth code (`/?code=...`).
+- `GoRouter` was throwing `GoException: no routes for location: /` because no root route was defined.
+- Added `GoRoute(path: '/')` with loading indicator and updated router `redirect`:
+  - When `path == '/'` with an auth `code` parameter, holds on root so Supabase can finish PKCE token exchange.
+  - When authenticated, redirects from root to `/feed`.
+  - When unauthenticated without code, redirects to `/login`.
+- Files updated: `lib/app/router.dart`.
+- VPS config: added `http://localhost:*/**,http://localhost:*,http://127.0.0.1:*/**,http://127.0.0.1:*` to `ADDITIONAL_REDIRECT_URLS` in `~/supabase-project/.env` and recreated `supabase-auth` container so OAuth redirects stay on localhost during development.
+
+---
+
+## 2-Tier Business & Professional Categorization (2026-09-12)
+
+- Replaced flat legacy categories with a 2-tier categorization system (Main Category + Subcategory):
+  - **Health & Medical**: Doctors, Clinics, Pharmacies, Therapists
+  - **Professional & Legal**: Lawyers, Notaries, Accountants, Consultants
+  - **Home & Trades**: Electricians, Plumbers, Construction, Maintenance
+  - **Auto & Mobility**: Garages, Dealers, Mechanics
+  - **Beauty & Personal Care**: Salons, Barbers, Spas
+  - **Education & Fitness**: Tutors, Driving Schools, Gyms, Trainers
+  - **B2B & Industry**: Manufacturing, IT Services, Wholesale
+- **Database changes** applied directly on VPS (`docker exec -i supabase-db psql`):
+  - Dropped old constraint `profiles_business_type_check`.
+  - Added `business_subtype text` column to `profiles`.
+  - Added index `idx_profiles_business_type_subtype (business_type, business_subtype)`.
+  - Migrated legacy data (`it_software` -> `b2b_industry` with `it_services`).
+  - Migration file: `supabase/migrations/20260912230000_add_business_subtype_and_update_categories.sql`.
+- **UI changes**:
+  - `lib/core/business_categories.dart`: Core taxonomy, definitions, and English/French helper formatters.
+  - `lib/features/profile/presentation/complete_profile_screen.dart`: Two dropdowns for Main Category and Subcategory; Subcategory dynamically populates and validates based on selected Main Category.
+  - `lib/screens/businesses_screen.dart`: Filter row has a Main Category dropdown filter and dynamic Subcategory filter when a main category is selected. Displays `Main Category • Subcategory` on cards.
+  - `lib/features/profile/presentation/profile_detail_screen.dart`: Renders formatted category and subcategory string.
+  - `lib/core/localization/app_localizations.dart`: Added category and subcategory localization keys.
+  - `test/widget_test.dart`: Updated unit tests verifying the 7 main categories, all subcategories, and localized formatters.
+
+---
+
+## Feed Share Badge & Visibility Badge Refinement (2026-09-12)
+
+- Redesigned the share badge on feed post cards (`lib/screens/feed_screen.dart`):
+  - Previously, a post allowing sharing rendered an amber author badge containing clunky English phrases like `"Public can share"` directly next to `[PUBLIC]`, appearing repetitive and awkward (`[PUBLIC] [Public can share]`).
+  - Created a dedicated `_buildShareBadge(String scope)` with a clean blue pill design (`Color(0xFF2563EB)` alpha border/fill) and an `Icons.share_outlined` icon.
+  - Replaced the wordy phrasing with concise, professional terms:
+    - `public`: `Shareable` (FR: `Partageable`)
+    - `followers`: `Share: Followers` (FR: `Partage : Abonnés`)
+    - `connections`: `Share: Connections` (FR: `Partage : Relations`)
+  - Localized the visibility badge `[LOCAL]` / `[PUBLIC]` properly via `AppLocalizations`.
+  - Added localization keys to `AppLocalizations` (`_en` and `_fr`) and added test assertions to `test/widget_test.dart`.
+

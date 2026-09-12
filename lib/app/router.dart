@@ -94,6 +94,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isAdminRoute =
           path.startsWith('/adminlive') || path.startsWith('/admin/review');
 
+      // If at root '/' with an OAuth auth code or token, hold on '/' so Supabase can complete the exchange.
+      final hasAuthCode =
+          state.uri.queryParameters.containsKey('code') ||
+          state.uri.fragment.contains('access_token');
+      if (path == '/' && hasAuthCode) {
+        return null;
+      }
+
       // ❌ Not logged in → must be on auth pages or public pages
       if (!loggedIn) {
         return (isAuth || isResetPassword || isPublicPage) ? null : '/login';
@@ -181,13 +189,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return isFeedSetup ? null : '/feed-setup';
         }
         if (isOnboarding || isFeedSetup) return '/feed';
-        // Logged in with complete profile but still on an auth page → go to feed
-        if (isAuth) return '/feed';
+        // Logged in with complete profile but still on an auth page or root -> go to feed
+        if (isAuth || path == '/') return '/feed';
         return null;
       }
     },
 
     routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const Scaffold(
+          backgroundColor: Color(0xFFF5F1E8),
+          body: Center(
+            child: CircularProgressIndicator(color: Color(0xFF0F766E)),
+          ),
+        ),
+      ),
+
       GoRoute(
         path: '/login',
         builder: (context, state) => LoginScreen(

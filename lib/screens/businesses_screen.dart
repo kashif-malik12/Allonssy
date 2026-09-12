@@ -24,6 +24,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
   String? _error;
   String _search = '';
   String _selectedCategory = 'all';
+  String _selectedSubcategory = 'all';
   double _maxDistanceKm = 20;
   final _searchCtrl = TextEditingController();
 
@@ -83,15 +84,29 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
           .toList();
     }
 
+    if (_selectedSubcategory != 'all') {
+      items = items
+          .where((r) => (r['business_subtype'] ?? '').toString() == _selectedSubcategory)
+          .toList();
+    }
+
     if (_search.trim().isNotEmpty) {
       final q = _search.toLowerCase().trim();
       items = items.where((r) {
+        final bType = (r['business_type'] ?? '').toString();
+        final bSubType = (r['business_subtype'] ?? '').toString();
         return (r['business_name'] ?? '').toString().toLowerCase().contains(q) ||
             (r['full_name'] ?? '').toString().toLowerCase().contains(q) ||
             (r['bio'] ?? '').toString().toLowerCase().contains(q) ||
             (r['business_profile'] ?? '').toString().toLowerCase().contains(q) ||
             (r['city'] ?? '').toString().toLowerCase().contains(q) ||
-            businessCategoryLabel((r['business_type'] ?? '').toString(), isFrench: _isFrench)
+            businessCategoryLabel(bType, subcategory: bSubType, isFrench: _isFrench)
+                .toLowerCase()
+                .contains(q) ||
+            businessMainCategoryLabel(bType, isFrench: _isFrench)
+                .toLowerCase()
+                .contains(q) ||
+            businessSubcategoryLabel(bSubType, isFrench: _isFrench)
                 .toLowerCase()
                 .contains(q);
       }).toList();
@@ -151,7 +166,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
         final data = await db
             .from('profiles')
             .select(
-                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, is_disabled')
+                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, business_subtype, is_disabled')
             .eq('account_type', 'business')
             .eq('is_restaurant', false)
             .eq('is_disabled', false)
@@ -161,7 +176,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       } on PostgrestException {
         final data = await db
             .from('profiles')
-            .select('id, full_name, business_name, job_title, bio, avatar_url, city, latitude, longitude, account_type, business_type, is_disabled')
+            .select('id, full_name, business_name, job_title, bio, avatar_url, city, latitude, longitude, account_type, business_type, business_subtype, is_disabled')
             .eq('account_type', 'business')
             .order('business_name')
             .range(0, _kPageSize - 1);
@@ -202,7 +217,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
         final data = await db
             .from('profiles')
             .select(
-                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, is_disabled')
+                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, business_subtype, is_disabled')
             .eq('account_type', 'business')
             .eq('is_restaurant', false)
             .eq('is_disabled', false)
@@ -212,7 +227,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       } on PostgrestException {
         final data = await db
             .from('profiles')
-            .select('id, full_name, business_name, job_title, bio, avatar_url, city, latitude, longitude, account_type, business_type, is_disabled')
+            .select('id, full_name, business_name, job_title, bio, avatar_url, city, latitude, longitude, account_type, business_type, business_subtype, is_disabled')
             .eq('account_type', 'business')
             .order('business_name')
             .range(from, to);
@@ -244,7 +259,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
 
     return Scaffold(
       appBar: GlobalAppBar(
-        title: l10n.tr('businesses'),
+        title: l10n.tr('professionals_and_service_providers'),
         showBackIfPossible: true,
         homeRoute: '/feed',
       ),
@@ -283,20 +298,55 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
               items: [
                 DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_categories'))),
                 ...businessMainCategories.map(
-                  (c) => DropdownMenuItem(value: c, child: Text(businessCategoryLabel(c, isFrench: _isFrench))),
+                  (c) => DropdownMenuItem(
+                    value: c,
+                    child: Text(businessMainCategoryLabel(c, isFrench: _isFrench)),
+                  ),
                 ),
               ],
               onChanged: (v) {
                 if (v == null) return;
-                setState(() => _selectedCategory = v);
-                _load();
+                setState(() {
+                  _selectedCategory = v;
+                  _selectedSubcategory = 'all';
+                });
               },
               decoration: InputDecoration(
                 border: const OutlineInputBorder(),
-                labelText: l10n.tr('business_category'),
+                labelText: l10n.tr('business_main_category'),
               ),
             ),
           ),
+          if (_selectedCategory != 'all' && businessSubcategories(_selectedCategory).isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: DropdownButtonFormField<String>(
+                key: ValueKey('sub_filter_${_selectedCategory}_$_selectedSubcategory'),
+                initialValue: (businessSubcategories(_selectedCategory).contains(_selectedSubcategory) ||
+                        _selectedSubcategory == 'all')
+                    ? _selectedSubcategory
+                    : 'all',
+                items: [
+                  DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_subcategories'))),
+                  ...businessSubcategories(_selectedCategory).map(
+                    (s) => DropdownMenuItem(
+                      value: s,
+                      child: Text(businessSubcategoryLabel(s, isFrench: _isFrench)),
+                    ),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _selectedSubcategory = v);
+                },
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  labelText: l10n.tr('business_subcategory'),
+                ),
+              ),
+            ),
+          ],
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Row(
@@ -408,11 +458,11 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
                                               ),
                                             ),
                                           ),
-                                        Text(
-                                          '${(b['business_type'] ?? '').toString().isNotEmpty ? businessCategoryLabel((b['business_type'] ?? '').toString(), isFrench: _isFrench) : l10n.tr('business')}'
-                                          '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
-                                          '${(b['city'] ?? '').toString().isNotEmpty ? ' • ${(b['city'] ?? '').toString()}' : ''}',
-                                        ),
+                                          Text(
+                                            '${(b['business_type'] ?? '').toString().isNotEmpty ? businessCategoryLabel((b['business_type'] ?? '').toString(), subcategory: (b['business_subtype'] ?? '').toString(), isFrench: _isFrench) : l10n.tr('business')}'
+                                            '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
+                                            '${(b['city'] ?? '').toString().isNotEmpty ? ' • ${(b['city'] ?? '').toString()}' : ''}',
+                                          ),
                                         if (businessProfile.trim().isNotEmpty)
                                           Padding(
                                             padding: const EdgeInsets.only(top: 4),

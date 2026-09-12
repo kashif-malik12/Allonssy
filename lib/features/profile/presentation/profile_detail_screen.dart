@@ -82,7 +82,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   }) {
     final l10n = context.l10n;
     final entityName = _profileEntityName();
-    final categoryLabel = _profileCategoryLabel();
+    final categoryLabel = _profileCategoryLabel(isFrench: l10n.isFrench);
     final roleTitle = _profileRoleTitle();
     final businessDescription = _profileBusinessDescription();
     return Container(
@@ -285,17 +285,19 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     return businessName.isEmpty ? null : businessName;
   }
 
-  String? _profileCategoryLabel() {
+  String? _profileCategoryLabel({bool isFrench = false}) {
     final accountType =
         (_profile?['profile_type'] ?? _profile?['account_type'] ?? '').toString();
     if (accountType == 'business') {
       if (_profile?['is_restaurant'] == true) {
         final restaurantType = (_profile?['restaurant_type'] ?? '').toString().trim();
-        return restaurantType.isEmpty ? 'Restaurant' : restaurantCategoryLabel(restaurantType);
+        return restaurantType.isEmpty ? 'Restaurant' : restaurantCategoryLabel(restaurantType, isFrench: isFrench);
       }
 
       final businessType = (_profile?['business_type'] ?? '').toString().trim();
-      return businessType.isEmpty ? 'Business' : businessCategoryLabel(businessType);
+      final businessSubtype = (_profile?['business_subtype'] ?? '').toString().trim();
+      if (businessType.isEmpty && businessSubtype.isEmpty) return null;
+      return businessCategoryLabel(businessType, subcategory: businessSubtype, isFrench: isFrench);
     }
 
     if (accountType == 'org') {

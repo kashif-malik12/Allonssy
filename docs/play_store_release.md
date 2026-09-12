@@ -151,6 +151,7 @@ Before taking screenshots:
 | 1.0.3+4 | 4 | 2026-03-19 | Fixed app name showing "Allonssy" instead of "Allonssy!" after install (restored `android:label="Allonssy!"`). |
 | 1.1.0+5 | 5 | 2026-04-03 | Emoji picker in chat, offer chat, comments, and create post. Message reply (long-press → reply with quoted bubble). Message likes (long-press → ❤️). **First production release.** |
 | 1.1.1+6 | 6 | 2026-04-07 | Resubmission after Play policy clearance. Installed app name aligned to `Allonssy!` on iOS and Android. |
+| 1.2.0+7 | 7 | 2026-09-12 | 2-tier business and professional categories, refined feed post share badges, Google OAuth web redirect and root route fix. |
 
 ---
 

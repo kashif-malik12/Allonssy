@@ -46,6 +46,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   bool _isRestaurant = false;
   String? _restaurantType;
   String? _businessType;
+  String? _businessSubtype;
   int _radiusKm = 5;
   AppLanguage _appLanguage = AppLanguage.french;
 
@@ -136,7 +137,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         data = await Supabase.instance.client
             .from('profiles')
             .select(
-             'full_name, bio, business_profile, zipcode, city, latitude, longitude, profile_type, account_type, org_kind, radius_km, avatar_url, is_restaurant, restaurant_type, business_type, business_name, job_title, app_language',
+             'full_name, bio, business_profile, zipcode, city, latitude, longitude, profile_type, account_type, org_kind, radius_km, avatar_url, is_restaurant, restaurant_type, business_type, business_subtype, business_name, job_title, app_language',
             )
             .eq('id', user.id)
             .maybeSingle();
@@ -177,6 +178,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         _isRestaurant = profile['is_restaurant'] == true;
         _restaurantType = profile['restaurant_type'] as String?;
         _businessType = profile['business_type'] as String?;
+        _businessSubtype = profile['business_subtype'] as String?;
         _radiusKm = (profile['radius_km'] as int?) ?? 5;
         _appLanguage = AppLanguage.fromCode(profile['app_language'] as String?);
       });
@@ -363,6 +365,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         if (!_isRestaurant && _businessType == null) {
           throw context.l10n.tr('select_business_type');
         }
+        if (!_isRestaurant && _businessSubtype == null) {
+          throw context.l10n.tr('select_business_subcategory');
+        }
       }
       
       final updateData = <String, dynamic>{
@@ -386,6 +391,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         'is_restaurant': _accountType == 'business' ? _isRestaurant : false,
         'restaurant_type': (_accountType == 'business' && _isRestaurant) ? _restaurantType : null,
         'business_type': (_accountType == 'business' && !_isRestaurant) ? _businessType : null,
+        'business_subtype': (_accountType == 'business' && !_isRestaurant) ? _businessSubtype : null,
         
         'radius_km': _radiusKm,
         'city': city,
@@ -415,6 +421,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         if (!msg.contains('is_restaurant') &&
             !msg.contains('restaurant_type') &&
             !msg.contains('business_type') &&
+            !msg.contains('business_subtype') &&
             !msg.contains('business_profile') &&
             !msg.contains('app_language')) {
           rethrow;
@@ -424,6 +431,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           ..remove('is_restaurant')
           ..remove('restaurant_type')
           ..remove('business_type')
+          ..remove('business_subtype')
           ..remove('business_profile')
           ..remove('app_language');
 
@@ -579,6 +587,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                     _isRestaurant = false;
                     _restaurantType = null;
                     _businessType = null;
+                    _businessSubtype = null;
                   }
                 });
               },
@@ -598,6 +607,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                     _isRestaurant = v ?? false;
                     if (_isRestaurant) {
                       _businessType = null;
+                      _businessSubtype = null;
                     } else {
                       _restaurantType = null;
                     }
@@ -634,25 +644,59 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               ],
               if (!_isRestaurant) ...[
                 DropdownButtonFormField<String>(
-                  initialValue: _businessType,
+                  key: ValueKey('main_cat_$_businessType'),
+                  initialValue: businessMainCategories.contains(_businessType)
+                      ? _businessType
+                      : null,
                   items: businessMainCategories
                       .map((c) => DropdownMenuItem(
                             value: c,
                             child: Text(
-                              localizedBusinessCategoryLabel(
+                              businessMainCategoryLabel(
                                 c,
                                 isFrench: isFrench,
                               ),
                             ),
                           ))
                       .toList(),
-                  onChanged: (v) => setState(() => _businessType = v),
+                  onChanged: (v) {
+                    setState(() {
+                      _businessType = v;
+                      _businessSubtype = null;
+                    });
+                  },
                   decoration: InputDecoration(
                     border: const OutlineInputBorder(),
-                    labelText: l10n.tr('business_category'),
+                    labelText: l10n.tr('business_main_category'),
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (_businessType != null) ...[
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('sub_cat_${_businessType}_$_businessSubtype'),
+                    initialValue: businessSubcategories(_businessType!)
+                            .contains(_businessSubtype)
+                        ? _businessSubtype
+                        : null,
+                    items: businessSubcategories(_businessType!)
+                        .map((s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(
+                                businessSubcategoryLabel(
+                                  s,
+                                  isFrench: isFrench,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setState(() => _businessSubtype = v),
+                    decoration: InputDecoration(
+                      border: const OutlineInputBorder(),
+                      labelText: l10n.tr('business_subcategory'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
               ],
             ],
 

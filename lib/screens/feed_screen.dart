@@ -2409,8 +2409,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                 ),
                 _buildTaskRow(
                   icon: Icons.business,
-                  title: l10n.tr('businesses'),
-                  subtitle: l10n.tr('explore_nearby_local_businesses'),
+                  title: l10n.tr('professionals'),
+                  subtitle: l10n.tr('explore_nearby_local_professionals'),
                   onTap: () => context.push('/businesses'),
                 ),
               ],
@@ -2856,7 +2856,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                                     if (!isPrivateListing &&
                                         p.shareScope != 'none' &&
                                         (p.sharedPostId ?? '').isEmpty)
-                                      _buildAuthorBadge(_shareScopeLabel(p.shareScope)),
+                                      _buildShareBadge(p.shareScope),
                                     if (authorAccountBadge != null &&
                                         _shouldShowAuthorBadge(p))
                                       _buildAuthorBadge(authorAccountBadge),
@@ -3092,7 +3092,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         ),
       ),
       child: Text(
-        isLocal ? 'LOCAL' : 'PUBLIC',
+        isLocal
+            ? context.l10n.tr('local').toUpperCase()
+            : context.l10n.tr('public').toUpperCase(),
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
@@ -3346,17 +3348,53 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     );
   }
 
-  String _shareScopeLabel(String scope) {
+  Widget _buildShareBadge(String scope) {
+    final String label;
     switch (scope) {
-      case 'followers':
-        return 'Followers can share';
-      case 'connections':
-        return 'Connections can share';
       case 'public':
-        return 'Public can share';
+        label = context.l10n.tr('shareable');
+        break;
+      case 'followers':
+        label = context.l10n.tr('share_followers');
+        break;
+      case 'connections':
+        label = context.l10n.tr('share_connections');
+        break;
       default:
-        return 'Sharing off';
+        return const SizedBox.shrink();
     }
+
+    const badgeColor = Color(0xFF1D4ED8);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2563EB).withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: const Color(0xFF2563EB).withValues(alpha: 0.28),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.share_outlined,
+            size: 12,
+            color: badgeColor,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: badgeColor,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSharedPostPreview(Post sharedPost) {
