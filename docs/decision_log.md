@@ -538,3 +538,21 @@ All five display locations use this rule:
   - Localized the visibility badge `[LOCAL]` / `[PUBLIC]` properly via `AppLocalizations`.
   - Added localization keys to `AppLocalizations` (`_en` and `_fr`) and added test assertions to `test/widget_test.dart`.
 
+---
+
+## Release 1.2.0+7 & Deployment (2026-09-12)
+
+- **Version Bump**: Bumped version to `1.2.0+7` in `pubspec.yaml` and documented in `docs/play_store_release.md`.
+- **Pre-Live QA**:
+  - Ran full test suite (`flutter test`) verifying business taxonomy, localization, post parsing, and share badges (4 suites passed).
+  - Static analysis: verified 0 compile errors on modified files.
+  - Database schema & query integrity verified against VPS Supabase PostgreSQL (`87.106.13.170`).
+- **Web Production Deploy**:
+  - Generated production service worker from template with `FIREBASE_WEB_API_KEY`.
+  - Built production web bundle via `scripts/build_web.sh --deploy`.
+  - Deployed to VPS (`/var/www/local_social_web`) served by Caddy at `https://app.allonssy.com`. Verified HTTP 200 live response.
+- **Android Release**:
+  - Built release App Bundle (`.aab`) with upload keystore for Google Play Store upload.
+- **Git**:
+  - All changes committed and pushed to `origin/main`.
+
