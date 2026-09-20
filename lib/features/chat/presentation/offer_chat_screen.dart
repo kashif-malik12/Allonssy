@@ -2,6 +2,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/localization/app_localizations.dart';
 import '../../../widgets/global_bottom_nav.dart';
 
 import '../services/chat_message_codec.dart';
@@ -276,6 +277,55 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
             onPressed: () => setState(() => _replyToMessage = null),
           ),
         ],
+      ),
+    );
+  }
+
+  void _applyPreset(String text) {
+    _textCtrl.text = text;
+    _textCtrl.selection = TextSelection.fromPosition(
+      TextPosition(offset: _textCtrl.text.length),
+    );
+    _focusNode.requestFocus();
+  }
+
+  Widget _buildQuickPresets(BuildContext context) {
+    final l10n = context.l10n;
+    final List<String> presets;
+    if (_postType == 'service_offer' || _postType == 'service_request') {
+      presets = [
+        l10n.tr('preset_available_week'),
+        l10n.tr('preset_quote'),
+        l10n.tr('preset_meetup'),
+        l10n.tr('preset_available'),
+      ];
+    } else {
+      presets = [
+        l10n.tr('preset_available'),
+        l10n.tr('preset_best_price'),
+        l10n.tr('preset_more_photos'),
+        l10n.tr('preset_meetup'),
+      ];
+    }
+
+    return Container(
+      height: 38,
+      margin: const EdgeInsets.only(top: 4),
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        scrollDirection: Axis.horizontal,
+        itemCount: presets.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final preset = presets[i];
+          return ActionChip(
+            label: Text(preset, style: const TextStyle(fontSize: 12)),
+            onPressed: () => _applyPreset(preset),
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            visualDensity: VisualDensity.compact,
+          );
+        },
       ),
     );
   }
@@ -959,6 +1009,7 @@ class _OfferChatScreenState extends State<OfferChatScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _buildReplyBanner(),
+                              _buildQuickPresets(context),
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                                 child: Row(

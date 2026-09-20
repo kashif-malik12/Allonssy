@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../widgets/global_app_bar.dart'; // ✅ NEW
+import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 import '../core/localization/app_localizations.dart';
 
@@ -15,7 +15,7 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-enum SearchTab { profiles, posts }
+enum SearchTab { profiles, posts, marketplace, gigs, directory }
 enum SearchScope { public, following }
 
 class _SearchScreenState extends State<SearchScreen> {
@@ -311,8 +311,7 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      // ✅ Profiles
-      if (_tab == SearchTab.profiles) {
+      if (_tab == SearchTab.profiles || _tab == SearchTab.directory) {
         final useNearby = _nearbyOnly && _meLat != null && _meLng != null;
 
         final rpcRes = useNearby
@@ -353,7 +352,13 @@ class _SearchScreenState extends State<SearchScreen> {
           final id = (row['id'] ?? '').toString();
           if (id.isEmpty) return false;
           if (id == myId) return false;
-          return !disabledIds.contains(id);
+          if (disabledIds.contains(id)) return false;
+          final isBiz = row['account_type'] == 'business' || row['is_restaurant'] == true;
+          if (_tab == SearchTab.directory) {
+            return isBiz;
+          } else {
+            return !isBiz;
+          }
         }).toList();
 
         if (!mounted) return;
@@ -363,13 +368,24 @@ class _SearchScreenState extends State<SearchScreen> {
           _loading = false;
         });
       } else {
-        // ✅ Posts
+        // ✅ Posts, Marketplace, Gigs
         final user = _db.auth.currentUser;
         if (user == null) throw Exception('Not logged in');
 
         final scopeStr =
             _scope == SearchScope.following ? 'following' : 'public';
         final useNearby = _nearbyOnly && _meLat != null && _meLng != null;
+
+        String? effectivePostTypeFilter;
+        if (_tab == SearchTab.marketplace) {
+          effectivePostTypeFilter = 'market';
+        } else if (_tab == SearchTab.posts) {
+          effectivePostTypeFilter = 'post';
+        } else if (_tab == SearchTab.gigs) {
+          effectivePostTypeFilter = null;
+        } else {
+          effectivePostTypeFilter = _selectedPostType == 'all' ? null : _selectedPostType;
+        }
 
         final res = useNearby
             ? await _db.rpc('search_posts_nearby_scoped', params: {
@@ -379,9 +395,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 'viewer_lng': _meLng,
                 'radius_km': _meRadiusKm,
                 'scope': scopeStr,
-                'limit_n': 30,
-                'post_type_filter':
-                    _selectedPostType == 'all' ? null : _selectedPostType,
+                'limit_n': 40,
+                'post_type_filter': effectivePostTypeFilter,
                 'author_type_filter':
                     _selectedAuthorType == 'all' ? null : _selectedAuthorType,
                 'sim_threshold': _simThreshold,
@@ -390,9 +405,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 'q': q,
                 'viewer_id': user.id,
                 'scope': scopeStr,
-                'limit_n': 30,
-                'post_type_filter':
-                    _selectedPostType == 'all' ? null : _selectedPostType,
+                'limit_n': 40,
+                'post_type_filter': effectivePostTypeFilter,
                 'author_type_filter':
                     _selectedAuthorType == 'all' ? null : _selectedAuthorType,
               });
@@ -401,10 +415,17 @@ class _SearchScreenState extends State<SearchScreen> {
         final disabledIds = await _disabledProfileIds(
           rows.map((row) => (row['user_id'] ?? row['profile_id'] ?? '').toString()),
         );
-        final visibleRows = rows.where((row) {
+        var visibleRows = rows.where((row) {
           final authorId = (row['user_id'] ?? row['profile_id'] ?? '').toString();
           return !disabledIds.contains(authorId);
         }).toList();
+
+        if (_tab == SearchTab.gigs) {
+          visibleRows = visibleRows.where((row) {
+            final pt = (row['post_type'] ?? '').toString();
+            return pt == 'service_offer' || pt == 'service_request';
+          }).toList();
+        }
 
         if (!mounted) return;
         setState(() {
@@ -505,28 +526,25 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             ),
-          if (_filtersExpanded) ...[
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: SegmentedButton<SearchTab>(
-              segments: [
-                ButtonSegment(
-                  value: SearchTab.profiles,
-                  label: Text(l10n.tr('profiles')),
-                  icon: Icon(Icons.person_search),
-                ),
-                ButtonSegment(
-                  value: SearchTab.posts,
-                  label: Text(l10n.tr('posts')),
-                  icon: Icon(Icons.article),
-                ),
+          // Category chips (always visible)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                _buildSearchTabChip(SearchTab.profiles, l10n.tr('profiles'), Icons.person_search),
+                const SizedBox(width: 8),
+                _buildSearchTabChip(SearchTab.posts, l10n.tr('posts'), Icons.article_outlined),
+                const SizedBox(width: 8),
+                _buildSearchTabChip(SearchTab.marketplace, l10n.tr('marketplace'), Icons.storefront_outlined),
+                const SizedBox(width: 8),
+                _buildSearchTabChip(SearchTab.gigs, l10n.tr('gigs'), Icons.work_outline),
+                const SizedBox(width: 8),
+                _buildSearchTabChip(SearchTab.directory, l10n.tr('directory'), Icons.business),
               ],
-              selected: {_tab},
-              onSelectionChanged: (s) => _switchTab(s.first),
             ),
           ),
-
+          if (_filtersExpanded) ...[
           // ✅ Nearby toggle
           const SizedBox(height: 8),
           Padding(
@@ -683,9 +701,9 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
           ],
+          ],
 
           const SizedBox(height: 8),
-          ],
           Expanded(child: _buildBody(q)),
         ],
       ),
@@ -718,8 +736,14 @@ class _SearchScreenState extends State<SearchScreen> {
 
     if (q.isEmpty) return Center(child: Text(l10n.tr('type_something_to_search')));
 
-    if (_tab == SearchTab.profiles) {
-      if (_profiles.isEmpty) return Center(child: Text(l10n.tr('no_profiles_found')));
+    if (_tab == SearchTab.profiles || _tab == SearchTab.directory) {
+      if (_profiles.isEmpty) {
+        return Center(
+          child: Text(_tab == SearchTab.directory
+              ? l10n.tr('no_businesses_found')
+              : l10n.tr('no_profiles_found')),
+        );
+      }
 
       return ListView.separated(
         itemCount: _profiles.length,
@@ -737,12 +761,17 @@ class _SearchScreenState extends State<SearchScreen> {
           final city = (p['city'] ?? '').toString();
           final zipcode = (p['zipcode'] ?? '').toString();
           final dist = (p['distance_km'] as num?)?.toDouble();
+          final isBiz = p['account_type'] == 'business' || p['is_restaurant'] == true;
 
           return ListTile(
             leading: CircleAvatar(
-              child: Text(displayName.trim().isEmpty ? '?' : displayName.trim()[0].toUpperCase()),
+              backgroundColor: isBiz ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15) : null,
+              child: Icon(
+                isBiz ? (p['is_restaurant'] == true ? Icons.restaurant : Icons.business) : Icons.person,
+                color: isBiz ? Theme.of(context).colorScheme.primary : null,
+              ),
             ),
-            title: Text(displayName),
+            title: Text(displayName, style: const TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -773,7 +802,15 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    if (_posts.isEmpty) return Center(child: Text(l10n.tr('no_posts_found')));
+    if (_posts.isEmpty) {
+      return Center(
+        child: Text(_tab == SearchTab.marketplace
+            ? l10n.tr('no_products_found')
+            : _tab == SearchTab.gigs
+                ? l10n.tr('no_gigs_found')
+                : l10n.tr('no_posts_found')),
+      );
+    }
 
     return ListView.separated(
       itemCount: _posts.length,
@@ -787,15 +824,63 @@ class _SearchScreenState extends State<SearchScreen> {
         final visibility = (p['visibility'] ?? '').toString();
         final dist = (p['distance_km'] as num?)?.toDouble();
         final id = (p['id'] ?? '').toString();
+        final img = (p['image_url'] ?? '').toString();
+        final price = (p['market_price'] as num?)?.toDouble();
+
+        Widget? leadingWidget;
+        if (_tab == SearchTab.marketplace || postType == 'market') {
+          leadingWidget = img.isNotEmpty
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    img,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      width: 48,
+                      height: 48,
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.storefront, size: 22),
+                    ),
+                  ),
+                )
+              : Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.storefront, color: Theme.of(context).colorScheme.primary),
+                );
+        } else if (_tab == SearchTab.gigs || postType == 'service_offer' || postType == 'service_request') {
+          final isOffer = postType == 'service_offer';
+          leadingWidget = Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: (isOffer ? const Color(0xFF0F766E) : Colors.orange[800]!).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isOffer ? Icons.handshake_outlined : Icons.work_outline,
+              color: isOffer ? const Color(0xFF0F766E) : Colors.orange[800],
+            ),
+          );
+        }
 
         return ListTile(
+          leading: leadingWidget,
           title: Text(
             content.isEmpty ? l10n.tr('no_text') : content,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           subtitle: Text(
             [
+              if (price != null) 'EUR ${price.toStringAsFixed(2)}',
               if (postType.isNotEmpty) _postTypeLabel(postType),
               if (authorType.isNotEmpty) _authorTypeLabel(authorType),
               if (visibility.isNotEmpty) _visibilityLabel(visibility),
@@ -805,9 +890,43 @@ class _SearchScreenState extends State<SearchScreen> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          onTap: id.isEmpty ? null : () => context.push('/post/$id'),
+          onTap: id.isEmpty
+              ? null
+              : () {
+                  if (postType == 'market') {
+                    context.push('/marketplace/product/$id');
+                  } else if (postType == 'service_offer' || postType == 'service_request') {
+                    context.push('/gigs/service/$id');
+                  } else if (postType == 'food' || postType == 'food_ad') {
+                    context.push('/foods/$id');
+                  } else {
+                    context.push('/post/$id');
+                  }
+                },
         );
       },
+    );
+  }
+
+  Widget _buildSearchTabChip(SearchTab tab, String label, IconData icon) {
+    final selected = _tab == tab;
+    return FilterChip(
+      selected: selected,
+      showCheckmark: false,
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: selected
+            ? Theme.of(context).colorScheme.onPrimary
+            : Theme.of(context).colorScheme.primary,
+      ),
+      label: Text(label),
+      selectedColor: Theme.of(context).colorScheme.primary,
+      labelStyle: TextStyle(
+        color: selected ? Theme.of(context).colorScheme.onPrimary : null,
+        fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+      ),
+      onSelected: (_) => _switchTab(tab),
     );
   }
 }

@@ -4,10 +4,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
 
 import '../core/localization/app_localizations.dart';
+import '../core/item_condition.dart';
 import '../core/market_categories.dart';
 import '../models/post_model.dart';
 import '../services/mention_service.dart';
 import '../services/post_service.dart';
+import '../services/saved_post_service.dart';
+import '../services/follow_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 
@@ -19,16 +22,27 @@ class MarketplaceScreen extends StatefulWidget {
 }
 
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
-  static const int _kPageSize = 20;
+  static const int _kPageSize = 30;
 
   bool _isFrench = false;
   bool _loading = true;
   String? _error;
   String _selectedCategory = 'all';
   String _selectedIntent = 'all';
+  String _selectedCondition = 'all';
   String _sortBy = 'date_desc';
   String _search = '';
+  bool _hideSold = false;
+  bool _onlySaved = false;
+  bool _onlyPriceDrop = false;
+  String _selectedSource = 'all';
   final TextEditingController _searchCtrl = TextEditingController();
+
+  late final SavedPostService _savedPostService;
+  late final FollowService _followService;
+  Set<String> _savedPostIds = {};
+  Set<String> _followingIds = {};
+  Set<String> _connectionIds = {};
 
   // Raw server rows, accumulated across pages
   List<Map<String, dynamic>> _rawRows = [];
@@ -45,7 +59,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     int count = 0;
     if (_selectedCategory != 'all') count++;
     if (_selectedIntent != 'all') count++;
+    if (_selectedCondition != 'all') count++;
     if (_sortBy != 'date_desc') count++;
+    if (_hideSold) count++;
+    if (_onlySaved) count++;
+    if (_onlyPriceDrop) count++;
+    if (_selectedSource != 'all') count++;
     return count;
   }
 
@@ -101,6 +120,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   @override
   void initState() {
     super.initState();
+    _savedPostService = SavedPostService(Supabase.instance.client);
+    _followService = FollowService(Supabase.instance.client);
     _scrollCtrl = ScrollController()..addListener(_onScroll);
     _load();
   }
@@ -239,6 +260,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       }).toList();
     }
 
+    if (_selectedCondition != 'all') {
+      items = items
+          .where((p) => (p.itemCondition ?? '').trim().toLowerCase() == _selectedCondition)
+          .toList();
+    }
+
     final q = _search.trim().toLowerCase();
     if (q.isNotEmpty) {
       items = items.where((p) {
@@ -253,8 +280,77 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       }).toList();
     }
 
+    if (_hideSold) {
+      items = items.where((p) => p.itemStatus != 'sold').toList();
+    }
+
+    if (_onlySaved) {
+      items = items.where((p) => _savedPostIds.contains(p.id)).toList();
+    }
+
+    if (_onlyPriceDrop) {
+      items = items.where((p) => p.hasDiscount).toList();
+    }
+
     _sortItems(items);
     return items;
+  }
+
+  Future<void> _toggleSave(Post post) async {
+    final l10n = context.l10n;
+    final wasSaved = _savedPostIds.contains(post.id);
+    setState(() {
+      if (wasSaved) {
+        _savedPostIds.remove(post.id);
+      } else {
+        _savedPostIds.add(post.id);
+      }
+    });
+
+    try {
+      if (wasSaved) {
+        await _savedPostService.unsavePost(post.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('listing_unsaved')),
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: l10n.tr('undo'),
+              onPressed: () async {
+                try {
+                  await _savedPostService.savePost(post.id);
+                  if (mounted) {
+                    setState(() => _savedPostIds.add(post.id));
+                  }
+                } catch (_) {}
+              },
+            ),
+          ),
+        );
+      } else {
+        await _savedPostService.savePost(post.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('listing_saved')),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (wasSaved) {
+          _savedPostIds.add(post.id);
+        } else {
+          _savedPostIds.remove(post.id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   Future<void> _load() async {
@@ -276,6 +372,50 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             .maybeSingle();
         _meLat = (profile?['latitude'] as num?)?.toDouble();
         _meLng = (profile?['longitude'] as num?)?.toDouble();
+
+        final network = await _followService.fetchMyNetworkIds();
+        _followingIds = network.followingIds;
+        _connectionIds = network.connectionIds;
+      }
+
+      if (_selectedSource != 'all') {
+        final targetIds = _selectedSource == 'connections'
+            ? _connectionIds
+            : _followingIds;
+        if (targetIds.isEmpty) {
+          if (!mounted) return;
+          setState(() {
+            _rawRows = [];
+            _savedPostIds = {};
+            _page = 0;
+            _hasMore = false;
+            _loading = false;
+          });
+          return;
+        }
+
+        final data = await Supabase.instance.client
+            .from('posts')
+            .select(PostService.postSelect)
+            .eq('post_type', 'market')
+            .inFilter('user_id', targetIds.toList())
+            .order('created_at', ascending: false)
+            .range(0, _kPageSize - 1);
+
+        final rows = await PostService(Supabase.instance.client)
+            .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
+
+        final ids = rows.map((r) => (r['id'] ?? '').toString()).where((id) => id.isNotEmpty).toList();
+        final savedIds = await _savedPostService.fetchSavedPostIds(ids);
+
+        if (!mounted) return;
+        setState(() {
+          _rawRows = rows;
+          _savedPostIds = savedIds;
+          _page = 1;
+          _hasMore = rows.length == _kPageSize;
+        });
+        return;
       }
 
       final data = await Supabase.instance.client
@@ -288,9 +428,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       final rows = await PostService(Supabase.instance.client)
           .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
 
+      final ids = rows.map((r) => (r['id'] ?? '').toString()).where((id) => id.isNotEmpty).toList();
+      final savedIds = await _savedPostService.fetchSavedPostIds(ids);
+
       if (!mounted) return;
       setState(() {
         _rawRows = rows;
+        _savedPostIds = savedIds;
         _page = 1;
         _hasMore = rows.length == _kPageSize;
       });
@@ -312,19 +456,36 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       final from = _page * _kPageSize;
       final to = from + _kPageSize - 1;
 
-      final data = await Supabase.instance.client
+      var q = Supabase.instance.client
           .from('posts')
           .select(PostService.postSelect)
-          .eq('post_type', 'market')
+          .eq('post_type', 'market');
+
+      if (_selectedSource != 'all') {
+        final targetIds = _selectedSource == 'connections'
+            ? _connectionIds
+            : _followingIds;
+        if (targetIds.isEmpty) {
+          if (mounted) setState(() => _loadingMore = false);
+          return;
+        }
+        q = q.inFilter('user_id', targetIds.toList());
+      }
+
+      final data = await q
           .order('created_at', ascending: false)
           .range(from, to);
 
       final rows = await PostService(Supabase.instance.client)
           .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
 
+      final ids = rows.map((r) => (r['id'] ?? '').toString()).where((id) => id.isNotEmpty).toList();
+      final moreSaved = await _savedPostService.fetchSavedPostIds(ids);
+
       if (!mounted) return;
       setState(() {
         _rawRows = [..._rawRows, ...rows];
+        _savedPostIds = {..._savedPostIds, ...moreSaved};
         _page++;
         _hasMore = rows.length == _kPageSize;
       });
@@ -344,6 +505,16 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         title: l10n.tr('marketplace'),
         showBackIfPossible: true,
         homeRoute: '/feed',
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bookmark_outline),
+            tooltip: l10n.tr('saved_listings'),
+            onPressed: () async {
+              await context.push('/marketplace/saved');
+              if (mounted) _load();
+            },
+          ),
+        ],
       ),
       bottomNavigationBar: const GlobalBottomNav(),
       floatingActionButton: FloatingActionButton.extended(
@@ -410,7 +581,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       setState(() {
                         _selectedCategory = 'all';
                         _selectedIntent = 'all';
+                        _selectedCondition = 'all';
                         _sortBy = 'date_desc';
+                        _hideSold = false;
+                        _onlySaved = false;
+                        _onlyPriceDrop = false;
+                        _selectedSource = 'all';
                       });
                       _load();
                     },
@@ -431,6 +607,26 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             child: _showFilters
                 ? Column(
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                        child: _buildResponsiveDropdownRow(
+                          label: l10n.tr('source_label'),
+                          child: DropdownButton<String>(
+                            value: _selectedSource,
+                            isExpanded: true,
+                            items: [
+                              DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_listings'))),
+                              DropdownMenuItem(value: 'network', child: Text(l10n.tr('from_network'))),
+                              DropdownMenuItem(value: 'connections', child: Text(l10n.tr('from_connections_only'))),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _selectedSource = v);
+                              _load();
+                            },
+                          ),
+                        ),
+                      ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                         child: _buildResponsiveDropdownRow(
@@ -481,6 +677,29 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                         child: _buildResponsiveDropdownRow(
+                          label: l10n.tr('item_condition'),
+                          child: DropdownButton<String>(
+                            value: _selectedCondition,
+                            isExpanded: true,
+                            items: [
+                              DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_conditions'))),
+                              DropdownMenuItem(value: 'new', child: Text(l10n.tr('condition_new'))),
+                              DropdownMenuItem(value: 'like_new', child: Text(l10n.tr('condition_like_new'))),
+                              DropdownMenuItem(value: 'good', child: Text(l10n.tr('condition_good'))),
+                              DropdownMenuItem(value: 'fair', child: Text(l10n.tr('condition_fair'))),
+                              DropdownMenuItem(value: 'parts', child: Text(l10n.tr('condition_parts'))),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _selectedCondition = v);
+                              _load();
+                            },
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                        child: _buildResponsiveDropdownRow(
                           label: l10n.tr('sort_label'),
                           child: DropdownButton<String>(
                             value: _sortBy,
@@ -497,6 +716,57 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                               _load();
                             },
                           ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 0, 12, 8),
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
+                          children: [
+                            InkWell(
+                              onTap: () => setState(() => _hideSold = !_hideSold),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Checkbox(
+                                    value: _hideSold,
+                                    onChanged: (v) => setState(() => _hideSold = v ?? false),
+                                  ),
+                                  Text(l10n.tr('hide_sold_items')),
+                                ],
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() => _onlySaved = !_onlySaved),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Checkbox(
+                                    value: _onlySaved,
+                                    onChanged: (v) => setState(() => _onlySaved = v ?? false),
+                                  ),
+                                  Text(l10n.tr('saved')),
+                                ],
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() => _onlyPriceDrop = !_onlyPriceDrop),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Checkbox(
+                                    value: _onlyPriceDrop,
+                                    onChanged: (v) => setState(() => _onlyPriceDrop = v ?? false),
+                                  ),
+                                  Text(l10n.tr('price_drop_only')),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -531,7 +801,37 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                 ),
                                 itemCount: 1,
                                 itemBuilder: (context, index) => Center(
-                                  child: Text(l10n.tr('no_marketplace_posts_found')),
+                                  child: _selectedSource != 'all'
+                                      ? Padding(
+                                          padding: const EdgeInsets.all(24),
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.people_outline, size: 48, color: Colors.grey.shade400),
+                                              const SizedBox(height: 12),
+                                              Text(
+                                                l10n.tr('no_network_listings'),
+                                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                l10n.tr('no_network_listings_subtitle'),
+                                                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              const SizedBox(height: 16),
+                                              FilledButton.tonal(
+                                                onPressed: () {
+                                                  setState(() => _selectedSource = 'all');
+                                                  _load();
+                                                },
+                                                child: Text(l10n.tr('view_all_listings')),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : Text(l10n.tr('no_marketplace_posts_found')),
                                 ),
                               );
                             }
@@ -595,26 +895,120 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                       children: [
                                         SizedBox(
                                           height: 112,
-                                          child: ClipRRect(
-                                            borderRadius: const BorderRadius.vertical(
-                                              top: Radius.circular(12),
-                                            ),
-                                            child: Container(
-                                              width: double.infinity,
-                                              color: Colors.grey.shade200,
-                                              padding: const EdgeInsets.all(6),
-                                              child: p.imageUrl != null && p.imageUrl!.isNotEmpty
-                                                  ? Image.network(
-                                                      p.imageUrl!,
-                                                      fit: BoxFit.contain,
-                                                      alignment: Alignment.center,
-                                                    )
-                                                  : const Icon(
-                                                      Icons.image_outlined,
-                                                      size: 40,
-                                                      color: Colors.black45,
+                                          child: Stack(
+                                            children: [
+                                              Positioned.fill(
+                                                child: ClipRRect(
+                                                  borderRadius: const BorderRadius.vertical(
+                                                    top: Radius.circular(12),
+                                                  ),
+                                                  child: Container(
+                                                    width: double.infinity,
+                                                    color: Colors.grey.shade200,
+                                                    padding: const EdgeInsets.all(6),
+                                                    child: Opacity(
+                                                      opacity: p.itemStatus == 'sold' ? 0.55 : 1.0,
+                                                      child: p.imageUrl != null && p.imageUrl!.isNotEmpty
+                                                          ? Image.network(
+                                                              p.imageUrl!,
+                                                              fit: BoxFit.contain,
+                                                              alignment: Alignment.center,
+                                                            )
+                                                          : const Icon(
+                                                              Icons.image_outlined,
+                                                              size: 40,
+                                                              color: Colors.black45,
+                                                            ),
                                                     ),
-                                            ),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (p.itemStatus == 'reserved')
+                                                Positioned(
+                                                  top: 6,
+                                                  left: 6,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFFEF3C7),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: const Color(0xFFFCD34D)),
+                                                    ),
+                                                    child: Text(
+                                                      l10n.tr('reserved').toUpperCase(),
+                                                      style: const TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: Color(0xFF92400E),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              if (p.itemStatus == 'sold')
+                                                Positioned(
+                                                  top: 6,
+                                                  left: 6,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFF374151),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
+                                                      l10n.tr('sold').toUpperCase(),
+                                                      style: const TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              if (p.hasDiscount)
+                                                Positioned(
+                                                  bottom: 6,
+                                                  left: 6,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFDC2626),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                    ),
+                                                    child: Text(
+                                                      '-${p.discountPercentage}%',
+                                                      style: const TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              Positioned(
+                                                top: 4,
+                                                right: 4,
+                                                child: Material(
+                                                  color: Colors.white.withAlpha(230),
+                                                  shape: const CircleBorder(),
+                                                  child: InkWell(
+                                                    customBorder: const CircleBorder(),
+                                                    onTap: () => _toggleSave(p),
+                                                    child: Padding(
+                                                      padding: const EdgeInsets.all(6),
+                                                      child: Icon(
+                                                        _savedPostIds.contains(p.id)
+                                                            ? Icons.bookmark
+                                                            : Icons.bookmark_outline,
+                                                        size: 18,
+                                                        color: _savedPostIds.contains(p.id)
+                                                            ? const Color(0xFF2563EB)
+                                                            : Colors.black87,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         Padding(
@@ -623,6 +1017,57 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
+                                              if (_connectionIds.contains(p.userId)) ...[
+                                                Container(
+                                                  margin: const EdgeInsets.only(bottom: 4),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFECFDF5),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(Icons.hub_outlined, size: 10, color: Color(0xFF047857)),
+                                                      const SizedBox(width: 3),
+                                                      Text(
+                                                        l10n.tr('connected_badge'),
+                                                        style: const TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: Color(0xFF047857),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ] else if (_followingIds.contains(p.userId)) ...[
+                                                Container(
+                                                  margin: const EdgeInsets.only(bottom: 4),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFEFF6FF),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(Icons.check, size: 10, color: Color(0xFF1D4ED8)),
+                                                      const SizedBox(width: 3),
+                                                      Text(
+                                                        l10n.tr('following_badge'),
+                                                        style: const TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: Color(0xFF1D4ED8),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
                                               Text(
                                                 title,
                                                 maxLines: 1,
@@ -632,14 +1077,31 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                                 ),
                                               ),
                                               const SizedBox(height: 4),
-                                              Text(
-                                                priceText,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
+                                              Wrap(
+                                                crossAxisAlignment: WrapCrossAlignment.center,
+                                                spacing: 6,
+                                                runSpacing: 2,
+                                                children: [
+                                                  Text(
+                                                    priceText,
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: p.hasDiscount ? const Color(0xFFDC2626) : null,
+                                                    ),
+                                                  ),
+                                                  if (p.hasDiscount && p.originalPrice != null)
+                                                    Text(
+                                                      'EUR ${p.originalPrice!.toStringAsFixed(2)}',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey.shade500,
+                                                        decoration: TextDecoration.lineThrough,
+                                                      ),
+                                                    ),
+                                                ],
                                               ),
                                               const SizedBox(height: 4),
                                               Text(
@@ -660,14 +1122,41 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                                 ),
                                               ),
                                               const SizedBox(height: 4),
-                                              if (intent != null && intent.isNotEmpty)
-                                                Text(
-                                                  _intentLabel(intent),
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors.grey.shade600,
-                                                  ),
+                                              if ((intent != null && intent.isNotEmpty) ||
+                                                  (p.itemCondition != null && p.itemCondition!.isNotEmpty)) ...[
+                                                Wrap(
+                                                  spacing: 6,
+                                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                                  children: [
+                                                    if (intent != null && intent.isNotEmpty)
+                                                      Text(
+                                                        _intentLabel(intent),
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors.grey.shade600,
+                                                        ),
+                                                      ),
+                                                    if (p.itemCondition != null && p.itemCondition!.isNotEmpty)
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                        decoration: BoxDecoration(
+                                                          color: const Color(0xFFE0F2FE),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: const Color(0xFFBAE6FD)),
+                                                        ),
+                                                        child: Text(
+                                                          itemConditionLabel(p.itemCondition, l10n),
+                                                          style: const TextStyle(
+                                                            fontSize: 9.5,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Color(0xFF0369A1),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
                                                 ),
+                                                const SizedBox(height: 4),
+                                              ],
                                               if ((p.authorCity ?? '').trim().isNotEmpty ||
                                                   (p.authorZipcode ?? '').trim().isNotEmpty ||
                                                   distanceKm != null)
@@ -697,16 +1186,22 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                                       vertical: 10,
                                                     ),
                                                   ),
-                                                  onPressed: canSendOffer
+                                                  onPressed: (canSendOffer && p.itemStatus != 'sold')
                                                       ? () => context.push(
                                                             '/offer-chat/post/${p.id}/user/${p.userId}',
                                                           )
                                                       : null,
-                                                  icon: const Icon(
-                                                    Icons.local_offer_outlined,
+                                                  icon: Icon(
+                                                    p.itemStatus == 'sold'
+                                                        ? Icons.check_circle_outline
+                                                        : Icons.local_offer_outlined,
                                                     size: 16,
                                                   ),
-                                                  label: Text(l10n.tr('send_offer')),
+                                                  label: Text(
+                                                    p.itemStatus == 'sold'
+                                                        ? l10n.tr('sold')
+                                                        : l10n.tr('send_offer'),
+                                                  ),
                                                 ),
                                               ),
                                             ],

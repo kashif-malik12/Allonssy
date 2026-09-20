@@ -37,12 +37,14 @@ import '../screens/search_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../screens/marketplace_screen.dart';
 import '../screens/marketplace_product_detail_screen.dart';
+import '../screens/saved_listings_screen.dart';
 import '../screens/gigs_screen.dart';
 import '../screens/gig_detail_screen.dart';
 import '../screens/food_ad_detail_screen.dart';
 import '../screens/foods_screen.dart';
 import '../screens/restaurants_screen.dart';
 import '../screens/businesses_screen.dart';
+import '../screens/feedback_screen.dart';
 import '../widgets/main_shell.dart';
 
 // ✅ Chat screens
@@ -83,7 +85,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           path == '/terms' ||
           path == '/privacy' ||
           path == '/delete-account' ||
-          path == '/child-safety';
+          path == '/child-safety' ||
+          path == '/feedback';
 
       final isAuth =
           path == '/login' || path == '/register' || path == '/forgot-password';
@@ -264,6 +267,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/child-safety',
         builder: (context, state) => const ChildSafetyScreen(),
       ),
+      GoRoute(
+        path: '/feedback',
+        builder: (context, state) => const FeedbackScreen(),
+      ),
 
       // ── Persistent tab shell ─────────────────────────────────────────────
       // Feed, Search, Chat, Notifications are kept alive in an IndexedStack.
@@ -324,6 +331,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final initialTab = state.uri.queryParameters['tab'] == 'qa' ? 1 : 0;
           return MarketplaceProductDetailScreen(postId: id, initialTab: initialTab);
         },
+      ),
+
+      GoRoute(
+        path: '/marketplace/saved',
+        builder: (context, state) => const SavedListingsScreen(),
       ),
 
 

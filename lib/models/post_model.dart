@@ -34,7 +34,19 @@ class Post {
   final String? marketTitle;
   final double? marketPrice;
   final double? marketPriceMax;
+  final double? originalPrice;
   final double? distanceKm;
+  final String itemStatus;
+  final String? itemCondition;
+
+  bool get hasDiscount =>
+      originalPrice != null &&
+      marketPrice != null &&
+      originalPrice! > marketPrice!;
+
+  int get discountPercentage => hasDiscount
+      ? (((originalPrice! - marketPrice!) / originalPrice!) * 100).round()
+      : 0;
 
   Post({
     required this.id,
@@ -66,7 +78,10 @@ class Post {
     this.marketTitle,
     this.marketPrice,
     this.marketPriceMax,
+    this.originalPrice,
     this.distanceKm,
+    this.itemStatus = 'available',
+    this.itemCondition,
   });
 
   factory Post.fromMap(Map<String, dynamic> map) {
@@ -138,7 +153,12 @@ class Post {
       marketTitle: map['market_title'] as String?,
       marketPrice: (map['market_price'] as num?)?.toDouble(),
       marketPriceMax: (map['market_price_max'] as num?)?.toDouble(),
+      originalPrice: (map['original_price'] as num?)?.toDouble(),
       distanceKm: (map['distance_km'] as num?)?.toDouble(),
+      itemStatus: (map['item_status'] as String?)?.trim().isNotEmpty == true
+          ? (map['item_status'] as String).trim().toLowerCase()
+          : 'available',
+      itemCondition: (map['item_condition'] as String?)?.trim(),
     );
   }
 }

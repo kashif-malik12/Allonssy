@@ -5,6 +5,8 @@ import '../../../core/localization/app_localizations.dart';
 import '../../../services/app_settings_service.dart';
 import '../../../widgets/global_app_bar.dart';
 import '../../../widgets/global_bottom_nav.dart';
+import '../../../widgets/share_button.dart';
+import '../../../screens/feedback_screen.dart';
 
 class _SettingItem {
   const _SettingItem({
@@ -234,6 +236,46 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     subtitle: l10n.tr('push_admin_updates_subtitle'),
                   ),
                 ],
+              ),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.tr('community_and_feedback'),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        l10n.tr('community_and_feedback_subtitle'),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.share_outlined),
+                        title: Text(l10n.tr('share_app')),
+                        subtitle: Text(l10n.tr('share_app_subtitle')),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => shareApp(context),
+                      ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.rate_review_outlined),
+                        title: Text(l10n.tr('give_feedback')),
+                        subtitle: Text(l10n.tr('feedback_subtitle')),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => FeedbackScreen.showSheet(context),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               Card(
                 child: Padding(

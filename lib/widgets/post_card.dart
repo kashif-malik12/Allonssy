@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/business_categories.dart';
+import '../core/item_condition.dart';
+import '../core/localization/app_localizations.dart';
 import '../models/post_model.dart';
 import '../services/post_service.dart';
 import 'report_post_sheet.dart';
@@ -197,10 +199,91 @@ class _MarketListingBody extends StatelessWidget {
                 ),
               ),
             ),
+            if (post.itemStatus == 'reserved')
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFFCD34D)),
+                ),
+                child: const Text(
+                  'RESERVED',
+                  style: TextStyle(
+                    color: Color(0xFF92400E),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            if (post.itemStatus == 'sold')
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFD1D5DB)),
+                ),
+                child: const Text(
+                  'SOLD',
+                  style: TextStyle(
+                    color: Color(0xFF4B5563),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            if (post.itemCondition != null && post.itemCondition!.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2FE),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFBAE6FD)),
+                ),
+                child: Text(
+                  itemConditionLabel(post.itemCondition, context.l10n),
+                  style: const TextStyle(
+                    color: Color(0xFF0369A1),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
             Text(
               _priceText(),
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 17,
+                color: post.hasDiscount ? const Color(0xFFDC2626) : null,
+              ),
             ),
+            if (post.hasDiscount && post.originalPrice != null) ...[
+              Text(
+                'EUR ${post.originalPrice!.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade500,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEBEE),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFFFCDD2)),
+                ),
+                child: Text(
+                  '-${post.discountPercentage}%',
+                  style: const TextStyle(
+                    color: Color(0xFFC62828),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 6),

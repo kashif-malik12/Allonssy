@@ -556,3 +556,227 @@ All five display locations use this rule:
 - **Git**:
   - All changes committed and pushed to `origin/main`.
 
+---
+
+## Update "Businesses" to "Professionals" in Mobile Options & Quick Links (2026-09-13)
+
+- Updated quick link label in the mobile bottom sheet Options menu (`lib/widgets/global_bottom_nav.dart`) from `businesses` to `professionals` (`"Professionals"` / `"Professionnels"`).
+- Updated quick link button in the feed discovery section (`lib/screens/feed_screen.dart`) to use `professionals`.
+- Updated `AppLocalizations` (`lib/core/localization/app_localizations.dart`):
+  - `'businesses'` key now resolves to `"Professionals"` (FR: `"Professionnels"`).
+  - `'search_businesses'` updated to `"Search professionals..."` (FR: `"Rechercher des professionnels..."`).
+  - `'no_businesses_found'` updated to `"No professionals found"` (FR: `"Aucun professionnel trouvé"`).
+
+---
+
+## Marketplace Listing Status (Available / Reserved / Sold) (2026-09-15)
+
+- Added listing status lifecycle (`available`, `reserved`, `sold`) for marketplace posts:
+  - **Database Migration**: `supabase/migrations/20260915030000_add_item_status_to_posts.sql` adds column `item_status text DEFAULT 'available'`, an index on `(type, item_status)`, and a check constraint enforcing valid statuses.
+  - **Data Model**: `lib/models/post_model.dart` updated with `itemStatus` property, default `'available'`, parsing from `map['item_status']`.
+  - **Service**: `lib/services/post_service.dart` updated to set `item_status: 'available'` when creating market posts, and added `updateItemStatus({required String postId, required String status})`.
+  - **Managed Ads**: `lib/features/profile/presentation/managed_ads_screen.dart` provides status badges, quick 1-tap status selector popup menu on ad cards, and status dropdown in the edit modal.
+  - **Marketplace Browsing**: `lib/screens/marketplace_screen.dart` renders colored `RESERVED` and `SOLD` badge overlays on listing cards, dims sold item thumbnails, disables offer buttons on sold items, and includes a "Hide sold items" filter toggle.
+  - **Product Detail**: `lib/screens/marketplace_product_detail_screen.dart` displays item status badge, provides listing owners with a status switcher, shows a notice when sold, and disables the offer button.
+  - **Feed Market Card**: `lib/widgets/post_card.dart` displays `RESERVED` and `SOLD` badges on market posts in social feeds.
+  - **Localization & Tests**: Added EN & FR strings in `lib/core/localization/app_localizations.dart` and comprehensive test coverage in `test/widget_test.dart`.
+
+---
+
+## Saved Listings / Bookmarks for Marketplace (2026-09-15)
+
+- Added bookmarking and saved listings system for marketplace:
+  - **Database Migration**: `supabase/migrations/20260915040000_create_saved_posts.sql` creates `saved_posts` table with `user_id`, `post_id`, timestamp, unique constraint, indexes, and user-scoped Row Level Security (RLS) policies.
+  - **Service**: `lib/services/saved_post_service.dart` provides `isSaved`, `fetchSavedPostIds` (batch lookup), `savePost`, `unsavePost`, `toggleSave`, and `fetchSavedMarketplacePosts` with author exclusions and preserved bookmark chronology.
+  - **Marketplace Screen**: `lib/screens/marketplace_screen.dart` has bookmark icon overlay buttons on cards with optimistic feedback & undo snackbars, batch saved status loading, an AppBar bookmark shortcut to `/marketplace/saved`, and a "Saved" filter toggle in the filter section.
+  - **Product Detail**: `lib/screens/marketplace_product_detail_screen.dart` includes an interactive bookmark icon button in the AppBar actions alongside the Share button.
+  - **Dedicated Saved Listings View**: `lib/screens/saved_listings_screen.dart` registered at `/marketplace/saved` with responsive grid matching marketplace, instant unsave with undo, and rich empty state.
+  - **Entry Points**: Added "Saved Listings" navigation options to own profile sidebar & mobile profile sheet (`profile_detail_screen.dart`), and mobile bottom sheet options menu (`global_bottom_nav.dart`).
+  - **Localization & Tests**: Full English and French translations in `AppLocalizations` and comprehensive unit test coverage in `test/widget_test.dart`.
+
+---
+
+## Marketplace Network Filter ("From connections / people you follow") & Trust Badges (2026-09-15)
+
+- Added social trust and network-based discovery to Marketplace:
+  - **Network ID Discovery**: `lib/services/follow_service.dart` adds `fetchMyNetworkIds()`, performing a single efficient indexed query to categorize both 1-way follows (`followingIds`) and 2-way mutual connections (`connectionIds`).
+  - **Source Filtering**: `lib/screens/marketplace_screen.dart` adds a **Source** filter dropdown (`All listings`, `Following & Connections`, `Connections only`). Queries Supabase with `.inFilter('user_id', targetIds)` for exact server-side accuracy, with fast zero-item bypass if target network is empty.
+  - **Listing Card Trust Badges**: `lib/screens/marketplace_screen.dart` renders colored trust pills (`Connected` in emerald green with hub icon for mutual connections, `Following` in soft blue with check icon for followed sellers) directly on marketplace listing cards.
+  - **Product Detail Seller Card**: `lib/screens/marketplace_product_detail_screen.dart` features a dedicated seller card displaying avatar, seller name, location, and the `Connected` or `Following` badge, with 1-tap navigation to the seller's full profile.
+  - **Empty State**: Tailored empty state when filtering by network with a 1-tap `View all listings` button.
+  - **Localization & Tests**: Complete English and French keys in `AppLocalizations` and unit tests in `test/widget_test.dart`.
+
+---
+
+## Price Drop / Discount Indicator for Marketplace (2026-09-15)
+
+- Added discount and price drop tracking and visualization across Marketplace:
+  - **Database Migration**: `supabase/migrations/20260915050000_add_original_price_to_posts.sql` adds `original_price numeric` column to `posts` table with an index on `(post_type, original_price)`.
+  - **Model**: `lib/models/post_model.dart` adds `originalPrice`, `hasDiscount` (`originalPrice != null && marketPrice != null && originalPrice! > marketPrice!`), and `discountPercentage` (rounded percentage off).
+  - **Creation & Management**:
+    - `lib/services/post_service.dart`: Accepts `originalPrice` and stores it with the post payload.
+    - `lib/screens/create_post_screen.dart`: Provides an optional "Original price" input for marketplace posts.
+    - `lib/features/profile/presentation/managed_ads_screen.dart`: In ad editor dialog, allows editing original price. If the seller lowers the price without manually filling the original price, the previous price is automatically preserved as `original_price`. Also displays strikethrough original prices and `-X%` discount badges on managed ad cards.
+  - **Marketplace Grid & Filters**:
+    - `lib/screens/marketplace_screen.dart`: Displays prominent red `-X%` badges on listing image cards, highlights discounted prices in bold red alongside strikethrough original prices, and adds a `Price drop only` checkbox filter.
+  - **Saved Listings & Product Detail & Social Feeds**:
+    - `lib/screens/saved_listings_screen.dart`: Displays `-X%` badge and strikethrough original price on saved item cards.
+    - `lib/screens/marketplace_product_detail_screen.dart`: Renders current price, strikethrough original price, and `-X%` badge in product details header.
+    - `lib/widgets/post_card.dart`: Renders strikethrough original price and `-X%` badge in feed marketplace cards.
+  - **Localization & Tests**: Fully localized in English and French (`original_price`, `original_price_optional`, `price_drop`, `price_drop_only`, `percent_off`) and unit tests verified in `test/widget_test.dart`.
+
+---
+
+## Saved Gigs & Services (2026-09-15)
+
+- Added bookmarking and quick filtering for freelance gigs and service requests:
+  - **Service**: Extended `lib/services/saved_post_service.dart` with `fetchSavedGigPosts`, retrieving saved posts with `type in ('service_offer', 'service_request')`, excluded blocked/author posts, and mapped in preserved reverse-chronological order.
+  - **Gigs Browsing (`lib/screens/gigs_screen.dart`)**:
+    - Interactive bookmark icon overlay on gig cards with instant optimistic feedback, error rollback, and undo snackbar.
+    - Batch loads saved post IDs upon feed load.
+    - Added "Saved gigs only" filter toggle checkbox in the filter drawer to filter gigs by bookmarked status.
+  - **Gig Detail (`lib/screens/gig_detail_screen.dart`)**:
+    - Added bookmark icon button in `GlobalAppBar` actions for saving/unsaving directly from gig detail.
+  - **Localization & Tests**: Added `saved_gigs` and `saved_gigs_only` keys in `AppLocalizations` (EN & FR) and unit test assertions in `test/widget_test.dart`.
+
+---
+
+## Favorite Local Businesses & Restaurants (2026-09-15)
+
+- Added favoriting system for local directory (businesses & restaurants):
+  - **Database Migration**: `supabase/migrations/20260915070000_create_favorite_businesses.sql` creates `favorite_businesses` table (`user_id`, `business_id`, timestamp, unique constraint, indexed, with RLS policies allowing users to select and modify their own favorites).
+  - **Service**: Created `lib/services/favorite_business_service.dart` supporting optional injected `SupabaseClient` for testability, with `isFavorite`, `fetchFavoriteIds` (batch loading), `addFavorite`, `removeFavorite`, and `toggleFavorite`.
+  - **Businesses Directory (`lib/screens/businesses_screen.dart`)**:
+    - Trailing heart icon button on directory list tiles for 1-tap favoriting/unfavoriting.
+    - "Favorites only" filter checkbox in the filter bar.
+  - **Restaurants Directory (`lib/screens/restaurants_screen.dart`)**:
+    - Trailing heart icon button on restaurant list tiles.
+    - "Favorites only" filter checkbox below distance radius slider.
+  - **Business / Restaurant Profile (`lib/features/profile/presentation/profile_detail_screen.dart`)**:
+    - Favorite heart action button in `GlobalAppBar` when viewing external business/restaurant profiles.
+    - Full-width outlined "Favorite" / "Favorited" action button in profile header.
+  - **Localization & Tests**: Localized keys (`favorite_businesses`, `favorite_businesses_only`, `favorite_business`, `unfavorite_business`, etc.) in `AppLocalizations` (EN & FR) and unit tests in `test/widget_test.dart`.
+
+---
+
+## Marketplace Item Condition & Filter (2026-09-15)
+
+- Added condition tier classification to Marketplace items:
+  - **Database Migration**: `supabase/migrations/20260915060000_add_item_condition_to_posts.sql` adds column `item_condition text` to `posts` table with an index on `(type, item_condition)` and check constraint allowing `new`, `like_new`, `good`, `fair`, `parts`.
+  - **Helper & Model**:
+    - `lib/core/item_condition.dart`: Defines standard values and `itemConditionLabel(condition, l10n)` helper for UI display.
+    - `lib/models/post_model.dart`: Adds `itemCondition` property parsed from `map['item_condition']`.
+  - **Post Creation & Ads Management**:
+    - `lib/services/post_service.dart`: `createPost` accepts `itemCondition`.
+    - `lib/screens/create_post_screen.dart`: Condition selection dropdown when creating selling marketplace posts.
+    - `lib/features/profile/presentation/managed_ads_screen.dart`: Condition dropdown in edit ad modal, persists condition updates, and displays condition chip on managed ad cards.
+  - **Marketplace Browsing & Details**:
+    - `lib/screens/marketplace_screen.dart`: Condition chip on product card, and condition dropdown filter in filter drawer (`All conditions`, `New`, `Like new`, `Good`, `Fair`, `For parts`).
+    - `lib/screens/marketplace_product_detail_screen.dart`: Condition info badge row displayed prominently on product details.
+    - `lib/widgets/post_card.dart`: Item condition chip displayed on marketplace cards in social feed.
+  - **Localization & Tests**: Full EN & FR translations for all 5 condition tiers and filters in `AppLocalizations` and comprehensive unit test coverage in `test/widget_test.dart`.
+
+---
+
+## Quick Presets in Offer & Direct Chat (2026-09-15)
+
+- Added 1-tap conversational suggestion chips above chat composers:
+  - **Offer Chat (`lib/features/chat/presentation/offer_chat_screen.dart`)**:
+    - Context-aware chips dynamically adapting to post type:
+      - Marketplace: "Is this still available?", "What is your best price?", "Where is pickup located?", "Can you do delivery?"
+      - Gigs / Services: "Are you still available for this?", "What is your estimated timeline?", "Can you provide a quote?", "Can we discuss details?"
+    - Tapping a chip populates the message input field, positions cursor at the end, and focuses the input ready for sending or editing.
+  - **Direct Chat (`lib/features/chat/presentation/chat_screen.dart`)**:
+    - Horizontal scrollable quick preset chips ("Hi, how are you?", "Is this still available?", "Can you share more details?", "Let me know when you're free!") directly above composer.
+  - **Localization & Tests**: Presets localized in English and French in `AppLocalizations` and tested in `test/widget_test.dart`.
+
+---
+
+## Profile Listings & Gigs Tabs (2026-09-15)
+
+- Added segmented tabs on user profile screen (`lib/features/profile/presentation/profile_detail_screen.dart`):
+  - Segmented control toggling between **Posts** (social timeline), **Marketplace** (selling items), and **Gigs & Services** (offered services).
+  - Lazy loading for marketplace and service posts authored by the profile user with status chips (`Sold`, `Reserved`).
+  - Contextual quick navigation to manage listings if the viewing user is the profile owner.
+  - Localization in English (`tab_posts`, `tab_marketplace`, `tab_services`, `no_user_listings`, `no_user_services`) and French (`Publications`, `Marketplace`, `Missions & Services`).
+
+---
+
+## Unified Categorized Search (2026-09-15)
+
+- Enhanced Search (`lib/screens/search_screen.dart`) with fast categorized exploration:
+  - Top category filter chips: **People / Profiles**, **Posts**, **Marketplace**, **Gigs**, and **Directory**.
+  - Direct querying of posts matching specific types (`market`, `post`, `service_offer`/`service_request`) with real-time UI indicator badges and pricing/rates.
+  - Deep linking on tap:
+    - Marketplace items -> `/marketplace/product/:id`
+    - Gigs / Services -> `/gigs/service/:id`
+    - Food ads -> `/foods/:id`
+    - General posts -> `/post/:id`
+    - Profiles & Directory -> `/p/:id`
+  - Localization and testing in `test/widget_test.dart`.
+
+---
+
+## App Sharing & Community Invites (2026-09-15)
+
+- Implemented community invite flow:
+  - `lib/widgets/share_button.dart`: Added `appShareUrl()` returning canonical web address (`https://app.allonssy.com`) and `shareApp(BuildContext context)` with localized invite message and web fallback to clipboard.
+  - Entry points:
+    - Global bottom navigation sheet ("Share Allonssy" tile).
+    - Profile settings screen ("Community & Feedback" section).
+    - User profile action buttons and options popup menu.
+  - Full localization in English and French (`share_app`, `share_app_title`, `share_app_subtitle`, `share_app_message`, `link_copied`).
+
+---
+
+## Feedback & Bug Report System (2026-09-15)
+
+- Built in-app feedback and bug reporting flow:
+  - **Database Migration**: `supabase/migrations/20260915080000_create_feedback.sql` creates `user_feedback` table (`user_id`, `category`, `message`, `rating`, `contact_email`, `device_info`, `app_version`, `created_at`) with RLS policy allowing authenticated and anon inserts.
+  - **Service**: `lib/services/feedback_service.dart` providing `submitFeedback` with automatic platform and device info collection.
+  - **UI**: `lib/screens/feedback_screen.dart` with category selection (General, Bug, Feature idea), star rating, message text field, optional email, and loading state. Accessible as both a standalone screen (`/feedback`) and modal bottom sheet via `FeedbackScreen.showSheet(context)`.
+  - Accessible from bottom nav options, profile settings, and profile sidebar.
+  - Full localization in English and French (`give_feedback`, `feedback`, `feedback_type`, `feedback_general`, `feedback_bug`, `feedback_feature`, `feedback_rating`, `feedback_submitted_success`, etc.).
+
+---
+
+## VPS Database Migrations Applied (2026-09-15)
+
+- Successfully deployed and verified all 6 new database migrations on the self-hosted VPS (`87.106.13.170`):
+  1. `20260915030000_add_item_status_to_posts.sql`: Added `item_status` column ('available', 'reserved', 'sold') and index.
+  2. `20260915040000_create_saved_posts.sql`: Created `saved_posts` table, unique constraints, and RLS policies.
+  3. `20260915050000_add_original_price_to_posts.sql`: Added `original_price` column to `posts`.
+  4. `20260915060000_add_item_condition_to_posts.sql`: Added `item_condition` column and conditional index for marketplace posts.
+  5. `20260915070000_create_favorite_businesses.sql`: Created `favorite_businesses` table, indexes, and user RLS policies.
+  6. `20260915080000_create_feedback.sql`: Created `user_feedback` table, rating check, and RLS policies.
+- Executed `NOTIFY pgrst, 'reload schema';` on `supabase-db` to immediately refresh PostgREST API schema cache.
+- Mirrored all migration files to `/home/deploy/local_social_migrations/` on the VPS.
+
+---
+
+## Push Notifications Pipeline & Triggers Configured (2026-09-15)
+
+- Configured end-to-end push notification delivery across mobile, web, and server:
+  - **Android**:
+    - Added `com.google.firebase.messaging.default_notification_channel_id` (`default`) and `default_notification_icon` (`@mipmap/ic_launcher`) to `android/app/src/main/AndroidManifest.xml`.
+    - Maintained `POST_NOTIFICATIONS` permission and Google Services Gradle plugin `com.google.gms.google-services` with `com.allonssy.app` in `google-services.json`.
+  - **Web**:
+    - `web/firebase-messaging-sw.js` configured with Firebase project `allonssy` credentials and background notification handler.
+    - Updated `lib/core/config/firebase_web_config.dart` with default `apiKey` matching `allonssy` web app for automatic client configuration.
+  - **Client Token Sync**:
+    - `lib/services/push_notification_service.dart`: Requests notification permissions on startup, fetches platform FCM tokens (using VAPID key on web), and upserts device tokens to `device_push_tokens` table on auth state changes.
+  - **Edge Function (`push-dispatch`)**:
+    - Deployed on VPS `supabase-edge-functions` container. Authenticates using Google OAuth 2.0 PKCS8 assertion with Firebase Service Account credentials.
+    - Dispatches to FCM HTTP v1 API (`https://fcm.googleapis.com/v1/projects/allonssy/messages:send`) with Android high priority (`default` channel) and WebPush payloads.
+    - Automatically purges expired/unregistered tokens (`UNREGISTERED` error response).
+  - **Database Triggers (`pg_net`)**:
+    - Migration `20260915090000_automated_push_notifications.sql` deployed to VPS Supabase:
+      - `notification_push_setting_key_for_type(type)`: Maps notification types to user's `app_settings` push preferences.
+      - `notification_push_enabled(user_id, type)`: Validates user recipient has push enabled for the specific category.
+      - `send_push_notification(recipient_id, title, body, route)`: Dispatches asynchronous HTTP POST to `http://kong:8000/functions/v1/push-dispatch` via `net.http_post`.
+      - `trg_push_on_notification`: Automatically sends push notifications for comments, replies, likes, mentions, shares, follows, follow requests, offers, and admin announcements.
+      - `trg_push_on_message`: Sends real-time push notifications for new direct chat messages.
+      - `trg_push_on_offer_message`: Sends real-time push notifications for offer updates, counter-offers, and offer messages.
+
+
+

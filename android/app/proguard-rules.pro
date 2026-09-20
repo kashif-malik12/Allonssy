@@ -12,6 +12,10 @@
 # file_picker — keep plugin class and all method handlers from R8 obfuscation
 -keep class com.mr.flutter.plugin.filepicker.** { *; }
 
+# Native MethodChannel and MainActivity
+-keep class com.allonssy.app.MainActivity { *; }
+-keepclassmembers class com.allonssy.app.MainActivity { *; }
+
 # Google Play Core — referenced by Flutter engine but not required at runtime
 -dontwarn com.google.android.play.core.splitcompat.SplitCompatApplication
 -dontwarn com.google.android.play.core.splitinstall.SplitInstallException

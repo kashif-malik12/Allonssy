@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app/chat_singletons.dart';
 import '../core/localization/app_localizations.dart';
 import '../features/notifications/providers/notification_unread_provider.dart';
+import '../screens/feedback_screen.dart';
+import 'share_button.dart';
 
 class GlobalBottomNav extends ConsumerWidget {
   final VoidCallback? onOpenFilters;
@@ -197,7 +199,7 @@ class GlobalBottomNav extends ConsumerWidget {
                         ),
                         _quickLinkButton(
                           icon: Icons.business,
-                          label: l10n.tr('businesses'),
+                          label: l10n.tr('professionals'),
                           onPressed: () {
                             Navigator.of(sheetContext).pop();
                             context.push('/businesses');
@@ -221,6 +223,33 @@ class GlobalBottomNav extends ConsumerWidget {
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         context.push('/profile');
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.bookmark_outline),
+                      title: Text(l10n.tr('saved_listings')),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        context.push('/marketplace/saved');
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.share_outlined),
+                      title: Text(l10n.tr('share_app')),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        shareApp(context);
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.rate_review_outlined),
+                      title: Text(l10n.tr('give_feedback')),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        FeedbackScreen.showSheet(context);
                       },
                     ),
                     if (isAdmin)

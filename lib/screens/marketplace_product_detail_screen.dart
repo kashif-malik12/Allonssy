@@ -3,11 +3,14 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/localization/app_localizations.dart';
+import '../core/item_condition.dart';
 import '../core/market_categories.dart';
 import '../models/post_model.dart';
 import '../services/mention_service.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
+import '../services/saved_post_service.dart';
+import '../services/follow_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 import '../widgets/post_media_view.dart';
@@ -31,10 +34,15 @@ class MarketplaceProductDetailScreen extends StatefulWidget {
 class _MarketplaceProductDetailScreenState
     extends State<MarketplaceProductDetailScreen> {
   final _reactionService = ReactionService(Supabase.instance.client);
+  late final SavedPostService _savedPostService;
+  late final FollowService _followService;
   final _questionCtrl = TextEditingController();
   bool _loading = true;
   String? _error;
   Post? _post;
+  bool _isSaved = false;
+  bool _isSellerConnected = false;
+  bool _isSellerFollowing = false;
   List<Map<String, dynamic>> _qaComments = [];
   bool _qaLoading = false;
   bool _qaSending = false;
@@ -46,6 +54,8 @@ class _MarketplaceProductDetailScreenState
   @override
   void initState() {
     super.initState();
+    _savedPostService = SavedPostService(Supabase.instance.client);
+    _followService = FollowService(Supabase.instance.client);
     _selectedTab = widget.initialTab;
     _load();
   }
@@ -114,6 +124,17 @@ class _MarketplaceProductDetailScreenState
       setState(() {
         _post = Post.fromMap(row);
       });
+      _savedPostService.isSaved(widget.postId).then((saved) {
+        if (mounted) setState(() => _isSaved = saved);
+      });
+      _followService.fetchMyNetworkIds().then((network) {
+        if (mounted && _post != null) {
+          setState(() {
+            _isSellerConnected = network.connectionIds.contains(_post!.userId);
+            _isSellerFollowing = network.followingIds.contains(_post!.userId);
+          });
+        }
+      });
       await _loadQa();
     } catch (e) {
       if (!mounted) return;
@@ -123,6 +144,112 @@ class _MarketplaceProductDetailScreenState
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<void> _toggleSave() async {
+    final l10n = context.l10n;
+    final wasSaved = _isSaved;
+    setState(() => _isSaved = !wasSaved);
+
+    try {
+      if (wasSaved) {
+        await _savedPostService.unsavePost(widget.postId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('listing_unsaved')),
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: l10n.tr('undo'),
+              onPressed: () async {
+                try {
+                  await _savedPostService.savePost(widget.postId);
+                  if (mounted) setState(() => _isSaved = true);
+                } catch (_) {}
+              },
+            ),
+          ),
+        );
+      } else {
+        await _savedPostService.savePost(widget.postId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('listing_saved')),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaved = wasSaved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  Future<void> _updateStatus(String postId, String newStatus) async {
+    try {
+      await PostService(Supabase.instance.client).updateItemStatus(postId: postId, status: newStatus);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.tr('status_updated'))),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Status update failed: $e')),
+      );
+    }
+  }
+
+  Widget _buildStatusBadge(String status) {
+    final l10n = context.l10n;
+    final Color bg;
+    final Color fg;
+    final Color border;
+    final String label;
+
+    switch (status.toLowerCase()) {
+      case 'sold':
+        bg = const Color(0xFFF3F4F6);
+        fg = const Color(0xFF4B5563);
+        border = const Color(0xFFD1D5DB);
+        label = l10n.tr('sold');
+        break;
+      case 'reserved':
+        bg = const Color(0xFFFEF3C7);
+        fg = const Color(0xFF92400E);
+        border = const Color(0xFFFCD34D);
+        label = l10n.tr('reserved');
+        break;
+      case 'available':
+      default:
+        bg = const Color(0xFFECFDF5);
+        fg = const Color(0xFF065F46);
+        border = const Color(0xFF6EE7B7);
+        label = l10n.tr('available');
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
+      ),
+    );
   }
 
   Future<void> _loadQa() async {
@@ -262,14 +389,39 @@ class _MarketplaceProductDetailScreenState
         Text(_plainListingText(p.content)),
         if (canSendOffer) ...[
           const SizedBox(height: 20),
+          if (p.itemStatus == 'sold') ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      context.l10n.tr('item_sold'),
+                      style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () => context.push(
-                '/offer-chat/post/${p.id}/user/${p.userId}',
-              ),
-              icon: const Icon(Icons.local_offer_outlined),
-              label: const Text('Send Offer'),
+              onPressed: p.itemStatus == 'sold'
+                  ? null
+                  : () => context.push(
+                        '/offer-chat/post/${p.id}/user/${p.userId}',
+                      ),
+              icon: Icon(p.itemStatus == 'sold' ? Icons.check_circle_outline : Icons.local_offer_outlined),
+              label: Text(p.itemStatus == 'sold' ? context.l10n.tr('item_sold') : context.l10n.tr('send_offer')),
             ),
           ),
         ],
@@ -426,6 +578,16 @@ class _MarketplaceProductDetailScreenState
         actions: p == null
             ? null
             : [
+                IconButton(
+                  icon: Icon(
+                    _isSaved ? Icons.bookmark : Icons.bookmark_outline,
+                    color: _isSaved ? const Color(0xFF2563EB) : null,
+                  ),
+                  tooltip: _isSaved
+                      ? context.l10n.tr('remove_saved')
+                      : context.l10n.tr('save_listing'),
+                  onPressed: _toggleSave,
+                ),
                 ShareButton(
                   url: marketplaceShareUrl(p.id),
                   title: (p.marketTitle ?? '').trim().isNotEmpty
@@ -482,12 +644,97 @@ class _MarketplaceProductDetailScreenState
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                priceDisplayText,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    priceDisplayText,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: p.hasDiscount ? const Color(0xFFDC2626) : null,
+                                    ),
+                                  ),
+                                  if (p.hasDiscount && p.originalPrice != null) ...[
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'EUR ${p.originalPrice!.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade500,
+                                        decoration: TextDecoration.lineThrough,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFEBEE),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: const Color(0xFFFFCDD2)),
+                                      ),
+                                      child: Text(
+                                        '-${p.discountPercentage}%',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFFC62828),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(width: 10),
+                                  _buildStatusBadge(p.itemStatus),
+                                  const Spacer(),
+                                  if (myId == p.userId)
+                                    PopupMenuButton<String>(
+                                      tooltip: context.l10n.tr('change_status'),
+                                      onSelected: (newStatus) => _updateStatus(p.id, newStatus),
+                                      itemBuilder: (_) => [
+                                        PopupMenuItem(
+                                          value: 'available',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.fiber_manual_record, color: Color(0xFF065F46), size: 16),
+                                              const SizedBox(width: 8),
+                                              Text(context.l10n.tr('mark_as_available')),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'reserved',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.bookmark_outline, color: Color(0xFF92400E), size: 16),
+                                              const SizedBox(width: 8),
+                                              Text(context.l10n.tr('mark_as_reserved')),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'sold',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.check_circle_outline, color: Color(0xFF4B5563), size: 16),
+                                              const SizedBox(width: 8),
+                                              Text(context.l10n.tr('mark_as_sold')),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                      child: IgnorePointer(
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          ),
+                                          onPressed: () {},
+                                          icon: const Icon(Icons.swap_horiz, size: 16),
+                                          label: Text(context.l10n.tr('change_status')),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                               const SizedBox(height: 8),
                               if (((p.authorCity ?? '').trim().isNotEmpty) ||
@@ -504,6 +751,114 @@ class _MarketplaceProductDetailScreenState
                                 ),
                               if ((p.marketIntent ?? '').isNotEmpty)
                                 Text('Type: ${_intentLabel(p.marketIntent)}'),
+                              if ((p.itemCondition ?? '').isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Text('${context.l10n.tr('item_condition')}: '),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE0F2FE),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: const Color(0xFFBAE6FD)),
+                                      ),
+                                      child: Text(
+                                        itemConditionLabel(p.itemCondition, context.l10n),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF0369A1),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 12),
+                              InkWell(
+                                onTap: () => context.push('/p/${p.userId}'),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.black12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundImage: (p.authorAvatarUrl != null && p.authorAvatarUrl!.isNotEmpty)
+                                            ? NetworkImage(p.authorAvatarUrl!)
+                                            : null,
+                                        child: (p.authorAvatarUrl == null || p.authorAvatarUrl!.isEmpty)
+                                            ? const Icon(Icons.person, size: 18)
+                                            : null,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          (p.authorName ?? '').trim().isNotEmpty ? p.authorName!.trim() : 'Seller',
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                        ),
+                                      ),
+                                      if (_isSellerConnected) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFECFDF5),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: const Color(0xFFA7F3D0)),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.hub_outlined, size: 12, color: Color(0xFF047857)),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                context.l10n.tr('connected_badge'),
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFF047857),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ] else if (_isSellerFollowing) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFEFF6FF),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.check, size: 12, color: Color(0xFF1D4ED8)),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                context.l10n.tr('following_badge'),
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFF1D4ED8),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                                    ],
+                                  ),
+                                ),
+                              ),
                               const SizedBox(height: 16),
                               SegmentedButton<int>(
                                 segments: const [

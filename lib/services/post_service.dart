@@ -110,6 +110,8 @@ class PostService {
     String? marketTitle,
     double? marketPrice,
     double? marketPriceMax,
+    double? originalPrice,
+    String? itemCondition,
     String shareScope = 'none',
     List<String> taggedUserIds = const [],
   }) async {
@@ -149,7 +151,10 @@ class PostService {
       'market_title': marketTitle,
       'market_price': marketPrice,
       'market_price_max': marketPriceMax,
+      'original_price': ?originalPrice,
       'share_scope': shareScope,
+      if (postType == 'market') 'item_status': 'available',
+      'item_condition': ?itemCondition,
     };
 
     try {
@@ -242,6 +247,19 @@ class PostService {
 
   Future<void> deleteOwnPost(String postId) async {
     await _db.rpc('delete_own_post', params: {'p_post_id': postId});
+  }
+
+  Future<void> updateItemStatus({
+    required String postId,
+    required String status,
+  }) async {
+    final user = _db.auth.currentUser;
+    if (user == null) throw Exception('Not logged in');
+    await _db
+        .from('posts')
+        .update({'item_status': status})
+        .eq('id', postId)
+        .eq('user_id', user.id);
   }
 
   Future<void> sharePost({

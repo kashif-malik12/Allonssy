@@ -8,6 +8,7 @@ import '../models/post_model.dart';
 import '../services/mention_service.dart';
 import '../services/post_service.dart';
 import '../services/reaction_service.dart';
+import '../services/saved_post_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 import '../widgets/post_media_view.dart';
@@ -30,9 +31,11 @@ class GigDetailScreen extends StatefulWidget {
 
 class _GigDetailScreenState extends State<GigDetailScreen> {
   final _reactionService = ReactionService(Supabase.instance.client);
+  late final _savedPostService = SavedPostService(Supabase.instance.client);
   final _questionCtrl = TextEditingController();
 
   bool _loading = true;
+  bool _isSaved = false;
   String? _error;
   Post? _post;
   List<Map<String, dynamic>> _qaComments = [];
@@ -107,8 +110,13 @@ class _GigDetailScreenState extends State<GigDetailScreen> {
         throw Exception('Service not found');
       }
 
+      final isSaved = await _savedPostService.isSaved(widget.postId);
+
       if (!mounted) return;
-      setState(() => _post = Post.fromMap(row));
+      setState(() {
+        _post = Post.fromMap(row);
+        _isSaved = isSaved;
+      });
       await _loadQa();
     } catch (e) {
       if (!mounted) return;
@@ -117,6 +125,42 @@ class _GigDetailScreenState extends State<GigDetailScreen> {
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  Future<void> _toggleSave() async {
+    final p = _post;
+    if (p == null) return;
+    final l10n = context.l10n;
+    final wasSaved = _isSaved;
+    setState(() => _isSaved = !wasSaved);
+
+    try {
+      if (wasSaved) {
+        await _savedPostService.unsavePost(p.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('gig_unsaved')),
+            action: SnackBarAction(
+              label: l10n.tr('undo'),
+              onPressed: _toggleSave,
+            ),
+          ),
+        );
+      } else {
+        await _savedPostService.savePost(p.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.tr('gig_saved'))),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaved = wasSaved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     }
   }
 
@@ -417,6 +461,16 @@ class _GigDetailScreenState extends State<GigDetailScreen> {
         actions: p == null
             ? null
             : [
+                IconButton(
+                  icon: Icon(
+                    _isSaved ? Icons.bookmark : Icons.bookmark_outline,
+                    color: _isSaved ? const Color(0xFF2563EB) : null,
+                  ),
+                  tooltip: _isSaved
+                      ? context.l10n.tr('remove_saved_gig')
+                      : context.l10n.tr('save_gig'),
+                  onPressed: _toggleSave,
+                ),
                 ShareButton(
                   url: gigShareUrl(p.id),
                   title: (p.marketTitle ?? '').trim().isNotEmpty

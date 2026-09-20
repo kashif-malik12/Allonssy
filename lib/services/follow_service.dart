@@ -198,4 +198,40 @@ class FollowService {
     final ids = await mutualConnectionIds(profileId);
     return ids.length;
   }
+
+  /// Fetch all accepted network IDs for the current user in 1 fast query.
+  /// Returns:
+  /// - `followingIds`: all profile IDs that the current user follows.
+  /// - `connectionIds`: mutual connections (both accounts follow each other).
+  Future<({Set<String> followingIds, Set<String> connectionIds})> fetchMyNetworkIds() async {
+    final me = _me;
+    if (me.isEmpty) return (followingIds: <String>{}, connectionIds: <String>{});
+
+    try {
+      final rows = await _db
+          .from('follows')
+          .select('follower_id, followed_profile_id')
+          .eq('status', 'accepted')
+          .or('follower_id.eq.$me,followed_profile_id.eq.$me');
+
+      final following = <String>{};
+      final followers = <String>{};
+
+      for (final r in (rows as List).cast<Map<String, dynamic>>()) {
+        final followerId = (r['follower_id'] ?? '').toString();
+        final followedId = (r['followed_profile_id'] ?? '').toString();
+        if (followerId == me && followedId.isNotEmpty) {
+          following.add(followedId);
+        }
+        if (followedId == me && followerId.isNotEmpty) {
+          followers.add(followerId);
+        }
+      }
+
+      final connections = following.intersection(followers);
+      return (followingIds: following, connectionIds: connections);
+    } catch (_) {
+      return (followingIds: <String>{}, connectionIds: <String>{});
+    }
+  }
 }

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/app_localizations.dart';
 import '../../../services/media_limits.dart';
 import '../../../services/user_block_service.dart';
 import '../../../widgets/chat_user_actions.dart';
@@ -516,6 +517,47 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _applyPreset(String text) {
+    _textCtrl.text = text;
+    _textCtrl.selection = TextSelection.fromPosition(
+      TextPosition(offset: _textCtrl.text.length),
+    );
+    _focusNode.requestFocus();
+  }
+
+  Widget _buildQuickPresets(BuildContext context) {
+    final l10n = context.l10n;
+    final presets = [
+      l10n.tr('preset_available'),
+      l10n.tr('preset_available_week'),
+      l10n.tr('preset_quote'),
+      l10n.tr('preset_best_price'),
+      l10n.tr('preset_meetup'),
+      l10n.tr('preset_more_photos'),
+    ];
+
+    return Container(
+      height: 38,
+      margin: const EdgeInsets.only(top: 4),
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        scrollDirection: Axis.horizontal,
+        itemCount: presets.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final preset = presets[i];
+          return ActionChip(
+            label: Text(preset, style: const TextStyle(fontSize: 12)),
+            onPressed: () => _applyPreset(preset),
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            visualDensity: VisualDensity.compact,
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(
     bool isMe,
     ChatMessagePayload payload, {
@@ -792,6 +834,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         children: [
                           _buildReplyBanner(),
                           _buildAttachmentComposerPreview(),
+                          _buildQuickPresets(context),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                             child: Row(

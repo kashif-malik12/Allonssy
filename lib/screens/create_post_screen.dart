@@ -42,6 +42,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final _marketTitleCtrl = TextEditingController();
   final _marketPriceCtrl = TextEditingController();
   final _marketPriceMaxCtrl = TextEditingController();
+  final _originalPriceCtrl = TextEditingController();
   bool _priceIsRange = false;
 
   final _mentionService = MentionService(Supabase.instance.client);
@@ -50,6 +51,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   PostType _selectedPostType = PostType.post;
   String _selectedMarketCategory = marketMainCategories.first;
   String _selectedMarketIntent = 'selling';
+  String _selectedCondition = 'good';
   String _selectedServiceCategory = serviceMainCategories.first;
   String _selectedFoodCategory = foodMainCategories.first;
   String _shareScope = 'none';
@@ -86,6 +88,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _marketTitleCtrl.dispose();
     _marketPriceCtrl.dispose();
     _marketPriceMaxCtrl.dispose();
+    _originalPriceCtrl.dispose();
     super.dispose();
   }
 
@@ -390,6 +393,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return;
     }
 
+    double? originalPrice;
+    final originalPriceRaw = _originalPriceCtrl.text.trim();
+    if (_isMarketPost && originalPriceRaw.isNotEmpty) {
+      originalPrice = double.tryParse(originalPriceRaw);
+      if (originalPrice == null || originalPrice < 0) {
+        _showError(context.l10n.tr('enter_valid_price'));
+        return;
+      }
+    }
+
     if (_isFoodAdPost && _selectedFoodCategory.isEmpty) {
       _showError(context.l10n.tr('select_food_category'));
       return;
@@ -486,6 +499,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         marketTitle: (_isMarketPost || _isServicePost || _isFoodAdPost) ? marketTitle : null,
         marketPrice: (_isMarketPost || _isServicePost || _isFoodAdPost) ? marketPrice : null,
         marketPriceMax: (_isMarketPost || _isServicePost) && _priceIsRange ? marketPriceMax : null,
+        originalPrice: _isMarketPost ? originalPrice : null,
+        itemCondition: (_isMarketPost && _selectedMarketIntent == 'selling') ? _selectedCondition : null,
         shareScope: _shareScope,
         taggedUserIds: allowedTagIds,
       );
@@ -926,6 +941,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
+                        if (_isMarketPost) ...[
+                          TextField(
+                            controller: _originalPriceCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              border: const OutlineInputBorder(),
+                              labelText: l10n.tr('original_price_optional'),
+                              hintText: 'e.g. 1500',
+                              prefixText: 'EUR ',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                       ],
                     ] else ...[
                       TextField(
@@ -957,6 +985,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         labelText: l10n.tr('marketplace_type'),
                       ),
                     ),
+                    if (_selectedMarketIntent == 'selling') ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedCondition,
+                        items: [
+                          DropdownMenuItem(value: 'new', child: Text(l10n.tr('condition_new'))),
+                          DropdownMenuItem(value: 'like_new', child: Text(l10n.tr('condition_like_new'))),
+                          DropdownMenuItem(value: 'good', child: Text(l10n.tr('condition_good'))),
+                          DropdownMenuItem(value: 'fair', child: Text(l10n.tr('condition_fair'))),
+                          DropdownMenuItem(value: 'parts', child: Text(l10n.tr('condition_parts'))),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _selectedCondition = v);
+                        },
+                        decoration: InputDecoration(
+                          border: const OutlineInputBorder(),
+                          labelText: l10n.tr('item_condition'),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       initialValue: _selectedMarketCategory,

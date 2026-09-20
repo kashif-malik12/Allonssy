@@ -1,5 +1,5 @@
 class FirebaseWebConfig {
-  static const apiKey = String.fromEnvironment('FIREBASE_WEB_API_KEY');
+  static const apiKey = String.fromEnvironment('FIREBASE_WEB_API_KEY', defaultValue: 'AIzaSyBn6VHGz1Srkcd-nO85NaWe9N8NykTP0Mo');
   static const appId = String.fromEnvironment('FIREBASE_APP_ID', defaultValue: '1:460437609061:web:8b0b6e5c136fab52d8c48c');
   static const messagingSenderId = String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID', defaultValue: '460437609061');
   static const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID', defaultValue: 'allonssy');

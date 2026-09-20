@@ -1470,7 +1470,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
               children: [
                 _buildQuickLinkButton(
                   icon: Icons.business,
-                  label: l10n.tr('businesses'),
+                  label: l10n.tr('professionals'),
                   onPressed: () => context.push('/businesses'),
                 ),
                 _buildQuickLinkButton(

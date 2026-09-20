@@ -8,6 +8,7 @@ import '../core/service_categories.dart';
 import '../models/post_model.dart';
 import '../services/mention_service.dart';
 import '../services/post_service.dart';
+import '../services/saved_post_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 
@@ -29,7 +30,11 @@ class _GigsScreenState extends State<GigsScreen> {
   String _pricingFilter = 'all';
   String _sortBy = 'date_desc';
   String _search = '';
+  bool _onlySaved = false;
   final TextEditingController _searchCtrl = TextEditingController();
+
+  late final SavedPostService _savedPostService;
+  Set<String> _savedPostIds = {};
 
   // Raw server rows, accumulated across pages
   List<Map<String, dynamic>> _rawRows = [];
@@ -48,6 +53,7 @@ class _GigsScreenState extends State<GigsScreen> {
     if (_selectedType != 'all') count++;
     if (_pricingFilter != 'all') count++;
     if (_sortBy != 'date_desc') count++;
+    if (_onlySaved) count++;
     return count;
   }
 
@@ -67,6 +73,7 @@ class _GigsScreenState extends State<GigsScreen> {
   @override
   void initState() {
     super.initState();
+    _savedPostService = SavedPostService(Supabase.instance.client);
     _scrollCtrl = ScrollController()..addListener(_onScroll);
     _load();
   }
@@ -189,8 +196,58 @@ class _GigsScreenState extends State<GigsScreen> {
       }).toList();
     }
 
+    if (_onlySaved) {
+      items = items.where((p) => _savedPostIds.contains(p.id)).toList();
+    }
+
     _sortItems(items);
     return items;
+  }
+
+  Future<void> _toggleSave(Post post) async {
+    final l10n = context.l10n;
+    final wasSaved = _savedPostIds.contains(post.id);
+    setState(() {
+      if (wasSaved) {
+        _savedPostIds.remove(post.id);
+      } else {
+        _savedPostIds.add(post.id);
+      }
+    });
+
+    try {
+      if (wasSaved) {
+        await _savedPostService.unsavePost(post.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('gig_unsaved')),
+            action: SnackBarAction(
+              label: l10n.tr('undo'),
+              onPressed: () => _toggleSave(post),
+            ),
+          ),
+        );
+      } else {
+        await _savedPostService.savePost(post.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.tr('gig_saved'))),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (wasSaved) {
+          _savedPostIds.add(post.id);
+        } else {
+          _savedPostIds.remove(post.id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   Future<void> _load() async {
@@ -224,9 +281,16 @@ class _GigsScreenState extends State<GigsScreen> {
       final rows = await PostService(Supabase.instance.client)
           .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
 
+      final postIds = rows
+          .map((r) => (r['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final savedIds = await _savedPostService.fetchSavedPostIds(postIds);
+
       if (!mounted) return;
       setState(() {
         _rawRows = rows;
+        _savedPostIds = savedIds;
         _page = 1;
         _hasMore = rows.length == _kPageSize;
       });
@@ -258,9 +322,16 @@ class _GigsScreenState extends State<GigsScreen> {
       final rows = await PostService(Supabase.instance.client)
           .excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
 
+      final postIds = rows
+          .map((r) => (r['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final savedIds = await _savedPostService.fetchSavedPostIds(postIds);
+
       if (!mounted) return;
       setState(() {
         _rawRows = [..._rawRows, ...rows];
+        _savedPostIds.addAll(savedIds);
         _page++;
         _hasMore = rows.length == _kPageSize;
       });
@@ -348,6 +419,7 @@ class _GigsScreenState extends State<GigsScreen> {
                         _selectedType = 'all';
                         _pricingFilter = 'all';
                         _sortBy = 'date_desc';
+                        _onlySaved = false;
                       });
                       _load();
                     },
@@ -482,6 +554,27 @@ class _GigsScreenState extends State<GigsScreen> {
                           ],
                         ),
                       ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                        child: Row(
+                          children: [
+                            InkWell(
+                              onTap: () => setState(() => _onlySaved = !_onlySaved),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Checkbox(
+                                    value: _onlySaved,
+                                    onChanged: (v) => setState(() => _onlySaved = v ?? false),
+                                  ),
+                                  Text(l10n.tr('saved')),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   )
                 : const SizedBox.shrink(),
@@ -577,27 +670,57 @@ class _GigsScreenState extends State<GigsScreen> {
                                       children: [
                                         SizedBox(
                                           height: 112,
-                                          child: ClipRRect(
-                                            borderRadius: const BorderRadius.vertical(
-                                              top: Radius.circular(12),
-                                            ),
-                                            child: Container(
-                                              width: double.infinity,
-                                              color: Colors.grey.shade200,
-                                              padding: const EdgeInsets.all(6),
-                                              child: p.imageUrl != null &&
-                                                      p.imageUrl!.isNotEmpty
-                                                  ? Image.network(
-                                                      p.imageUrl!,
-                                                      fit: BoxFit.contain,
-                                                      alignment: Alignment.center,
-                                                    )
-                                                  : const Icon(
-                                                      Icons.miscellaneous_services_outlined,
-                                                      size: 40,
-                                                      color: Colors.black45,
+                                          child: Stack(
+                                            children: [
+                                              Positioned.fill(
+                                                child: ClipRRect(
+                                                  borderRadius: const BorderRadius.vertical(
+                                                    top: Radius.circular(12),
+                                                  ),
+                                                  child: Container(
+                                                    width: double.infinity,
+                                                    color: Colors.grey.shade200,
+                                                    padding: const EdgeInsets.all(6),
+                                                    child: p.imageUrl != null &&
+                                                            p.imageUrl!.isNotEmpty
+                                                        ? Image.network(
+                                                            p.imageUrl!,
+                                                            fit: BoxFit.contain,
+                                                            alignment: Alignment.center,
+                                                          )
+                                                        : const Icon(
+                                                            Icons.miscellaneous_services_outlined,
+                                                            size: 40,
+                                                            color: Colors.black45,
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                              Positioned(
+                                                top: 4,
+                                                right: 4,
+                                                child: Material(
+                                                  color: Colors.white.withAlpha(230),
+                                                  shape: const CircleBorder(),
+                                                  child: InkWell(
+                                                    customBorder: const CircleBorder(),
+                                                    onTap: () => _toggleSave(p),
+                                                    child: Padding(
+                                                      padding: const EdgeInsets.all(6),
+                                                      child: Icon(
+                                                        _savedPostIds.contains(p.id)
+                                                            ? Icons.bookmark
+                                                            : Icons.bookmark_outline,
+                                                        size: 18,
+                                                        color: _savedPostIds.contains(p.id)
+                                                            ? const Color(0xFF2563EB)
+                                                            : Colors.black87,
+                                                      ),
                                                     ),
-                                            ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         Padding(

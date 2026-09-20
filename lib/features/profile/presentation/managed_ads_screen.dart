@@ -3,8 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/food_categories.dart';
+import '../../../core/localization/app_localizations.dart';
+import '../../../core/item_condition.dart';
 import '../../../core/market_categories.dart';
 import '../../../core/service_categories.dart';
+import '../../../services/post_service.dart';
 import '../../../widgets/global_app_bar.dart';
 import '../../../widgets/global_bottom_nav.dart';
 
@@ -91,7 +94,7 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
 
       final rows = await _db
           .from('posts')
-          .select('id, content, image_url, created_at, post_type, market_title, market_price, market_category, market_intent, visibility')
+          .select('*')
           .eq('user_id', uid)
           .inFilter('post_type', _postTypes)
           .order('created_at', ascending: false);
@@ -165,11 +168,92 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
     }
   }
 
+  Future<void> _updateStatus(String postId, String newStatus) async {
+    try {
+      await PostService(_db).updateItemStatus(postId: postId, status: newStatus);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.tr('status_updated'))),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Status update failed: $e')),
+      );
+    }
+  }
+
+  Widget _buildStatusChip(String status) {
+    final l10n = context.l10n;
+    final Color bg;
+    final Color fg;
+    final Color border;
+    final String label;
+
+    switch (status.toLowerCase()) {
+      case 'sold':
+        bg = const Color(0xFFF3F4F6);
+        fg = const Color(0xFF4B5563);
+        border = const Color(0xFFD1D5DB);
+        label = l10n.tr('sold');
+        break;
+      case 'reserved':
+        bg = const Color(0xFFFEF3C7);
+        fg = const Color(0xFF92400E);
+        border = const Color(0xFFFCD34D);
+        label = l10n.tr('reserved');
+        break;
+      case 'available':
+      default:
+        bg = const Color(0xFFECFDF5);
+        fg = const Color(0xFF065F46);
+        border = const Color(0xFF6EE7B7);
+        label = l10n.tr('available');
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            status.toLowerCase() == 'sold'
+                ? Icons.check_circle_outline
+                : status.toLowerCase() == 'reserved'
+                    ? Icons.bookmark_outline
+                    : Icons.fiber_manual_record,
+            size: 12,
+            color: fg,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _editPost(Map<String, dynamic> row) async {
     final contentCtrl = TextEditingController(text: (row['content'] ?? '').toString());
     final titleCtrl = TextEditingController(text: (row['market_title'] ?? '').toString());
     final priceCtrl = TextEditingController(
       text: row['market_price'] == null ? '' : (row['market_price'] as num).toString(),
+    );
+    final originalPriceCtrl = TextEditingController(
+      text: row['original_price'] == null ? '' : (row['original_price'] as num).toString(),
     );
     String category = ((row['market_category'] ?? '').toString().trim().isNotEmpty
             ? (row['market_category'] ?? '').toString()
@@ -186,6 +270,14 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
             ? (row['post_type'] ?? '').toString()
             : _postTypes.first)
         .trim();
+    String itemStatus = ((row['item_status'] ?? 'available').toString().trim().isNotEmpty
+            ? (row['item_status'] ?? 'available').toString()
+            : 'available')
+        .trim().toLowerCase();
+    if (itemStatus != 'available' && itemStatus != 'reserved' && itemStatus != 'sold') {
+      itemStatus = 'available';
+    }
+    String? itemCondition = (row['item_condition'] as String?)?.trim();
     bool saving = false;
 
     final saved = await showDialog<bool>(
@@ -217,6 +309,18 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Price'),
                       ),
+                      if (widget.mode == ManagedAdsMode.products) ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: originalPriceCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('original_price_optional'),
+                            hintText: 'e.g. 150',
+                            prefixText: 'EUR ',
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         initialValue: category,
@@ -245,6 +349,38 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                             setDialogState(() => marketIntent = value);
                           },
                           decoration: const InputDecoration(labelText: 'Marketplace type'),
+                        ),
+                        if (marketIntent == 'selling') ...[
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String?>(
+                            initialValue: itemCondition,
+                            items: [
+                              DropdownMenuItem(value: null, child: Text(context.l10n.tr('select_condition'))),
+                              DropdownMenuItem(value: 'new', child: Text(context.l10n.tr('condition_new'))),
+                              DropdownMenuItem(value: 'like_new', child: Text(context.l10n.tr('condition_like_new'))),
+                              DropdownMenuItem(value: 'good', child: Text(context.l10n.tr('condition_good'))),
+                              DropdownMenuItem(value: 'fair', child: Text(context.l10n.tr('condition_fair'))),
+                              DropdownMenuItem(value: 'parts', child: Text(context.l10n.tr('condition_parts'))),
+                            ],
+                            onChanged: (value) {
+                              setDialogState(() => itemCondition = value);
+                            },
+                            decoration: InputDecoration(labelText: context.l10n.tr('item_condition')),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: itemStatus,
+                          items: [
+                            DropdownMenuItem(value: 'available', child: Text(context.l10n.tr('available'))),
+                            DropdownMenuItem(value: 'reserved', child: Text(context.l10n.tr('reserved'))),
+                            DropdownMenuItem(value: 'sold', child: Text(context.l10n.tr('sold'))),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setDialogState(() => itemStatus = value);
+                          },
+                          decoration: InputDecoration(labelText: context.l10n.tr('item_status')),
                         ),
                       ],
                       if (widget.mode == ManagedAdsMode.gigs) ...[
@@ -289,6 +425,10 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                       ? null
                       : () async {
                           final price = double.tryParse(priceCtrl.text.trim());
+                          double? originalPrice = double.tryParse(originalPriceCtrl.text.trim());
+                          final oldPrice = (row['market_price'] as num?)?.toDouble();
+                          final oldOriginalPrice = (row['original_price'] as num?)?.toDouble();
+
                           if (titleCtrl.text.trim().isEmpty || contentCtrl.text.trim().isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Title and details are required')),
@@ -302,6 +442,12 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                             return;
                           }
 
+                          if (widget.mode == ManagedAdsMode.products) {
+                            if (originalPrice == null && oldPrice != null && price < oldPrice) {
+                              originalPrice = oldOriginalPrice ?? oldPrice;
+                            }
+                          }
+
                           setDialogState(() => saving = true);
                           try {
                             await _db.from('posts').update({
@@ -311,6 +457,9 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                               'market_category': category,
                               'visibility': visibility,
                               if (widget.mode == ManagedAdsMode.products) 'market_intent': marketIntent,
+                              if (widget.mode == ManagedAdsMode.products) 'item_status': itemStatus,
+                              if (widget.mode == ManagedAdsMode.products) 'original_price': originalPrice,
+                              if (widget.mode == ManagedAdsMode.products) 'item_condition': marketIntent == 'selling' ? itemCondition : null,
                               if (widget.mode == ManagedAdsMode.gigs) 'post_type': postType,
                             }).eq('id', row['id']).eq('user_id', _db.auth.currentUser!.id);
                             if (!context.mounted) return;
@@ -335,6 +484,7 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
     contentCtrl.dispose();
     titleCtrl.dispose();
     priceCtrl.dispose();
+    originalPriceCtrl.dispose();
 
     if (saved == true) {
       await _load();
@@ -390,6 +540,9 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                                       .toString();
                                   final category = _categoryLabel((row['market_category'] ?? '').toString());
                                   final price = (row['market_price'] as num?)?.toDouble();
+                                  final originalPrice = (row['original_price'] as num?)?.toDouble();
+                                  final hasDiscount = originalPrice != null && price != null && originalPrice > price;
+                                  final discountPercent = hasDiscount ? (((originalPrice - price) / originalPrice) * 100).round() : 0;
                                   final createdAt = (row['created_at'] ?? '').toString();
                                   final visibility = (row['visibility'] ?? 'public').toString() == 'followers'
                                       ? 'Local'
@@ -435,9 +588,24 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                                                   spacing: 8,
                                                   runSpacing: 8,
                                                   children: [
+                                                    if (widget.mode == ManagedAdsMode.products)
+                                                      _buildStatusChip((row['item_status'] ?? 'available').toString()),
                                                     _Chip(label: category),
-                                                    if (price != null)
+                                                    if (price != null) ...[
                                                       _Chip(label: 'EUR ${price.toStringAsFixed(2)}'),
+                                                      if (hasDiscount) ...[
+                                                        _Chip(
+                                                          label: 'EUR ${originalPrice.toStringAsFixed(2)}',
+                                                          isStrikethrough: true,
+                                                          textColor: Colors.grey.shade600,
+                                                        ),
+                                                        _Chip(
+                                                          label: '-$discountPercent%',
+                                                          backgroundColor: const Color(0xFFFFEBEE),
+                                                          textColor: const Color(0xFFC62828),
+                                                        ),
+                                                      ],
+                                                    ],
                                                     _Chip(label: visibility),
                                                     if (widget.mode == ManagedAdsMode.products)
                                                       _Chip(
@@ -446,6 +614,16 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                                                                 'buying')
                                                             ? 'Buying'
                                                             : 'Selling',
+                                                      ),
+                                                    if (widget.mode == ManagedAdsMode.products &&
+                                                        (row['item_condition'] as String?)?.trim().isNotEmpty == true)
+                                                      _Chip(
+                                                        label: itemConditionLabel(
+                                                          (row['item_condition'] as String).trim(),
+                                                          context.l10n,
+                                                        ),
+                                                        backgroundColor: const Color(0xFFE0F2FE),
+                                                        textColor: const Color(0xFF0369A1),
                                                       ),
                                                     if (widget.mode == ManagedAdsMode.gigs)
                                                       _Chip(
@@ -471,6 +649,53 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
                                                   spacing: 8,
                                                   runSpacing: 8,
                                                   children: [
+                                                    if (widget.mode == ManagedAdsMode.products)
+                                                      PopupMenuButton<String>(
+                                                        tooltip: context.l10n.tr('change_status'),
+                                                        onSelected: (newStatus) => _updateStatus(
+                                                          (row['id'] ?? '').toString(),
+                                                          newStatus,
+                                                        ),
+                                                        itemBuilder: (_) => [
+                                                          PopupMenuItem(
+                                                            value: 'available',
+                                                            child: Row(
+                                                              children: [
+                                                                const Icon(Icons.fiber_manual_record, color: Color(0xFF065F46), size: 16),
+                                                                const SizedBox(width: 8),
+                                                                Text(context.l10n.tr('mark_as_available')),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                          PopupMenuItem(
+                                                            value: 'reserved',
+                                                            child: Row(
+                                                              children: [
+                                                                const Icon(Icons.bookmark_outline, color: Color(0xFF92400E), size: 16),
+                                                                const SizedBox(width: 8),
+                                                                Text(context.l10n.tr('mark_as_reserved')),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                          PopupMenuItem(
+                                                            value: 'sold',
+                                                            child: Row(
+                                                              children: [
+                                                                const Icon(Icons.check_circle_outline, color: Color(0xFF4B5563), size: 16),
+                                                                const SizedBox(width: 8),
+                                                                Text(context.l10n.tr('mark_as_sold')),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        ],
+                                                        child: IgnorePointer(
+                                                          child: OutlinedButton.icon(
+                                                            onPressed: () {},
+                                                            icon: const Icon(Icons.swap_horiz, size: 18),
+                                                            label: Text(context.l10n.tr('change_status')),
+                                                          ),
+                                                        ),
+                                                      ),
                                                     OutlinedButton.icon(
                                                       onPressed: () => _editPost(row),
                                                       icon: const Icon(Icons.edit_outlined, size: 18),
@@ -518,21 +743,39 @@ class _ManagedAdsScreenState extends State<ManagedAdsScreen> {
 
 class _Chip extends StatelessWidget {
   final String label;
+  final Color? backgroundColor;
+  final Color? textColor;
+  final bool isStrikethrough;
 
-  const _Chip({required this.label});
+  const _Chip({
+    required this.label,
+    this.backgroundColor,
+    this.textColor,
+    this.isStrikethrough = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4EBDD),
+        color: backgroundColor ?? const Color(0xFFF4EBDD),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE6DDCE)),
+        border: Border.all(
+          color: backgroundColor != null
+              ? backgroundColor!.withAlpha(200)
+              : const Color(0xFFE6DDCE),
+        ),
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: textColor,
+          decoration: isStrikethrough ? TextDecoration.lineThrough : null,
+          decorationColor: textColor ?? Colors.grey.shade600,
+        ),
       ),
     );
   }

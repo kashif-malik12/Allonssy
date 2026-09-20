@@ -14,12 +14,18 @@ import '../../../services/reaction_service.dart';
 import '../../../services/follow_service.dart';
 import '../../../services/portfolio_service.dart';
 import '../../../services/post_service.dart';
+import '../../../services/favorite_business_service.dart';
+import '../../../core/item_condition.dart';
+import '../../../screens/feedback_screen.dart';
+import '../../../widgets/share_button.dart';
 import '../../../widgets/global_app_bar.dart';
 import '../../../widgets/global_bottom_nav.dart';
 import '../../../widgets/post_media_view.dart';
 import '../../../widgets/tagged_content.dart';
 import '../../../widgets/report_post_sheet.dart'; // ✅ NEW
 import '../../../widgets/report_user_sheet.dart'; // ✅ NEW
+
+enum ProfileTab { posts, marketplace, services }
 
 class ProfileDetailScreen extends StatefulWidget {
   final String profileId; // ✅ in your app this equals auth uid
@@ -31,13 +37,18 @@ class ProfileDetailScreen extends StatefulWidget {
 
 class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   final _db = Supabase.instance.client;
+  final _favService = FavoriteBusinessService();
 
   bool _loading = true;
   String? _error;
 
   Map<String, dynamic>? _profile;
   bool _isMe = false;
+  bool _isFavorite = false;
   FollowStatus _followStatus = FollowStatus.none;
+
+  bool get _isBusinessOrRestaurant =>
+      _profile?['account_type'] == 'business' || _profile?['is_restaurant'] == true;
 
   // ✅ Messaging permission (mutual follow)
   bool _canMessage = false;
@@ -52,12 +63,23 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   RealtimeChannel? _reqChannel;
 
   // ✅ Posts on profile
+  ProfileTab _selectedProfileTab = ProfileTab.posts;
   bool _postsLoading = true;
   String? _postsError;
   List<Post> _posts = [];
   int _postsPage = 0;
   bool _postsHasMore = true;
   bool _postsLoadingMore = false;
+
+  // ✅ Marketplace listings on profile
+  bool _marketPostsLoading = true;
+  String? _marketPostsError;
+  List<Post> _marketPosts = [];
+
+  // ✅ Gigs & Services on profile
+  bool _servicePostsLoading = true;
+  String? _servicePostsError;
+  List<Post> _servicePosts = [];
 
   // ✅ Portfolio (business/org only)
   bool _portfolioLoading = true;
@@ -245,6 +267,22 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                 child: Text(_followButtonText(context)),
               ),
             ),
+            if (_isBusinessOrRestaurant) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _toggleFavorite,
+                  icon: Icon(
+                    _isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: _isFavorite ? Colors.red : null,
+                  ),
+                  label: Text(
+                    _isFavorite ? l10n.tr('remove_favorite') : l10n.tr('add_favorite'),
+                  ),
+                ),
+              ),
+            ],
             if (!_canMessageLoading && !_canMessage) ...[
               const SizedBox(height: 8),
               Text(
@@ -422,6 +460,13 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                 ),
                 _buildSidebarAction(
                   context: context,
+                  icon: Icons.bookmark_outline,
+                  title: l10n.tr('saved_listings'),
+                  subtitle: l10n.tr('no_saved_listings_subtitle'),
+                  onTap: () => context.push('/marketplace/saved'),
+                ),
+                _buildSidebarAction(
+                  context: context,
                   icon: Icons.work_outline,
                   title: l10n.tr('my_gigs'),
                   subtitle: l10n.tr('edit_delete_service_ads'),
@@ -435,6 +480,20 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                     subtitle: l10n.tr('edit_delete_food_ads'),
                     onTap: () => context.push('/profile/my-foods'),
                   ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.share_outlined,
+                  title: l10n.tr('share_app'),
+                  subtitle: l10n.tr('share_app_subtitle'),
+                  onTap: () => shareApp(context),
+                ),
+                _buildSidebarAction(
+                  context: context,
+                  icon: Icons.rate_review_outlined,
+                  title: l10n.tr('give_feedback'),
+                  subtitle: l10n.tr('feedback_subtitle'),
+                  onTap: () => FeedbackScreen.showSheet(context),
+                ),
               ] else ...[
                 _buildSidebarAction(
                   context: context,
@@ -476,9 +535,12 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
         PopupMenuItem(value: 'following', child: Text(l10n.tr('following'))),
         PopupMenuItem(value: 'connections', child: Text(l10n.tr('connections'))),
         PopupMenuItem(value: 'my_products', child: Text(l10n.tr('my_products'))),
+        PopupMenuItem(value: 'saved_listings', child: Text(l10n.tr('saved_listings'))),
         PopupMenuItem(value: 'my_gigs', child: Text(l10n.tr('my_gigs'))),
         if ((_profile?['is_restaurant'] == true))
           PopupMenuItem(value: 'my_foods', child: Text(l10n.tr('my_foods'))),
+        PopupMenuItem(value: 'share_app', child: Text(l10n.tr('share_app'))),
+        PopupMenuItem(value: 'give_feedback', child: Text(l10n.tr('give_feedback'))),
       ];
     }
 
@@ -512,11 +574,20 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       case 'my_products':
         await context.push('/profile/my-products');
         return;
+      case 'saved_listings':
+        await context.push('/marketplace/saved');
+        return;
       case 'my_gigs':
         await context.push('/profile/my-gigs');
         return;
       case 'my_foods':
         await context.push('/profile/my-foods');
+        return;
+      case 'share_app':
+        await shareApp(context);
+        return;
+      case 'give_feedback':
+        await FeedbackScreen.showSheet(context);
         return;
       case 'report_user':
         await _reportUser();
@@ -832,6 +903,13 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                         ),
                         _buildSidebarAction(
                           context: context,
+                          icon: Icons.bookmark_outline,
+                          title: l10n.tr('saved_listings'),
+                          subtitle: l10n.tr('no_saved_listings_subtitle'),
+                          onTap: () => context.push('/marketplace/saved'),
+                        ),
+                        _buildSidebarAction(
+                          context: context,
                           icon: Icons.work_outline,
                           title: l10n.tr('my_gigs'),
                           subtitle: l10n.tr('edit_delete_service_ads'),
@@ -857,10 +935,58 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
         const Divider(),
         const SizedBox(height: 12),
         _buildPortfolioSection(context),
+        _buildProfileTabs(context),
+        const SizedBox(height: 8),
+        if (_selectedProfileTab == ProfileTab.posts)
+          _buildPostsTabContent(context)
+        else if (_selectedProfileTab == ProfileTab.marketplace)
+          _buildMarketplaceTabContent(context)
+        else
+          _buildServicesTabContent(context),
+      ],
+    );
+  }
+
+  Widget _buildProfileTabs(BuildContext context) {
+    final l10n = context.l10n;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: SegmentedButton<ProfileTab>(
+        segments: [
+          ButtonSegment(
+            value: ProfileTab.posts,
+            label: Text('${l10n.tr('tab_posts')}${_posts.isNotEmpty ? ' (${_posts.length})' : ''}'),
+            icon: const Icon(Icons.article_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: ProfileTab.marketplace,
+            label: Text('${l10n.tr('tab_marketplace')}${_marketPosts.isNotEmpty ? ' (${_marketPosts.length})' : ''}'),
+            icon: const Icon(Icons.storefront_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: ProfileTab.services,
+            label: Text('${l10n.tr('tab_services')}${_servicePosts.isNotEmpty ? ' (${_servicePosts.length})' : ''}'),
+            icon: const Icon(Icons.work_outline, size: 18),
+          ),
+        ],
+        selected: {_selectedProfileTab},
+        onSelectionChanged: (s) {
+          setState(() => _selectedProfileTab = s.first);
+        },
+      ),
+    );
+  }
+
+  Widget _buildPostsTabContent(BuildContext context) {
+    final l10n = context.l10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Row(
           children: [
             Expanded(
-              child: Text('Posts', style: Theme.of(context).textTheme.titleMedium),
+              child: Text(l10n.tr('tab_posts'), style: Theme.of(context).textTheme.titleMedium),
             ),
             IconButton(
               tooltip: 'Refresh posts',
@@ -1028,6 +1154,338 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     );
   }
 
+  Widget _buildMarketplaceTabContent(BuildContext context) {
+    final l10n = context.l10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.tr('tab_marketplace'),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (_isMe)
+              OutlinedButton.icon(
+                onPressed: () => context.push('/profile/my-products'),
+                icon: const Icon(Icons.tune, size: 16),
+                label: Text(l10n.tr('manage')),
+              ),
+            IconButton(
+              tooltip: 'Refresh listings',
+              onPressed: _marketPostsLoading ? null : _loadMarketPosts,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_marketPostsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_marketPostsError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('Error: $_marketPostsError'),
+          )
+        else if (_marketPosts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.storefront_outlined, size: 48, color: Theme.of(context).hintColor),
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.tr('no_user_listings'),
+                    style: TextStyle(color: Theme.of(context).hintColor, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ..._marketPosts.map((p) {
+            final isSold = p.itemStatus == 'sold';
+            final isReserved = p.itemStatus == 'reserved';
+            final conditionLabel = p.itemCondition != null
+                ? itemConditionLabel(p.itemCondition, l10n)
+                : null;
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => context.push('/marketplace/product/${p.id}'),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if ((p.imageUrl ?? '').isNotEmpty)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Stack(
+                            children: [
+                              Image.network(
+                                p.imageUrl!,
+                                width: 84,
+                                height: 84,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  width: 84,
+                                  height: 84,
+                                  color: Colors.grey[200],
+                                  child: const Icon(Icons.broken_image, size: 28),
+                                ),
+                              ),
+                              if (isSold || isReserved)
+                                Positioned.fill(
+                                  child: Container(
+                                    color: Colors.black45,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      isSold ? l10n.tr('status_sold') : l10n.tr('status_reserved'),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          width: 84,
+                          height: 84,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.storefront_outlined, size: 32),
+                        ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              p.content.isEmpty ? l10n.tr('no_text') : p.content,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                if (p.marketPrice != null)
+                                  Text(
+                                    'EUR ${p.marketPrice!.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: p.hasDiscount ? Colors.red[700] : const Color(0xFF0F766E),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                if (p.hasDiscount && p.originalPrice != null) ...[
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'EUR ${p.originalPrice!.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      decoration: TextDecoration.lineThrough,
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red[700],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '-${p.discountPercentage}%',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                if (conditionLabel != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      conditionLabel,
+                                      style: const TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                if ((p.locationName ?? '').isNotEmpty)
+                                  Text(
+                                    p.locationName!,
+                                    style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildServicesTabContent(BuildContext context) {
+    final l10n = context.l10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.tr('tab_services'),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (_isMe)
+              OutlinedButton.icon(
+                onPressed: () => context.push('/profile/my-gigs'),
+                icon: const Icon(Icons.tune, size: 16),
+                label: Text(l10n.tr('manage')),
+              ),
+            IconButton(
+              tooltip: 'Refresh services',
+              onPressed: _servicePostsLoading ? null : _loadServicePosts,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_servicePostsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_servicePostsError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('Error: $_servicePostsError'),
+          )
+        else if (_servicePosts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.work_outline, size: 48, color: Theme.of(context).hintColor),
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.tr('no_user_services'),
+                    style: TextStyle(color: Theme.of(context).hintColor, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ..._servicePosts.map((p) {
+            final isOffer = p.postType == 'service_offer';
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => context.push('/gigs/service/${p.id}'),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: (isOffer ? const Color(0xFF0F766E) : Colors.orange[800]!)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              isOffer ? l10n.tr('service_offer') : l10n.tr('service_request'),
+                              style: TextStyle(
+                                color: isOffer ? const Color(0xFF0F766E) : Colors.orange[800],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          if (p.marketPrice != null)
+                            Text(
+                              '€${p.marketPrice!.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F766E),
+                                fontSize: 13,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        p.content,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, height: 1.3),
+                      ),
+                      if ((p.locationName ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_outlined, size: 14, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Text(
+                              p.locationName!,
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     final ch = _reqChannel;
@@ -1042,6 +1500,8 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     await Future.wait([
       _loadProfileAndFollow(),
       _loadPosts(),
+      _loadMarketPosts(),
+      _loadServicePosts(),
     ]);
 
     // ✅ After profile loads (we need profile_type), load portfolio
@@ -1216,6 +1676,12 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       _followingCount = await follow.followingCount(widget.profileId);
       _connectionsCount = await follow.mutualConnectionsCount(widget.profileId);
 
+      if (!_isMe && _isBusinessOrRestaurant) {
+        _isFavorite = await _favService.isFavorite(widget.profileId);
+      } else {
+        _isFavorite = false;
+      }
+
       if (_isMe) {
         await _refreshPendingRequests();
         _subscribeRequestsRealtime();
@@ -1224,6 +1690,39 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       _error = e.toString();
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    final l10n = context.l10n;
+    final wasFav = _isFavorite;
+    setState(() => _isFavorite = !wasFav);
+    try {
+      if (wasFav) {
+        await _favService.removeFavorite(widget.profileId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('business_unfavorited')),
+            action: SnackBarAction(
+              label: l10n.tr('undo'),
+              onPressed: _toggleFavorite,
+            ),
+          ),
+        );
+      } else {
+        await _favService.addFavorite(widget.profileId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.tr('business_favorited'))),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isFavorite = wasFav);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     }
   }
 
@@ -1311,6 +1810,90 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       // silently ignore
     } finally {
       if (mounted) setState(() => _postsLoadingMore = false);
+    }
+  }
+
+  Future<void> _loadMarketPosts() async {
+    if (_profile?['is_disabled'] == true) {
+      if (mounted) {
+        setState(() {
+          _marketPosts = [];
+          _marketPostsError = null;
+          _marketPostsLoading = false;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _marketPostsLoading = true;
+      _marketPostsError = null;
+    });
+
+    try {
+      final rows = await _db
+          .from('posts')
+          .select('*, profiles(full_name, avatar_url)')
+          .eq('user_id', widget.profileId)
+          .eq('type', 'market')
+          .order('created_at', ascending: false)
+          .limit(40);
+
+      final list = (rows as List)
+          .map((e) => Post.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _marketPosts = list;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _marketPostsError = e.toString());
+    } finally {
+      if (mounted) setState(() => _marketPostsLoading = false);
+    }
+  }
+
+  Future<void> _loadServicePosts() async {
+    if (_profile?['is_disabled'] == true) {
+      if (mounted) {
+        setState(() {
+          _servicePosts = [];
+          _servicePostsError = null;
+          _servicePostsLoading = false;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _servicePostsLoading = true;
+      _servicePostsError = null;
+    });
+
+    try {
+      final rows = await _db
+          .from('posts')
+          .select('*, profiles(full_name, avatar_url)')
+          .eq('user_id', widget.profileId)
+          .inFilter('type', ['service_offer', 'service_request'])
+          .order('created_at', ascending: false)
+          .limit(40);
+
+      final list = (rows as List)
+          .map((e) => Post.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _servicePosts = list;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _servicePostsError = e.toString());
+    } finally {
+      if (mounted) setState(() => _servicePostsLoading = false);
     }
   }
 
@@ -1840,6 +2423,17 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
         showBackIfPossible: true,
         homeRoute: '/feed',
         actions: [
+          if (!_isMe && _isBusinessOrRestaurant)
+            IconButton(
+              icon: Icon(
+                _isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: _isFavorite ? Colors.red : null,
+              ),
+              tooltip: _isFavorite
+                  ? context.l10n.tr('remove_favorite')
+                  : context.l10n.tr('add_favorite'),
+              onPressed: _toggleFavorite,
+            ),
           if (!_isMe)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),

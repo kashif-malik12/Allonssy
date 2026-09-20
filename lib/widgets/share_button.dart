@@ -3,13 +3,50 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/localization/app_localizations.dart';
+
 /// Base web origin — same host the Flutter web app runs on.
 const _webBase = 'https://app.allonssy.com';
 
-/// Canonical share URLs for the three shareable listing types.
+/// Canonical share URLs for the shareable listing types and app.
+String appShareUrl() => _webBase;
 String marketplaceShareUrl(String postId) => '$_webBase/marketplace/product/$postId';
 String gigShareUrl(String postId) => '$_webBase/gigs/service/$postId';
 String foodShareUrl(String postId) => '$_webBase/foods/$postId';
+String profileShareUrl(String profileId) => '$_webBase/p/$profileId';
+
+/// Shares the Allonssy application with friends and community.
+Future<void> shareApp(BuildContext context) async {
+  final l10n = context.l10n;
+  final title = l10n.tr('share_app_title');
+  final message = l10n.tr('share_app_message', args: {'url': _webBase});
+  final box = context.findRenderObject() as RenderBox?;
+  final origin = box == null
+      ? null
+      : box.localToGlobal(Offset.zero) & box.size;
+
+  if (kIsWeb) {
+    try {
+      await Share.share(message, subject: title);
+    } catch (_) {
+      await Clipboard.setData(const ClipboardData(text: _webBase));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('link_copied')),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  } else {
+    await Share.share(
+      message,
+      subject: title,
+      sharePositionOrigin: origin,
+    );
+  }
+}
 
 /// A compact icon button that shares a listing URL.
 ///

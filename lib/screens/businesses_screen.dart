@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/business_categories.dart';
 import '../core/localization/app_localizations.dart';
+import '../services/favorite_business_service.dart';
 import '../widgets/global_app_bar.dart';
 import '../widgets/global_bottom_nav.dart';
 
@@ -26,7 +27,11 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
   String _selectedCategory = 'all';
   String _selectedSubcategory = 'all';
   double _maxDistanceKm = 20;
+  bool _onlyFavorites = false;
   final _searchCtrl = TextEditingController();
+
+  late final FavoriteBusinessService _favService;
+  Set<String> _favoriteIds = {};
 
   double? _meLat;
   double? _meLng;
@@ -41,6 +46,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
   @override
   void initState() {
     super.initState();
+    _favService = FavoriteBusinessService(Supabase.instance.client);
     _scrollCtrl = ScrollController()..addListener(_onScroll);
     _load();
   }
@@ -135,7 +141,59 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       });
     }
 
+    if (_onlyFavorites) {
+      items = items
+          .where((b) => _favoriteIds.contains((b['id'] ?? '').toString()))
+          .toList();
+    }
+
     return items;
+  }
+
+  Future<void> _toggleFavorite(String businessId) async {
+    final l10n = context.l10n;
+    final wasFav = _favoriteIds.contains(businessId);
+    setState(() {
+      if (wasFav) {
+        _favoriteIds.remove(businessId);
+      } else {
+        _favoriteIds.add(businessId);
+      }
+    });
+
+    try {
+      if (wasFav) {
+        await _favService.removeFavorite(businessId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.tr('business_unfavorited')),
+            action: SnackBarAction(
+              label: l10n.tr('undo'),
+              onPressed: () => _toggleFavorite(businessId),
+            ),
+          ),
+        );
+      } else {
+        await _favService.addFavorite(businessId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.tr('business_favorited'))),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (wasFav) {
+          _favoriteIds.add(businessId);
+        } else {
+          _favoriteIds.remove(businessId);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   Future<void> _load() async {
@@ -187,9 +245,16 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
             .toList();
       }
 
+      final ids = rows
+          .map((r) => (r['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final favIds = await _favService.fetchFavoriteIds(ids);
+
       if (!mounted) return;
       setState(() {
         _rawRows = rows;
+        _favoriteIds = favIds;
         _page = 1;
         _hasMore = rows.length == _kPageSize;
       });
@@ -238,9 +303,16 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
             .toList();
       }
 
+      final ids = rows
+          .map((r) => (r['id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final favIds = await _favService.fetchFavoriteIds(ids);
+
       if (!mounted) return;
       setState(() {
         _rawRows = [..._rawRows, ...rows];
+        _favoriteIds.addAll(favIds);
         _page++;
         _hasMore = rows.length == _kPageSize;
       });
@@ -367,6 +439,27 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: () => setState(() => _onlyFavorites = !_onlyFavorites),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Checkbox(
+                        value: _onlyFavorites,
+                        onChanged: (v) => setState(() => _onlyFavorites = v ?? false),
+                      ),
+                      Text(l10n.tr('favorites_only')),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Divider(height: 1),
           Expanded(
             child: _loading
@@ -473,6 +566,22 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
                                             ),
                                           ),
                                       ],
+                                    ),
+                                    trailing: IconButton(
+                                      icon: Icon(
+                                        _favoriteIds.contains(id)
+                                            ? Icons.favorite
+                                            : Icons.favorite_border,
+                                        color: _favoriteIds.contains(id)
+                                            ? Colors.red
+                                            : Colors.grey.shade500,
+                                      ),
+                                      onPressed: id.isEmpty
+                                          ? null
+                                          : () => _toggleFavorite(id),
+                                      tooltip: _favoriteIds.contains(id)
+                                          ? l10n.tr('remove_favorite')
+                                          : l10n.tr('add_favorite'),
                                     ),
                                   ),
                                 );
