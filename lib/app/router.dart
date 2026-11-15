@@ -105,9 +105,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return null;
       }
 
-      // ❌ Not logged in → must be on auth pages or public pages
+      final isPublicBrowse =
+          path == '/feed' ||
+          path == '/search' ||
+          path == '/marketplace' ||
+          path.startsWith('/marketplace/product/') ||
+          path == '/gigs' ||
+          path.startsWith('/gigs/service/') ||
+          path == '/restaurants' ||
+          path == '/businesses' ||
+          path == '/foods' ||
+          path.startsWith('/foods/') ||
+          path.startsWith('/p/') ||
+          path.startsWith('/post/');
+
+      // 🔓 Guest mode: allow browsing public directory, restaurants, and feeds without immediate login wall
       if (!loggedIn) {
-        return (isAuth || isResetPassword || isPublicPage) ? null : '/login';
+        if (path == '/') return '/feed';
+        return (isAuth || isResetPassword || isPublicPage || isPublicBrowse) ? null : '/login';
       }
 
       // 🔐 Admin routes — require is_admin = true in DB

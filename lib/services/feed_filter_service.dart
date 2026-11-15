@@ -23,8 +23,8 @@ class FeedFilterService {
       'lost_found_scope': 'all',
       'food_enabled': true,
       'food_categories': <String>[],
-      'org_enabled': false,
-      'org_kinds': <String>[],
+      'org_enabled': true,
+      'org_kinds': ['government', 'nonprofit', 'news_agency'],
     };
   }
 

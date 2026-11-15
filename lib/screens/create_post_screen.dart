@@ -570,9 +570,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ],
                 ),
               ),
+              // ignore: deprecated_member_use
               Radio<_ComposerMediaMode>(
                 value: mode,
+                // ignore: deprecated_member_use
                 groupValue: _mediaMode,
+                // ignore: deprecated_member_use
                 onChanged: enabled && !_loading ? (value) => _setMediaMode(value!) : null,
               ),
             ],

@@ -112,10 +112,11 @@ class GlobalBottomNav extends ConsumerWidget {
   Future<void> _openOptions(BuildContext context) async {
     final l10n = context.l10n;
     final currentPath = GoRouterState.of(context).uri.path;
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final uid = currentUser?.id;
     // Query is_admin fresh each time — avoids stale cached provider values.
     bool isAdmin = false;
     try {
-      final uid = Supabase.instance.client.auth.currentUser?.id;
       if (uid != null) {
         final row = await Supabase.instance.client
             .from('profiles')
@@ -293,11 +294,15 @@ class GlobalBottomNav extends ConsumerWidget {
                     const Divider(height: 24),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.logout),
-                      title: Text(l10n.tr('logout')),
+                      leading: Icon(uid != null ? Icons.logout : Icons.login),
+                      title: Text(uid != null ? l10n.tr('logout') : l10n.tr('guest_login_signup')),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
-                        _logout(context);
+                        if (uid != null) {
+                          _logout(context);
+                        } else {
+                          context.push('/login');
+                        }
                       },
                     ),
                   ],

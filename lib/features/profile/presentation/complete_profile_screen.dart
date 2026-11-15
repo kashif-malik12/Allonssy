@@ -170,8 +170,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         _lat = (profile['latitude'] as num?)?.toDouble();
         _lng = (profile['longitude'] as num?)?.toDouble();
 
-        _accountType = (profile['profile_type'] as String?) ??
-            (profile['account_type'] as String?) ??
+        _accountType = (profile['account_type'] as String?) ??
+            (profile['profile_type'] as String?) ??
             'person';
 
         _orgKind = profile['org_kind'] as String?;
@@ -759,6 +759,17 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
                   labelText: l10n.tr('organization_type'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _businessProfile,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  labelText: l10n.tr('short_organization_profile'),
+                  hintText: l10n.tr('describe_organization'),
+                  prefixIcon: const Icon(Icons.business_center_outlined),
                 ),
               ),
               const SizedBox(height: 12),

@@ -47,9 +47,9 @@ class _FoodsScreenState extends State<FoodsScreen> {
 
   double _gridAspectRatio(double width) {
     final count = _gridCount(width);
-    if (count == 2) return 0.64;
-    if (count == 3) return 0.8;
-    return 0.98;
+    if (count == 2) return 0.58;
+    if (count == 3) return 0.72;
+    return 0.88;
   }
 
   String _plainListingText(String raw) {
@@ -163,6 +163,10 @@ class _FoodsScreenState extends State<FoodsScreen> {
         _meLng = (profile?['longitude'] as num?)?.toDouble();
       }
 
+      // Default to launch hub (Ris-Orangis, Essonne) if user location is unavailable
+      _meLat ??= 48.6508;
+      _meLng ??= 2.4143;
+
       final data = await Supabase.instance.client
           .from('posts')
           .select('*, profiles(full_name, business_name, avatar_url, city, zipcode)')
@@ -233,74 +237,172 @@ class _FoodsScreenState extends State<FoodsScreen> {
       bottomNavigationBar: const GlobalBottomNav(),
       body: Column(
         children: [
+          // Switch between Dishes and Restaurants
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-            child: TextField(
-              controller: _searchCtrl,
-              decoration: InputDecoration(
-                hintText: l10n.tr('search_foods_category_restaurant'),
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _search.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() => _search = '');
-                          _load();
-                        },
-                        icon: const Icon(Icons.clear),
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.25)),
+                    ),
+                    child: Center(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.fastfood, size: 16, color: Color(0xFF0F766E)),
+                          const SizedBox(width: 6),
+                          Text(
+                            _isFrench ? 'Plats à la carte' : 'Dishes & Items',
+                            style: const TextStyle(
+                              color: Color(0xFF0F766E),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
-                border: const OutlineInputBorder(),
-              ),
-              onSubmitted: (v) {
-                setState(() => _search = v);
-                _load();
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: DropdownButtonFormField<String>(
-              initialValue: _selectedCategory,
-              items: [
-                DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_food_categories'))),
-                ...foodMainCategories.map(
-                  (c) => DropdownMenuItem(value: c, child: Text(foodCategoryLabel(c, isFrench: _isFrench))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => context.push('/restaurants'),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.restaurant_menu, size: 16, color: Colors.black87),
+                          const SizedBox(width: 6),
+                          Text(
+                            _isFrench ? 'Voir restaurants (50)' : 'View restaurants (50)',
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() => _selectedCategory = v);
-                _load();
-              },
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: l10n.tr('food_category'),
-              ),
             ),
           ),
+          // Compact Search & Sort Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: DropdownButtonFormField<String>(
-              initialValue: _sortBy,
-              items: [
-                DropdownMenuItem(value: 'date_desc', child: Text(l10n.tr('newest_first'))),
-                DropdownMenuItem(value: 'date_asc', child: Text(l10n.tr('oldest_first'))),
-                DropdownMenuItem(value: 'price_asc', child: Text(l10n.tr('price_low_to_high'))),
-                DropdownMenuItem(value: 'price_desc', child: Text(l10n.tr('price_high_to_low'))),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(21),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: l10n.tr('search_foods_category_restaurant'),
+                        hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        suffixIcon: _search.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _search = '');
+                                  _load();
+                                },
+                              ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onSubmitted: (v) {
+                        setState(() => _search = v);
+                        _load();
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  tooltip: l10n.tr('sort_by'),
+                  child: Container(
+                    height: 42,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(21),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.swap_vert, size: 18, color: Color(0xFF0F766E)),
+                        const SizedBox(width: 4),
+                        Text(
+                          _sortBy == 'price_asc'
+                              ? 'Prix ↑'
+                              : _sortBy == 'price_desc'
+                                  ? 'Prix ↓'
+                                  : _sortBy == 'date_asc'
+                                      ? 'Anciens'
+                                      : 'Récents',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F766E),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  onSelected: (v) {
+                    setState(() => _sortBy = v);
+                    _load();
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(value: 'date_desc', child: Text(l10n.tr('newest_first'))),
+                    PopupMenuItem(value: 'date_asc', child: Text(l10n.tr('oldest_first'))),
+                    PopupMenuItem(value: 'price_asc', child: Text(l10n.tr('price_low_to_high'))),
+                    PopupMenuItem(value: 'price_desc', child: Text(l10n.tr('price_high_to_low'))),
+                  ],
+                ),
               ],
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() => _sortBy = v);
-                _load();
-              },
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: l10n.tr('sort_by'),
-              ),
             ),
           ),
-          const SizedBox(height: 8),
+          // Horizontal Category Pills
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                _buildCategoryChip('all', l10n.tr('all_food_categories')),
+                ...foodMainCategories.map(
+                  (c) => _buildCategoryChip(c, foodCategoryLabel(c, isFrench: _isFrench)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
           const Divider(height: 1),
           Expanded(
             child: _loading
@@ -411,15 +513,35 @@ class _FoodsScreenState extends State<FoodsScreen> {
                                                 style: const TextStyle(fontWeight: FontWeight.w600),
                                               ),
                                               if (((p.authorBusinessName ?? p.authorName) ?? '').trim().isNotEmpty) ...[
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  ((p.authorBusinessName ?? p.authorName) ?? '').trim(),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey.shade700,
-                                                    fontWeight: FontWeight.w600,
+                                                const SizedBox(height: 5),
+                                                InkWell(
+                                                  onTap: p.userId.isEmpty ? null : () => context.push('/p/${p.userId}'),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFF0F766E).withValues(alpha: 0.08),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        const Icon(Icons.restaurant, size: 12, color: Color(0xFF0F766E)),
+                                                        const SizedBox(width: 4),
+                                                        Flexible(
+                                                          child: Text(
+                                                            ((p.authorBusinessName ?? p.authorName) ?? '').trim(),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              fontSize: 11,
+                                                              color: Color(0xFF0F766E),
+                                                              fontWeight: FontWeight.w700,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -470,6 +592,37 @@ class _FoodsScreenState extends State<FoodsScreen> {
                       ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryChip(String categoryKey, String label) {
+    final isSelected = _selectedCategory == categoryKey;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: FilterChip(
+        selected: isSelected,
+        label: Text(label),
+        labelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected ? Colors.white : const Color(0xFF374151),
+        ),
+        backgroundColor: Colors.grey.shade100,
+        selectedColor: const Color(0xFF0F766E),
+        checkmarkColor: Colors.white,
+        showCheckmark: false,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: isSelected ? const Color(0xFF0F766E) : Colors.grey.shade300,
+          ),
+        ),
+        onSelected: (_) {
+          setState(() => _selectedCategory = categoryKey);
+          _load();
+        },
       ),
     );
   }

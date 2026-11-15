@@ -385,6 +385,58 @@ class _HeaderRow extends StatelessWidget {
                     style:
                         const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   ),
+                  if (!isAnonymous && post.isOfficialBot) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.teal.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified, size: 11, color: Colors.teal.shade700),
+                          const SizedBox(width: 3),
+                          Text(
+                            'OFFICIEL',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.teal.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (!isAnonymous && post.authorSiret != null && post.authorSiret!.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.green.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle_outline, size: 11, color: Colors.green.shade700),
+                          const SizedBox(width: 3),
+                          Text(
+                            'SIRET VÉRIFIÉ',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.green.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (!isAnonymous &&
                       post.authorBusinessType != null &&
                       (post.authorBusinessType == 'trader' ||

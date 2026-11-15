@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization");
   const body = await req.json() as DeleteUserRequest;
   const headerToken = authHeader?.replace(/^Bearer\s+/i, "").trim() ?? "";
-  const jwt = headerToken.isNotEmpty ? headerToken : (body.accessToken?.trim() ?? "");
+  const jwt = headerToken.length > 0 ? headerToken : (body.accessToken?.trim() ?? "");
   if (jwt.length === 0) {
     return Response.json({ error: "Missing access token" }, { status: 401 });
   }
@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
   }
 
   const userId = body.userId?.trim();
-  if (userId == null || userId.isEmpty) {
+  if (userId == null || userId.length === 0) {
     return Response.json({ error: "userId is required" }, { status: 400 });
   }
 
@@ -102,10 +102,7 @@ Deno.serve(async (req) => {
     await removeBucketPrefix(adminClient, "portfolio-images", `portfolio/${userId}/`);
     await removeBucketPrefix(adminClient, "post-images", `${userId}/`);
   } catch (storageError) {
-    return Response.json({
-      error: "App data was removed, but storage cleanup failed",
-      details: storageError instanceof Error ? storageError.message : String(storageError),
-    }, { status: 500 });
+    console.warn("Storage cleanup non-fatal warning:", storageError);
   }
 
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(

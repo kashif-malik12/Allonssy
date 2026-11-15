@@ -22,7 +22,7 @@ class PostService {
   PostService(this._db);
 
   static const String postSelect =
-      '*, profiles(full_name, avatar_url, city, zipcode, org_kind, business_type, business_name, job_title)';
+      '*, profiles(full_name, avatar_url, city, zipcode, org_kind, business_type, business_name, job_title, is_official_bot, is_unclaimed, siret)';
 
   Future<String> _uploadImageXFile({
     required XFile image,
@@ -486,7 +486,38 @@ class PostService {
     String? beforeId,
   }) async {
     final user = _db.auth.currentUser;
-    if (user == null) return <Map<String, dynamic>>[];
+    if (user == null) {
+      // 🔓 Guest mode: query all public posts
+      var q = _db
+          .from('posts')
+          .select(postSelect)
+          .eq('visibility', 'public');
+
+      if (postType != 'all') {
+        if (postType == 'food_ad') {
+          q = q.inFilter('post_type', ['food_ad', 'food']);
+        } else {
+          q = q.eq('post_type', postType);
+        }
+      }
+      if (authorType != 'all') q = q.eq('author_profile_type', authorType);
+
+      if (beforeCreatedAt != null) {
+        final ts = beforeCreatedAt.toIso8601String();
+        if (beforeId != null && beforeId.isNotEmpty) {
+          q = q.or('created_at.lt.$ts,and(created_at.eq.$ts,id.lt.$beforeId)');
+        } else {
+          q = q.lt('created_at', ts);
+        }
+      }
+
+      final data = await q
+          .order('created_at', ascending: false)
+          .order('id', ascending: false)
+          .limit(limit);
+
+      return excludeUnavailableAuthorRows((data as List).cast<Map<String, dynamic>>());
+    }
 
     // 1) Load viewer profile location + radius
     final me = await _db

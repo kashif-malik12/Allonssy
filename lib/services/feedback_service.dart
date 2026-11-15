@@ -32,10 +32,12 @@ class FeedbackService {
       if (user != null) 'user_id': user.id,
       'category': category,
       'message': message.trim(),
+      // ignore: use_null_aware_elements
       if (rating != null) 'rating': rating,
       if (contactEmail != null && contactEmail.trim().isNotEmpty)
         'contact_email': contactEmail.trim(),
       'device_info': effectiveDeviceInfo,
+      // ignore: use_null_aware_elements
       if (appVersion != null) 'app_version': appVersion,
     });
   }

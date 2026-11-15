@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/business_categories.dart';
+import '../../../core/food_categories.dart';
 import '../../../core/localization/app_localizations.dart';
 import '../../../core/restaurant_categories.dart';
 import '../../../models/post_model.dart';
@@ -25,7 +26,7 @@ import '../../../widgets/tagged_content.dart';
 import '../../../widgets/report_post_sheet.dart'; // ✅ NEW
 import '../../../widgets/report_user_sheet.dart'; // ✅ NEW
 
-enum ProfileTab { posts, marketplace, services }
+enum ProfileTab { posts, marketplace, services, foods }
 
 class ProfileDetailScreen extends StatefulWidget {
   final String profileId; // ✅ in your app this equals auth uid
@@ -80,6 +81,11 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   bool _servicePostsLoading = true;
   String? _servicePostsError;
   List<Post> _servicePosts = [];
+
+  // ✅ Menu / Food dishes on profile
+  bool _foodPostsLoading = true;
+  String? _foodPostsError;
+  List<Post> _foodPosts = [];
 
   // ✅ Portfolio (business/org only)
   bool _portfolioLoading = true;
@@ -160,17 +166,36 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                   ),
             ),
           ],
-          if (categoryLabel != null || roleTitle != null) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (categoryLabel != null) _ProfileMetaChip(label: categoryLabel),
-                if (roleTitle != null) _ProfileMetaChip(label: roleTitle),
-              ],
-            ),
-          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (_profile?['is_official_bot'] == true)
+                _ProfileMetaChip(
+                  label: l10n.tr('official_pulse'),
+                  icon: Icons.verified,
+                  backgroundColor: Colors.teal.shade50,
+                  textColor: Colors.teal.shade800,
+                  borderColor: Colors.teal.shade300,
+                ),
+              if (_profile?['siret'] != null && (_profile?['siret'] as String).trim().isNotEmpty)
+                _ProfileMetaChip(
+                  label: 'SIRET: ${(_profile!['siret'] as String).trim()}',
+                  icon: Icons.check_circle_outline,
+                  backgroundColor: Colors.green.shade50,
+                  textColor: Colors.green.shade800,
+                  borderColor: Colors.green.shade300,
+                ),
+              if (categoryLabel != null) _ProfileMetaChip(label: categoryLabel),
+              if (roleTitle != null) _ProfileMetaChip(label: roleTitle),
+              if (_profile?['phone'] != null && (_profile?['phone'] as String).trim().isNotEmpty)
+                _ProfileMetaChip(
+                  label: (_profile!['phone'] as String).trim(),
+                  icon: Icons.phone_outlined,
+                ),
+            ],
+          ),
           if (type.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
@@ -788,6 +813,66 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           bio: bio,
           canOpenLists: canOpenLists,
         ),
+        if (_profile?['is_unclaimed'] == true) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFFDBA74)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFEDD5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.storefront_outlined, color: Color(0xFFEA580C), size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        l10n.tr('unclaimed_business_title'),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: Color(0xFF9A3412),
+                        ),
+                      ),
+                      Text(
+                        l10n.tr('unclaimed_business_compact'),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF7C2D12)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                  onPressed: () => _showClaimDialog(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFEA580C),
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: Text(
+                    l10n.tr('claim_short'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (_isMe) ...[
           const SizedBox(height: 16),
           Container(
@@ -937,7 +1022,9 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
         _buildPortfolioSection(context),
         _buildProfileTabs(context),
         const SizedBox(height: 8),
-        if (_selectedProfileTab == ProfileTab.posts)
+        if (_selectedProfileTab == ProfileTab.foods)
+          _buildFoodsTabContent(context)
+        else if (_selectedProfileTab == ProfileTab.posts)
           _buildPostsTabContent(context)
         else if (_selectedProfileTab == ProfileTab.marketplace)
           _buildMarketplaceTabContent(context)
@@ -949,27 +1036,42 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
   Widget _buildProfileTabs(BuildContext context) {
     final l10n = context.l10n;
+    final isRestaurant = _profile?['is_restaurant'] == true;
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: SegmentedButton<ProfileTab>(
-        segments: [
-          ButtonSegment(
-            value: ProfileTab.posts,
-            label: Text('${l10n.tr('tab_posts')}${_posts.isNotEmpty ? ' (${_posts.length})' : ''}'),
-            icon: const Icon(Icons.article_outlined, size: 18),
-          ),
-          ButtonSegment(
-            value: ProfileTab.marketplace,
-            label: Text('${l10n.tr('tab_marketplace')}${_marketPosts.isNotEmpty ? ' (${_marketPosts.length})' : ''}'),
-            icon: const Icon(Icons.storefront_outlined, size: 18),
-          ),
-          ButtonSegment(
-            value: ProfileTab.services,
-            label: Text('${l10n.tr('tab_services')}${_servicePosts.isNotEmpty ? ' (${_servicePosts.length})' : ''}'),
-            icon: const Icon(Icons.work_outline, size: 18),
-          ),
-        ],
+        segments: isRestaurant
+            ? [
+                ButtonSegment(
+                  value: ProfileTab.foods,
+                  label: Text('${l10n.tr('tab_menu')}${_foodPosts.isNotEmpty ? ' (${_foodPosts.length})' : ''}'),
+                  icon: const Icon(Icons.restaurant_menu, size: 18),
+                ),
+                ButtonSegment(
+                  value: ProfileTab.posts,
+                  label: Text('${l10n.tr('tab_posts')}${_posts.isNotEmpty ? ' (${_posts.length})' : ''}'),
+                  icon: const Icon(Icons.article_outlined, size: 18),
+                ),
+              ]
+            : [
+                ButtonSegment(
+                  value: ProfileTab.posts,
+                  label: Text('${l10n.tr('tab_posts')}${_posts.isNotEmpty ? ' (${_posts.length})' : ''}'),
+                  icon: const Icon(Icons.article_outlined, size: 18),
+                ),
+                ButtonSegment(
+                  value: ProfileTab.marketplace,
+                  label: Text('${l10n.tr('tab_marketplace')}${_marketPosts.isNotEmpty ? ' (${_marketPosts.length})' : ''}'),
+                  icon: const Icon(Icons.storefront_outlined, size: 18),
+                ),
+                ButtonSegment(
+                  value: ProfileTab.services,
+                  label: Text('${l10n.tr('tab_services')}${_servicePosts.isNotEmpty ? ' (${_servicePosts.length})' : ''}'),
+                  icon: const Icon(Icons.work_outline, size: 18),
+                ),
+              ],
         selected: {_selectedProfileTab},
         onSelectionChanged: (s) {
           setState(() => _selectedProfileTab = s.first);
@@ -1486,6 +1588,224 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     );
   }
 
+  Widget _buildFoodsTabContent(BuildContext context) {
+    final l10n = context.l10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.tr('restaurant_menu_title'),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+            if (_isMe)
+              OutlinedButton.icon(
+                onPressed: () => context.push('/profile/my-foods'),
+                icon: const Icon(Icons.add_circle_outline, size: 16),
+                label: Text(l10n.tr('manage')),
+              ),
+            IconButton(
+              tooltip: 'Refresh menu',
+              onPressed: _foodPostsLoading ? null : _loadFoodPosts,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_foodPostsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_foodPostsError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('Error: $_foodPostsError'),
+          )
+        else if (_foodPosts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.restaurant_menu_outlined, size: 48, color: Theme.of(context).hintColor),
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.tr('no_menu_items_yet'),
+                    style: TextStyle(color: Theme.of(context).hintColor, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else ...[
+          // Categorized Menu Sections
+          ...() {
+            final grouped = <String, List<Post>>{};
+            for (final p in _foodPosts) {
+              final cat = (p.marketCategory ?? '').trim().isNotEmpty
+                  ? foodCategoryLabel(p.marketCategory!, isFrench: l10n.isFrench)
+                  : (l10n.isFrench ? 'À la carte' : 'A la carte');
+              grouped.putIfAbsent(cat, () => []).add(p);
+            }
+
+            final widgets = <Widget>[];
+            grouped.forEach((categoryName, items) {
+              widgets.add(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF0F766E).withValues(alpha: 0.2)),
+                        ),
+                        child: Text(
+                          categoryName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                            color: Color(0xFF0F766E),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '(${items.length})',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).hintColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: Colors.grey.withValues(alpha: 0.2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+
+              for (final p in items) {
+                final title = (p.marketTitle ?? '').isNotEmpty ? p.marketTitle! : p.content;
+                final priceStr = p.marketPrice != null
+                    ? '${p.marketPrice!.toStringAsFixed(2)} €'
+                    : null;
+
+                widgets.add(
+                  Card(
+                    margin: const EdgeInsets.symmetric(vertical: 5),
+                    elevation: 0.5,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => context.push('/foods/${p.id}'),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: (p.imageUrl ?? '').isNotEmpty
+                                  ? Image.network(
+                                      p.imageUrl!,
+                                      width: 84,
+                                      height: 84,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => Container(
+                                        width: 84,
+                                        height: 84,
+                                        color: const Color(0xFFF3F4F6),
+                                        child: const Icon(Icons.restaurant, color: Color(0xFF0F766E), size: 28),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 84,
+                                      height: 84,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF0FDF4),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Icon(Icons.restaurant_menu, color: Color(0xFF0F766E), size: 32),
+                                    ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          title,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                                        ),
+                                      ),
+                                      if (priceStr != null) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            priceStr,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 14,
+                                              color: Color(0xFF0F766E),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    p.content,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 13, color: Colors.grey[700], height: 1.25),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+            });
+            return widgets;
+          }(),
+        ],
+      ],
+    );
+  }
+
   @override
   void dispose() {
     final ch = _reqChannel;
@@ -1502,6 +1822,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       _loadPosts(),
       _loadMarketPosts(),
       _loadServicePosts(),
+      _loadFoodPosts(),
     ]);
 
     // ✅ After profile loads (we need profile_type), load portfolio
@@ -1647,7 +1968,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     });
 
     try {
-      final myUserId = _db.auth.currentUser!.id;
+      final myUserId = _db.auth.currentUser?.id;
 
       final p = await _db
           .from('profiles')
@@ -1658,8 +1979,11 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
         throw Exception('Profile not available');
       }
       _profile = p;
+      if (_profile?['is_restaurant'] == true && _selectedProfileTab == ProfileTab.posts) {
+        _selectedProfileTab = ProfileTab.foods;
+      }
 
-      _isMe = (widget.profileId == myUserId);
+      _isMe = (myUserId != null && widget.profileId == myUserId);
 
       // ✅ Messaging permission (mutual follow)
       await _loadCanMessage();
@@ -1839,8 +2163,8 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           .order('created_at', ascending: false)
           .limit(40);
 
-      final list = (rows as List)
-          .map((e) => Post.fromMap(e as Map<String, dynamic>))
+      final list = rows
+          .map((e) => Post.fromMap(e))
           .toList();
 
       if (mounted) {
@@ -1881,8 +2205,8 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           .order('created_at', ascending: false)
           .limit(40);
 
-      final list = (rows as List)
-          .map((e) => Post.fromMap(e as Map<String, dynamic>))
+      final list = rows
+          .map((e) => Post.fromMap(e))
           .toList();
 
       if (mounted) {
@@ -1894,6 +2218,59 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
       if (mounted) setState(() => _servicePostsError = e.toString());
     } finally {
       if (mounted) setState(() => _servicePostsLoading = false);
+    }
+  }
+
+  Future<void> _loadFoodPosts() async {
+    if (_profile?['is_disabled'] == true) {
+      if (mounted) {
+        setState(() {
+          _foodPosts = [];
+          _foodPostsError = null;
+          _foodPostsLoading = false;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _foodPostsLoading = true;
+      _foodPostsError = null;
+    });
+
+    try {
+      List<dynamic> rows;
+      try {
+        rows = await _db
+            .from('posts')
+            .select('*, profiles(full_name, business_name, avatar_url, city, zipcode)')
+            .eq('user_id', widget.profileId)
+            .inFilter('post_type', ['food', 'food_ad'])
+            .order('created_at', ascending: false)
+            .limit(50);
+      } catch (_) {
+        rows = await _db
+            .from('posts')
+            .select('*, profiles(full_name, business_name, avatar_url, city, zipcode)')
+            .eq('user_id', widget.profileId)
+            .eq('post_type', 'food')
+            .order('created_at', ascending: false)
+            .limit(50);
+      }
+
+      final list = rows
+          .map((e) => Post.fromMap(e))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _foodPosts = list;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _foodPostsError = e.toString());
+    } finally {
+      if (mounted) setState(() => _foodPostsLoading = false);
     }
   }
 
@@ -2391,6 +2768,144 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     );
   }
 
+  Future<void> _showClaimDialog(BuildContext context) async {
+    final l10n = context.l10n;
+    final nameCtrl = TextEditingController(text: _profile?['full_name'] as String? ?? '');
+    final emailCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final proofCtrl = TextEditingController();
+    bool isSubmitting = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (_, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              title: Row(
+                children: [
+                  const Icon(Icons.verified_user_outlined, color: Color(0xFFEA580C), size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l10n.tr('claim_dialog_title'),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 380,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: nameCtrl,
+                        decoration: InputDecoration(
+                          labelText: l10n.tr('claim_dialog_name'),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: InputDecoration(
+                          labelText: l10n.tr('claim_dialog_email'),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: InputDecoration(
+                          labelText: l10n.tr('claim_dialog_phone'),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: proofCtrl,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: l10n.tr('claim_dialog_proof'),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.of(dialogCtx).pop(),
+                  child: Text(l10n.tr('cancel')),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          if (emailCtrl.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Veuillez renseigner un email de contact.')),
+                            );
+                            return;
+                          }
+                          final messenger = ScaffoldMessenger.of(context);
+                          setDialogState(() => isSubmitting = true);
+                          try {
+                            await _db.from('business_claims').insert({
+                              'profile_id': widget.profileId,
+                              'requester_id': _db.auth.currentUser?.id,
+                              'requester_name': nameCtrl.text.trim().isNotEmpty
+                                  ? nameCtrl.text.trim()
+                                  : 'Gérant / Déclarant',
+                              'contact_email': emailCtrl.text.trim(),
+                              'contact_phone': phoneCtrl.text.trim(),
+                              'proof_notes': proofCtrl.text.trim(),
+                            });
+                            if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(l10n.tr('claim_dialog_success')),
+                                backgroundColor: Colors.green.shade800,
+                              ),
+                            );
+                          } catch (e) {
+                            messenger.showSnackBar(
+                              SnackBar(content: Text('Erreur: $e')),
+                            );
+                          } finally {
+                            if (dialogCtx.mounted) setDialogState(() => isSubmitting = false);
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text(l10n.tr('claim_dialog_submit')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading && _profile == null) {
@@ -2557,25 +3072,45 @@ class _StatTile extends StatelessWidget {
 
 class _ProfileMetaChip extends StatelessWidget {
   final String label;
+  final IconData? icon;
+  final Color? backgroundColor;
+  final Color? textColor;
+  final Color? borderColor;
 
-  const _ProfileMetaChip({required this.label});
+  const _ProfileMetaChip({
+    required this.label,
+    this.icon,
+    this.backgroundColor,
+    this.textColor,
+    this.borderColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: backgroundColor ??
+            Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE6DDCE)),
+        border: Border.all(color: borderColor ?? const Color(0xFFE6DDCE)),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: textColor ?? Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: textColor ?? Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }

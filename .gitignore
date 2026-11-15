@@ -58,5 +58,7 @@ android/key.properties
 android/*.jks
 android/*.keystore
 .claude/
+scripts/seeding/*.sql
+
 flutter_01.png
 android/.kotlin/

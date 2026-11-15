@@ -609,25 +609,61 @@ class _FoodAdDetailScreenState extends State<FoodAdDetailScreen> {
                                 : 'Price on request',
                             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: p.userId.isEmpty ? null : () => context.push('/p/${p.userId}'),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Text(
-                                'Restaurant: ${p.authorBusinessName ?? p.authorName ?? 'Unknown'}',
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
+                          const SizedBox(height: 12),
+                          // Restaurant Showcase & Direct Link to Full Menu
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F766E).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.restaurant_menu, color: Color(0xFF0F766E)),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        p.authorBusinessName ?? p.authorName ?? 'Restaurant',
+                                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        (p.authorCity ?? '').trim().isNotEmpty
+                                            ? '${p.authorCity!.trim()} (91130)'
+                                            : 'Ris-Orangis (91130)',
+                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                FilledButton.tonalIcon(
+                                  onPressed: p.userId.isEmpty ? null : () => context.push('/p/${p.userId}'),
+                                  icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                                  label: Text(isFrench ? 'Voir carte' : 'Full menu'),
+                                  style: FilledButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          if (((p.authorCity ?? '').trim().isNotEmpty) ||
-                              ((p.authorZipcode ?? '').trim().isNotEmpty))
-                            Text(
-                              'Location: ${((p.authorCity ?? '').trim().isNotEmpty ? p.authorCity!.trim() : p.authorZipcode!.trim())}',
-                            ),
-                          if ((p.marketCategory ?? '').isNotEmpty)
+                          if ((p.marketCategory ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 8),
                             Text('${isFrench ? 'Catégorie' : 'Category'}: ${foodCategoryLabel(p.marketCategory!, isFrench: isFrench)}'),
+                          ],
                           const SizedBox(height: 16),
                           Row(
                             children: [

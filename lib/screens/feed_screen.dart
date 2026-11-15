@@ -103,8 +103,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   String _lostFoundScope = 'all';
   bool _foodAdsEnabled = true;
   final Set<String> _selectedFoodCategories = {};
-  bool _organizationsEnabled = false;
-  final Set<String> _selectedOrganizationKinds = {};
+  bool _organizationsEnabled = true;
+  final Set<String> _selectedOrganizationKinds = {'government', 'nonprofit', 'news_agency'};
 
   // ✅ Notifications badge + realtime
   int _unreadNotifs = 0;
@@ -255,7 +255,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     if (_foodAdsEnabled && _selectedFoodCategories.isEmpty) {
       _selectedFoodCategories.addAll(foodMainCategories);
     }
-    _organizationsEnabled = data['org_enabled'] == true;
+    _organizationsEnabled = data['org_enabled'] != false;
     _selectedOrganizationKinds
       ..clear()
       ..addAll(((data['org_kinds'] as List?) ?? const []).map((e) => e.toString()));
@@ -555,14 +555,12 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     return type == 'food_ad' || type == 'food';
   }
 
-  bool _isOrganizationAuthored(Post post) => (post.authorType ?? '').trim() == 'org';
+  bool _isOrganizationAuthored(Post post) =>
+      (post.authorType ?? '').trim() == 'org' ||
+      ((post.authorOrgKind ?? _authorOrgKinds[post.userId]) ?? '').trim().isNotEmpty;
 
   bool _matchesMarketplaceFilters(Post post) {
     if (!_isMarketplacePost(post)) {
-      return false;
-    }
-
-    if (_selectedMarketplaceCategories.isEmpty) {
       return false;
     }
 
@@ -571,8 +569,10 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       return false;
     }
 
-    final category = (post.marketCategory ?? '').trim();
-    if (!_selectedMarketplaceCategories.contains(category)) return false;
+    if (_selectedMarketplaceCategories.isNotEmpty) {
+      final category = (post.marketCategory ?? '').trim();
+      if (!_selectedMarketplaceCategories.contains(category)) return false;
+    }
 
     return true;
   }
@@ -582,17 +582,15 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       return false;
     }
 
-    if (_selectedGigCategories.isEmpty) {
-      return false;
-    }
-
     if (_selectedGigTypes.isNotEmpty &&
         !_selectedGigTypes.contains((post.postType ?? '').trim())) {
       return false;
     }
 
-    final category = (post.marketCategory ?? '').trim();
-    if (!_selectedGigCategories.contains(category)) return false;
+    if (_selectedGigCategories.isNotEmpty) {
+      final category = (post.marketCategory ?? '').trim();
+      if (!_selectedGigCategories.contains(category)) return false;
+    }
 
     return true;
   }
@@ -2731,6 +2729,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       },
       child: ListView.builder(
         controller: _scroll,
+        // ignore: deprecated_member_use
         cacheExtent: 900,
         itemCount: posts.length + 2,
         itemBuilder: (_, i) {
@@ -3260,93 +3259,6 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildQaPreview(Post post) {
-    final type = (post.postType ?? '').trim();
-    final isMarketplacePost = type == 'market';
-    final isGigPost = type == 'service_offer' || type == 'service_request';
-    if (!isMarketplacePost && !isGigPost) {
-      return const SizedBox.shrink();
-    }
-
-    final react = ReactionService(Supabase.instance.client);
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: react.fetchComments(post.id),
-      builder: (context, snapshot) {
-        final rows = snapshot.data ?? const <Map<String, dynamic>>[];
-        if (rows.isEmpty) return const SizedBox.shrink();
-
-        final roots = rows.where((row) => row['parent_comment_id'] == null).take(2).toList();
-        if (roots.isEmpty) return const SizedBox.shrink();
-
-        return Container(
-          margin: const EdgeInsets.only(top: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE6DDCE)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Q&A',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 10),
-              ...roots.map((question) {
-                final questionId = question['id']?.toString() ?? '';
-                final answers = rows
-                    .where((row) => row['parent_comment_id']?.toString() == questionId)
-                    .take(1)
-                    .toList();
-                final qProfile = question['profiles'];
-                final qName = qProfile is Map
-                    ? (qProfile['full_name']?.toString().trim().isNotEmpty == true
-                        ? qProfile['full_name'].toString().trim()
-                        : 'User')
-                    : 'User';
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        qName,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 4),
-                      TaggedContent(content: question['content']?.toString() ?? ''),
-                      if (answers.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Owner/Author',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF7A5C2E),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              TaggedContent(content: answers.first['content']?.toString() ?? ''),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Widget _buildShareBadge(String scope) {
     final String label;

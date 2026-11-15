@@ -36,6 +36,7 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
 
   List<Map<String, dynamic>> _postReports = [];
   List<Map<String, dynamic>> _userReports = [];
+  List<Map<String, dynamic>> _businessClaims = [];
   int _reportsOffset = 0;
   bool _reportsHasMore = true;
   bool _loadingMoreReports = false;
@@ -108,6 +109,7 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
         _loadStats(),
         _loadPostReports(),
         _loadUserReports(),
+        _loadBusinessClaims(),
         _loadCategorizedPosts(),
         _loadUserModerationCounts(),
         _loadBannedEmails(),
@@ -210,6 +212,35 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
     }
   }
 
+  Future<void> _loadBusinessClaims() async {
+    try {
+      final rows = await _db
+          .from('business_claims')
+          .select('id, created_at, profile_id, requester_name, contact_email, contact_phone, proof_notes, status, profiles(business_name, full_name, city)')
+          .eq('status', _statusFilter)
+          .order('created_at', ascending: false)
+          .limit(100);
+      _businessClaims = List<Map<String, dynamic>>.from(rows);
+    } catch (e) {
+      debugPrint('Business claims error: $e');
+    }
+  }
+
+  Future<void> _setClaimStatus(String claimId, String status) async {
+    try {
+      await _db.rpc('admin_process_business_claim', params: {
+        'p_claim_id': claimId,
+        'p_status': status,
+      });
+      _snack('Claim marked as $status');
+      await _loadBusinessClaims();
+      await _loadStats();
+      if (mounted) setState(() {});
+    } catch (e) {
+      _snack('Failed to update claim: $e');
+    }
+  }
+
   Future<void> _loadMoreReports() async {
     if (_loadingMoreReports || !_reportsHasMore) return;
     setState(() => _loadingMoreReports = true);
@@ -267,11 +298,17 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
         : category == 'gig' ? _gigHasMore : _foodHasMore;
     if (isLoading || !hasMore) return;
 
-    if (mounted) setState(() {
-      if (category == 'market') _marketLoadingMore = true;
-      else if (category == 'gig') _gigLoadingMore = true;
-      else _foodLoadingMore = true;
-    });
+    if (mounted) {
+      setState(() {
+        if (category == 'market') {
+          _marketLoadingMore = true;
+        } else if (category == 'gig') {
+          _gigLoadingMore = true;
+        } else {
+          _foodLoadingMore = true;
+        }
+      });
+    }
 
     try {
       final currentOffset = category == 'market' ? _marketOffset
@@ -288,31 +325,39 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
         rows = ((await _db.from('posts').select('*, profiles(full_name, business_name, avatar_url)').inFilter('post_type', ['food_ad', 'food']).order('created_at', ascending: false).range(from, to)) as List).cast();
       }
 
-      if (mounted) setState(() {
-        if (category == 'market') {
-          _marketplacePosts = [..._marketplacePosts, ...rows];
-          _marketOffset = from;
-          _marketHasMore = rows.length == _kPostsPageSize;
-          _marketLoadingMore = false;
-        } else if (category == 'gig') {
-          _gigPosts = [..._gigPosts, ...rows];
-          _gigOffset = from;
-          _gigHasMore = rows.length == _kPostsPageSize;
-          _gigLoadingMore = false;
-        } else {
-          _foodPosts = [..._foodPosts, ...rows];
-          _foodOffset = from;
-          _foodHasMore = rows.length == _kPostsPageSize;
-          _foodLoadingMore = false;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          if (category == 'market') {
+            _marketplacePosts = [..._marketplacePosts, ...rows];
+            _marketOffset = from;
+            _marketHasMore = rows.length == _kPostsPageSize;
+            _marketLoadingMore = false;
+          } else if (category == 'gig') {
+            _gigPosts = [..._gigPosts, ...rows];
+            _gigOffset = from;
+            _gigHasMore = rows.length == _kPostsPageSize;
+            _gigLoadingMore = false;
+          } else {
+            _foodPosts = [..._foodPosts, ...rows];
+            _foodOffset = from;
+            _foodHasMore = rows.length == _kPostsPageSize;
+            _foodLoadingMore = false;
+          }
+        });
+      }
     } catch (e) {
       debugPrint('Load more $category posts error: $e');
-      if (mounted) setState(() {
-        if (category == 'market') _marketLoadingMore = false;
-        else if (category == 'gig') _gigLoadingMore = false;
-        else _foodLoadingMore = false;
-      });
+      if (mounted) {
+        setState(() {
+          if (category == 'market') {
+            _marketLoadingMore = false;
+          } else if (category == 'gig') {
+            _gigLoadingMore = false;
+          } else {
+            _foodLoadingMore = false;
+          }
+        });
+      }
     }
   }
 
@@ -344,12 +389,14 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
           .select('id, full_name, business_name, job_title, profile_type, account_type, org_kind, is_disabled, avatar_url')
           .order('created_at', ascending: false)
           .range(from, to)) as List).cast<Map<String, dynamic>>();
-      if (mounted) setState(() {
-        _allUsers = [..._allUsers, ...rows];
-        _usersOffset = from;
-        _usersHasMore = rows.length == _kUsersPageSize;
-        _usersLoadingMore = false;
-      });
+      if (mounted) {
+        setState(() {
+          _allUsers = [..._allUsers, ...rows];
+          _usersOffset = from;
+          _usersHasMore = rows.length == _kUsersPageSize;
+          _usersLoadingMore = false;
+        });
+      }
     } catch (e) {
       debugPrint('Load more users error: $e');
       if (mounted) setState(() => _usersLoadingMore = false);
@@ -1158,326 +1205,6 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
 
   Widget _buildPushAudienceComposer() {
     return _buildPushAudienceComposerV2();
-    final allRecipients = _allUsers
-        .where((u) => (u['id'] ?? '').toString().isNotEmpty)
-        .toList();
-    final recipients = _filteredPushUsers();
-    final selectedRecipient = recipients.any(
-      (u) => (u['id'] ?? '').toString() == _selectedPushUserId,
-    )
-        ? _selectedPushUserId
-        : (recipients.isNotEmpty ? (recipients.first['id'] ?? '').toString() : null);
-    final matchedUserCount = recipients.length;
-    final width = MediaQuery.of(context).size.width;
-    final showPreview = width > 880;
-
-    if (allRecipients.isEmpty) {
-      return const Center(child: Text('No users available for push delivery.'));
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Wrap(
-          spacing: 20,
-          runSpacing: 20,
-          crossAxisAlignment: WrapCrossAlignment.start,
-          children: [
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: showPreview ? 640 : double.infinity,
-                minWidth: showPreview ? 520 : 0,
-              ),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Admin Push Sender',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Only admins can send manual push notifications. Delivery uses stored FCM device tokens and can target one user or a selected audience.',
-                        style: TextStyle(color: Colors.grey.shade700),
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Audience',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ('specific', 'Specific user'),
-                          ('all', 'All users'),
-                          ('persons', 'All persons'),
-                          ('businesses', 'All businesses'),
-                          ('organizations', 'All organizations'),
-                        ].map((item) {
-                          final value = item.$1;
-                          final label = item.$2;
-                          return ChoiceChip(
-                            label: Text(label),
-                            selected: _pushAudience == value,
-                            onSelected: _sendingPush
-                                ? null
-                                : (selected) {
-                                    if (!selected) return;
-                                    setState(() {
-                                      _pushAudience = value;
-                                      _pushRecipientSearchCtrl.clear();
-                                      final visibleUsers = _filteredPushUsers();
-                                      _selectedPushUserId = visibleUsers.isNotEmpty
-                                          ? (visibleUsers.first['id'] ?? '').toString()
-                                          : null;
-                                    });
-                                  },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _pushRecipientSearchCtrl,
-                        onChanged: (_) {
-                          setState(() {
-                            if (_pushAudience == 'specific') {
-                              final visibleUsers = _filteredPushUsers();
-                              final stillVisible = visibleUsers.any(
-                                (u) => (u['id'] ?? '').toString() == _selectedPushUserId,
-                              );
-                              if (!stillVisible) {
-                                _selectedPushUserId = visibleUsers.isNotEmpty
-                                    ? (visibleUsers.first['id'] ?? '').toString()
-                                    : null;
-                              }
-                            }
-                          });
-                        },
-                        decoration: InputDecoration(
-                          labelText: _pushAudience == 'specific'
-                              ? 'Search recipient'
-                              : 'Search within ${_pushAudienceLabel(_pushAudience).toLowerCase()}',
-                          hintText: 'Name, business, email, or user ID',
-                          prefixIcon: const Icon(Icons.search),
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _pushAudience == 'specific'
-                            ? 'Matched users: $matchedUserCount'
-                            : 'Audience: ${_pushAudienceLabel(_pushAudience)} ($matchedUserCount matched user${matchedUserCount == 1 ? '' : 's'})',
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (_pushAudience == 'specific') ...[
-                        const SizedBox(height: 16),
-                        if (recipients.isEmpty)
-                          const Text('No user matches the current search.')
-                        else
-                          Container(
-                            constraints: const BoxConstraints(maxHeight: 260),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.black12),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: ListView.separated(
-                              shrinkWrap: true,
-                              itemCount: recipients.length > 8 ? 8 : recipients.length,
-                              separatorBuilder: (_, _) => const Divider(height: 1),
-                              itemBuilder: (context, index) {
-                                final user = recipients[index];
-                                final userId = (user['id'] ?? '').toString();
-                                final authInfo =
-                                    _userAuthStatus[userId] ?? const <String, dynamic>{};
-                                final email = (authInfo['email'] ?? '').toString().trim();
-                                final profileType =
-                                    (user['profile_type'] ?? 'user').toString();
-                                final label = _displayUserName(user);
-                                final businessName =
-                                    (user['business_name'] ?? '').toString().trim();
-                                final subtitleParts = <String>[
-                                  profileType,
-                                  if (businessName.isNotEmpty && businessName != label)
-                                    businessName,
-                                  if (email.isNotEmpty) email,
-                                ];
-                                return RadioListTile<String>(
-                                  dense: true,
-                                  value: userId,
-                                  groupValue: selectedRecipient,
-                                  onChanged: _sendingPush
-                                      ? null
-                                      : (value) => setState(() => _selectedPushUserId = value),
-                                  title: Text(
-                                    label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(
-                                    subtitleParts.join(' • '),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                      ],
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _pushTitleCtrl,
-                        textInputAction: TextInputAction.next,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Notification title',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _pushBodyCtrl,
-                        minLines: 3,
-                        maxLines: 5,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Message',
-                          border: OutlineInputBorder(),
-                          alignLabelWithHint: true,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _pushRouteCtrl,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'App route on open',
-                          helperText: 'Example: /notifications or /chat',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _sendingPush ? null : _sendAdminPush,
-                            icon: _sendingPush
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.send_outlined),
-                            label: Text(_sendingPush ? 'Sending...' : 'Send Push'),
-                          ),
-                          const SizedBox(width: 12),
-                          OutlinedButton(
-                            onPressed: _sendingPush
-                                ? null
-                                : () {
-                                    _pushAudience = 'specific';
-                                    _pushRecipientSearchCtrl.clear();
-                                    _selectedPushUserId = allRecipients.isNotEmpty
-                                        ? (allRecipients.first['id'] ?? '').toString()
-                                        : null;
-                                    _pushTitleCtrl.clear();
-                                    _pushBodyCtrl.clear();
-                                    _pushRouteCtrl.text = '/notifications';
-                                    setState(() {});
-                                  },
-                            child: const Text('Reset'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            if (showPreview)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: Card(
-                  color: Colors.grey.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.notifications_active_outlined),
-                            SizedBox(width: 8),
-                            Text(
-                              'Preview',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Allonssy!',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.teal,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _pushTitleCtrl.text.trim().isEmpty
-                                    ? 'Notification title'
-                                    : _pushTitleCtrl.text.trim(),
-                                style: const TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _pushBodyCtrl.text.trim().isEmpty
-                                    ? 'Message preview appears here.'
-                                    : _pushBodyCtrl.text.trim(),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                _pushRouteCtrl.text.trim().isEmpty
-                                    ? 'Opens app'
-                                    : 'Route: ${_pushRouteCtrl.text.trim()}',
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
   }
 
   Future<void> _setUserDisabled(String userId, bool disabled) async {
@@ -2376,246 +2103,6 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
 
   Widget _buildPushTab() {
     return _buildPushAudienceComposer();
-    final recipients = _allUsers
-        .where((u) => (u['id'] ?? '').toString().isNotEmpty)
-        .toList();
-
-    if (recipients.isEmpty) {
-      return const Center(child: Text('No users available for push delivery.'));
-    }
-
-    final selectedRecipient = recipients.any(
-      (u) => (u['id'] ?? '').toString() == _selectedPushUserId,
-    )
-        ? _selectedPushUserId
-        : (recipients.first['id'] ?? '').toString();
-
-    final width = MediaQuery.of(context).size.width;
-    final showPreview = width > 880;
-
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Wrap(
-          spacing: 20,
-          runSpacing: 20,
-          crossAxisAlignment: WrapCrossAlignment.start,
-          children: [
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: showPreview ? 640 : double.infinity,
-                minWidth: showPreview ? 520 : 0,
-              ),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Admin Push Sender',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Only admins can send manual push notifications. Delivery uses stored FCM device tokens for the selected user.',
-                        style: TextStyle(color: Colors.grey.shade700),
-                      ),
-                      const SizedBox(height: 20),
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedRecipient,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Recipient',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: recipients.map((user) {
-                          final userId = (user['id'] ?? '').toString();
-                          final fullName = (user['full_name'] ?? '').toString().trim();
-                          final businessName =
-                              (user['business_name'] ?? '').toString().trim();
-                          final profileType =
-                              (user['profile_type'] ?? 'user').toString();
-                          final label = fullName.isNotEmpty
-                              ? fullName
-                              : (businessName.isNotEmpty ? businessName : userId);
-                          final subtitle = businessName.isNotEmpty &&
-                                  businessName != label
-                              ? ' • $businessName'
-                              : '';
-                          return DropdownMenuItem<String>(
-                            value: userId,
-                            child: Text(
-                              '$label ($profileType)$subtitle',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: _sendingPush
-                            ? null
-                            : (value) {
-                                setState(() => _selectedPushUserId = value);
-                              },
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _pushTitleCtrl,
-                        textInputAction: TextInputAction.next,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Notification title',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _pushBodyCtrl,
-                        minLines: 3,
-                        maxLines: 5,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Message',
-                          border: OutlineInputBorder(),
-                          alignLabelWithHint: true,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _pushRouteCtrl,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'App route on open',
-                          helperText: 'Example: /notifications or /chat',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _sendingPush ? null : _sendAdminPush,
-                            icon: _sendingPush
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.send_outlined),
-                            label: Text(
-                              _sendingPush ? 'Sending...' : 'Send Push',
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          OutlinedButton(
-                            onPressed: _sendingPush
-                                ? null
-                                : () {
-                                    _pushTitleCtrl.clear();
-                                    _pushBodyCtrl.clear();
-                                    _pushRouteCtrl.text = '/notifications';
-                                    setState(() {});
-                                  },
-                            child: const Text('Reset'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            if (showPreview)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: Card(
-                  color: Colors.grey.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.notifications_active_outlined),
-                            SizedBox(width: 8),
-                            Text(
-                              'Preview',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.grey.shade200),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                blurRadius: 16,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Allonssy!',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.teal,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _pushTitleCtrl.text.trim().isEmpty
-                                    ? 'Notification title'
-                                    : _pushTitleCtrl.text.trim(),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _pushBodyCtrl.text.trim().isEmpty
-                                    ? 'Message preview appears here.'
-                                    : _pushBodyCtrl.text.trim(),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                _pushRouteCtrl.text.trim().isEmpty
-                                    ? 'Opens app'
-                                    : 'Route: ${_pushRouteCtrl.text.trim()}',
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
   }
 
   Widget _buildReportsTab() {
@@ -2626,8 +2113,25 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              const Text('Post Reports', style: TextStyle(fontWeight: FontWeight.bold)),
-              ..._postReports.map((r) => _buildReportTile(r, 'post_reports')),
+              const Text('Business Ownership Claims', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              if (_businessClaims.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No business claims found ($_statusFilter).', style: const TextStyle(color: Colors.grey)),
+                )
+              else
+                ..._businessClaims.map(_buildClaimTile),
+              const SizedBox(height: 24),
+              const Text('Post Reports', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              if (_postReports.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No post reports found ($_statusFilter).', style: const TextStyle(color: Colors.grey)),
+                )
+              else
+                ..._postReports.map((r) => _buildReportTile(r, 'post_reports')),
               if (_reportsHasMore)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2640,13 +2144,114 @@ class _AdminLiveScreenState extends State<AdminLiveScreen>
                           ),
                   ),
                 ),
-              const SizedBox(height: 20),
-              const Text('User Reports', style: TextStyle(fontWeight: FontWeight.bold)),
-              ..._userReports.map((r) => _buildReportTile(r, 'user_reports')),
+              const SizedBox(height: 24),
+              const Text('User Reports', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              if (_userReports.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No user reports found ($_statusFilter).', style: const TextStyle(color: Colors.grey)),
+                )
+              else
+                ..._userReports.map((r) => _buildReportTile(r, 'user_reports')),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildClaimTile(Map<String, dynamic> c) {
+    final claimId = c['id'].toString();
+    final profile = c['profiles'] as Map<String, dynamic>? ?? {};
+    final businessName = (profile['business_name'] ?? profile['full_name'] ?? 'Établissement').toString();
+    final city = (profile['city'] ?? '').toString();
+    final claimantName = (c['requester_name'] ?? '').toString();
+    final email = (c['contact_email'] ?? '').toString();
+    final phone = (c['contact_phone'] ?? '').toString();
+    final proof = (c['proof_notes'] ?? '').toString();
+    final status = (c['status'] ?? 'pending').toString();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.storefront, color: Color(0xFFEA580C)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    city.isNotEmpty ? '$businessName ($city)' : businessName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: status == 'approved'
+                        ? Colors.green.shade50
+                        : status == 'rejected'
+                            ? Colors.red.shade50
+                            : Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: status == 'approved'
+                          ? Colors.green.shade200
+                          : status == 'rejected'
+                              ? Colors.red.shade200
+                              : Colors.orange.shade200,
+                    ),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: status == 'approved'
+                          ? Colors.green.shade800
+                          : status == 'rejected'
+                              ? Colors.red.shade800
+                              : Colors.orange.shade800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
+            Text('Demandeur: $claimantName • $email ${phone.isNotEmpty ? "• $phone" : ""}'),
+            if (proof.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Justificatif: $proof', style: const TextStyle(color: Colors.black87, fontStyle: FontStyle.italic)),
+            ],
+            if (status == 'pending') ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Rejeter'),
+                    onPressed: () => _setClaimStatus(claimId, 'rejected'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                    icon: const Icon(Icons.check, size: 16),
+                    label: const Text('Valider la propriété'),
+                    onPressed: () => _setClaimStatus(claimId, 'approved'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 

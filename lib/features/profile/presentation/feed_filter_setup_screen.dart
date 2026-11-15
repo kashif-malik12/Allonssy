@@ -33,8 +33,8 @@ class _FeedFilterSetupScreenState extends State<FeedFilterSetupScreen> {
   String _lostFoundScope = 'all';
   bool _foodAdsEnabled = true;
   final Set<String> _selectedFoodCategories = {};
-  bool _organizationsEnabled = false;
-  final Set<String> _selectedOrganizationKinds = {};
+  bool _organizationsEnabled = true;
+  final Set<String> _selectedOrganizationKinds = {'government', 'nonprofit', 'news_agency'};
 
   @override
   void initState() {
@@ -73,10 +73,13 @@ class _FeedFilterSetupScreenState extends State<FeedFilterSetupScreen> {
     _selectedFoodCategories
       ..clear()
       ..addAll(((data['food_categories'] as List?) ?? const []).map((e) => e.toString()));
-    _organizationsEnabled = data['org_enabled'] == true;
+    _organizationsEnabled = data['org_enabled'] != false;
     _selectedOrganizationKinds
       ..clear()
       ..addAll(((data['org_kinds'] as List?) ?? const []).map((e) => e.toString()));
+    if (_organizationsEnabled && _selectedOrganizationKinds.isEmpty) {
+      _selectedOrganizationKinds.addAll({'government', 'nonprofit', 'news_agency'});
+    }
   }
 
   Map<String, dynamic> _currentFilters() {

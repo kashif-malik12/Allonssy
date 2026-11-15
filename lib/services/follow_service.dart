@@ -6,7 +6,7 @@ class FollowService {
   final SupabaseClient _db;
   FollowService(this._db);
 
-  String get _me => _db.auth.currentUser!.id;
+  String? get _me => _db.auth.currentUser?.id;
 
   FollowStatus _parseStatus(String? s) {
     switch (s) {
@@ -23,10 +23,12 @@ class FollowService {
 
   /// Status of my relationship to profileId
   Future<FollowStatus> getMyStatus(String profileId) async {
+    final me = _me;
+    if (me == null) return FollowStatus.none;
     final row = await _db
         .from('follows')
         .select('status')
-        .eq('follower_id', _me)
+        .eq('follower_id', me)
         .eq('followed_profile_id', profileId)
         .maybeSingle();
 
@@ -36,14 +38,14 @@ class FollowService {
   /// Create a follow request (pending)
   /// ✅ Notifications are created by DB trigger (_notify_follow)
   Future<void> requestFollow(String profileId) async {
-    // Do not allow following yourself
-    if (profileId == _me) return;
+    final me = _me;
+    if (me == null || profileId == me) return;
 
     // If a row already exists (declined/pending/accepted), update it.
     final existing = await _db
         .from('follows')
         .select('id, status')
-        .eq('follower_id', _me)
+        .eq('follower_id', me)
         .eq('followed_profile_id', profileId)
         .maybeSingle();
 
@@ -60,7 +62,7 @@ class FollowService {
             'requested_at': DateTime.now().toIso8601String(),
             'responded_at': null,
           })
-          .eq('follower_id', _me)
+          .eq('follower_id', me)
           .eq('followed_profile_id', profileId);
 
       return;
@@ -68,7 +70,7 @@ class FollowService {
 
     // No existing row -> insert new pending request
     await _db.from('follows').insert({
-      'follower_id': _me,
+      'follower_id': me,
       'followed_profile_id': profileId,
       'status': 'pending',
     });
@@ -78,19 +80,23 @@ class FollowService {
 
   /// Cancel request OR unfollow (delete row)
   Future<void> cancelOrUnfollow(String profileId) async {
+    final me = _me;
+    if (me == null) return;
     await _db
         .from('follows')
         .delete()
-        .eq('follower_id', _me)
+        .eq('follower_id', me)
         .eq('followed_profile_id', profileId);
   }
 
   /// Incoming pending follow requests to me
   Future<List<Map<String, dynamic>>> incomingRequests({int limit = 100}) async {
+    final me = _me;
+    if (me == null) return [];
     final rows = await _db
         .from('follows')
         .select('follower_id, requested_at')
-        .eq('followed_profile_id', _me)
+        .eq('followed_profile_id', me)
         .eq('status', 'pending')
         .order('requested_at', ascending: false)
         .limit(limit);
@@ -123,13 +129,15 @@ class FollowService {
   /// Accept an incoming request from followerId -> me
   /// ✅ Notifications are created by DB trigger on UPDATE (pending -> accepted)
   Future<void> acceptRequest(String followerId) async {
+    final me = _me;
+    if (me == null) return;
     await _db
         .from('follows')
         .update({
           'status': 'accepted',
           'responded_at': DateTime.now().toIso8601String(),
         })
-        .eq('followed_profile_id', _me)
+        .eq('followed_profile_id', me)
         .eq('follower_id', followerId)
         .eq('status', 'pending');
 
@@ -139,13 +147,15 @@ class FollowService {
   /// Decline an incoming request from followerId -> me
   /// (No notification by default)
   Future<void> declineRequest(String followerId) async {
+    final me = _me;
+    if (me == null) return;
     await _db
         .from('follows')
         .update({
           'status': 'declined',
           'responded_at': DateTime.now().toIso8601String(),
         })
-        .eq('followed_profile_id', _me)
+        .eq('followed_profile_id', me)
         .eq('follower_id', followerId)
         .eq('status', 'pending');
   }
@@ -205,7 +215,7 @@ class FollowService {
   /// - `connectionIds`: mutual connections (both accounts follow each other).
   Future<({Set<String> followingIds, Set<String> connectionIds})> fetchMyNetworkIds() async {
     final me = _me;
-    if (me.isEmpty) return (followingIds: <String>{}, connectionIds: <String>{});
+    if (me == null || me.isEmpty) return (followingIds: <String>{}, connectionIds: <String>{});
 
     try {
       final rows = await _db

@@ -26,8 +26,9 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
   String _search = '';
   String _selectedCategory = 'all';
   String _selectedSubcategory = 'all';
-  double _maxDistanceKm = 20;
+  double _maxDistanceKm = 50;
   bool _onlyFavorites = false;
+  bool _isGridView = true;
   final _searchCtrl = TextEditingController();
 
   late final FavoriteBusinessService _favService;
@@ -119,12 +120,14 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
     }
 
     if (_meLat != null && _meLng != null) {
-      items = items.where((r) {
-        final lat = (r['latitude'] as num?)?.toDouble();
-        final lng = (r['longitude'] as num?)?.toDouble();
-        if (lat == null || lng == null) return false;
-        return _distanceKm(_meLat!, _meLng!, lat, lng) <= _maxDistanceKm;
-      }).toList();
+      if (_maxDistanceKm < 100) {
+        items = items.where((r) {
+          final lat = (r['latitude'] as num?)?.toDouble();
+          final lng = (r['longitude'] as num?)?.toDouble();
+          if (lat == null || lng == null) return false;
+          return _distanceKm(_meLat!, _meLng!, lat, lng) <= _maxDistanceKm;
+        }).toList();
+      }
 
       items.sort((a, b) {
         final aLat = (a['latitude'] as num?)?.toDouble();
@@ -219,12 +222,16 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
         _meLng = (myProfile?['longitude'] as num?)?.toDouble();
       }
 
+      // Default to launch hub (Ris-Orangis, Essonne) if user location is unavailable
+      _meLat ??= 48.6508;
+      _meLng ??= 2.4143;
+
       List<Map<String, dynamic>> rows;
       try {
         final data = await db
             .from('profiles')
             .select(
-                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, business_subtype, is_disabled')
+                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, business_subtype, is_disabled, is_unclaimed, siret, phone, website')
             .eq('account_type', 'business')
             .eq('is_restaurant', false)
             .eq('is_disabled', false)
@@ -234,7 +241,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       } on PostgrestException {
         final data = await db
             .from('profiles')
-            .select('id, full_name, business_name, job_title, bio, avatar_url, city, latitude, longitude, account_type, business_type, business_subtype, is_disabled')
+            .select('id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, business_type, business_subtype, is_disabled, is_unclaimed, siret, phone, website')
             .eq('account_type', 'business')
             .order('business_name')
             .range(0, _kPageSize - 1);
@@ -282,7 +289,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
         final data = await db
             .from('profiles')
             .select(
-                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, business_subtype, is_disabled')
+                'id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, is_restaurant, business_type, business_subtype, is_disabled, is_unclaimed, siret, phone, website')
             .eq('account_type', 'business')
             .eq('is_restaurant', false)
             .eq('is_disabled', false)
@@ -292,7 +299,7 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       } on PostgrestException {
         final data = await db
             .from('profiles')
-            .select('id, full_name, business_name, job_title, bio, avatar_url, city, latitude, longitude, account_type, business_type, business_subtype, is_disabled')
+            .select('id, full_name, business_name, job_title, bio, business_profile, avatar_url, city, latitude, longitude, account_type, business_type, business_subtype, is_disabled, is_unclaimed, siret, phone, website')
             .eq('account_type', 'business')
             .order('business_name')
             .range(from, to);
@@ -338,129 +345,131 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       bottomNavigationBar: const GlobalBottomNav(),
       body: Column(
         children: [
+          // Sleek Search & Controls Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-            child: TextField(
-              controller: _searchCtrl,
-              decoration: InputDecoration(
-                hintText: l10n.tr('search_businesses'),
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _search.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() => _search = '');
-                          _load();
-                        },
-                        icon: const Icon(Icons.clear),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(21),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: l10n.tr('search_businesses'),
+                        hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        suffixIcon: _search.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _search = '');
+                                  _load();
+                                },
+                              ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
                       ),
-                border: const OutlineInputBorder(),
-              ),
-              onSubmitted: (v) {
-                setState(() => _search = v);
-                _load();
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: DropdownButtonFormField<String>(
-              initialValue: _selectedCategory,
-              items: [
-                DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_categories'))),
-                ...businessMainCategories.map(
-                  (c) => DropdownMenuItem(
-                    value: c,
-                    child: Text(businessMainCategoryLabel(c, isFrench: _isFrench)),
+                      onSubmitted: (v) {
+                        setState(() => _search = v);
+                        _load();
+                      },
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () => _openFilterModal(context),
+                  borderRadius: BorderRadius.circular(21),
+                  child: Container(
+                    height: 42,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: (_maxDistanceKm < 50 || _onlyFavorites)
+                          ? const Color(0xFF0F766E).withValues(alpha: 0.12)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(21),
+                      border: Border.all(
+                        color: (_maxDistanceKm < 50 || _onlyFavorites)
+                            ? const Color(0xFF0F766E)
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.tune,
+                          size: 18,
+                          color: (_maxDistanceKm < 50 || _onlyFavorites)
+                              ? const Color(0xFF0F766E)
+                              : Colors.grey.shade700,
+                        ),
+                        if (_maxDistanceKm < 50 || _onlyFavorites) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '${_maxDistanceKm.toInt()}km',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F766E),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  tooltip: _isGridView ? 'Mode Liste' : 'Mode Grille',
+                  icon: Icon(_isGridView ? Icons.view_list_rounded : Icons.grid_view_rounded),
+                  color: const Color(0xFF0F766E),
+                  onPressed: () => setState(() => _isGridView = !_isGridView),
+                ),
               ],
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() {
-                  _selectedCategory = v;
-                  _selectedSubcategory = 'all';
-                });
-              },
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: l10n.tr('business_main_category'),
-              ),
+            ),
+          ),
+          // Horizontal Category Pills
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                _buildCategoryChip('all', l10n.tr('all_categories')),
+                ...businessMainCategories.map(
+                  (c) => _buildCategoryChip(c, businessMainCategoryLabel(c, isFrench: _isFrench)),
+                ),
+              ],
             ),
           ),
           if (_selectedCategory != 'all' && businessSubcategories(_selectedCategory).isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: DropdownButtonFormField<String>(
-                key: ValueKey('sub_filter_${_selectedCategory}_$_selectedSubcategory'),
-                initialValue: (businessSubcategories(_selectedCategory).contains(_selectedSubcategory) ||
-                        _selectedSubcategory == 'all')
-                    ? _selectedSubcategory
-                    : 'all',
-                items: [
-                  DropdownMenuItem(value: 'all', child: Text(l10n.tr('all_subcategories'))),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 32,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                children: [
+                  _buildSubcategoryChip('all', l10n.tr('all_subcategories')),
                   ...businessSubcategories(_selectedCategory).map(
-                    (s) => DropdownMenuItem(
-                      value: s,
-                      child: Text(businessSubcategoryLabel(s, isFrench: _isFrench)),
-                    ),
+                    (s) => _buildSubcategoryChip(s, businessSubcategoryLabel(s, isFrench: _isFrench)),
                   ),
                 ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  setState(() => _selectedSubcategory = v);
-                },
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  labelText: l10n.tr('business_subcategory'),
-                ),
               ),
             ),
           ],
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Row(
-              children: [
-                Text(l10n.tr('distance_label')),
-                Expanded(
-                  child: Slider(
-                    value: _maxDistanceKm,
-                    min: 1,
-                    max: 50,
-                    divisions: 49,
-                    label: '${_maxDistanceKm.toStringAsFixed(0)} km',
-                    onChanged: (v) => setState(() => _maxDistanceKm = v),
-                    onChangeEnd: (_) => _load(),
-                  ),
-                ),
-                Text('${_maxDistanceKm.toStringAsFixed(0)} km'),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: () => setState(() => _onlyFavorites = !_onlyFavorites),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Checkbox(
-                        value: _onlyFavorites,
-                        onChanged: (v) => setState(() => _onlyFavorites = v ?? false),
-                      ),
-                      Text(l10n.tr('favorites_only')),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(height: 6),
           const Divider(height: 1),
+          // Discovery Results
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -470,126 +479,553 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
                         ? Center(child: Text(l10n.tr('no_businesses_found')))
                         : RefreshIndicator(
                             onRefresh: _load,
-                            child: ListView.separated(
-                              controller: _scrollCtrl,
-                              itemCount: businesses.length + (_loadingMore || _hasMore ? 1 : 0),
-                              separatorBuilder: (context, index) => const Divider(height: 1),
-                              itemBuilder: (context, i) {
-                                // Footer item
-                                if (i >= businesses.length) {
-                                  return Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Center(
-                                      child: _loadingMore
-                                          ? const CircularProgressIndicator()
-                                          : const SizedBox.shrink(),
+                            child: _isGridView
+                                ? GridView.builder(
+                                    controller: _scrollCtrl,
+                                    padding: const EdgeInsets.all(12),
+                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: MediaQuery.of(context).size.width >= 1000
+                                          ? 4
+                                          : MediaQuery.of(context).size.width >= 650
+                                              ? 3
+                                              : 2,
+                                      childAspectRatio: 0.82,
+                                      crossAxisSpacing: 10,
+                                      mainAxisSpacing: 10,
                                     ),
-                                  );
-                                }
-
-                                final b = businesses[i];
-                                final lat = (b['latitude'] as num?)?.toDouble();
-                                final lng = (b['longitude'] as num?)?.toDouble();
-                                final dist = (_meLat != null &&
-                                        _meLng != null &&
-                                        lat != null &&
-                                        lng != null)
-                                    ? _distanceKm(_meLat!, _meLng!, lat, lng)
-                                    : null;
-
-                                final id = (b['id'] ?? '').toString();
-
-                                final userName = (b['full_name'] as String?) ?? '';
-                                final bName = (b['business_name'] as String?) ?? userName;
-                                final job = b['job_title'] as String?;
-                                final businessProfile =
-                                    (b['business_profile'] as String?) ?? '';
-
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  child: ListTile(
-                                    onTap: id.isEmpty ? null : () => context.push('/p/$id'),
-                                    contentPadding: const EdgeInsets.all(12),
-                                    leading: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Container(
-                                        width: 64,
-                                        height: 64,
-                                        color: Colors.grey.shade200,
-                                        padding: const EdgeInsets.all(6),
-                                        child: (b['avatar_url'] ?? '').toString().isNotEmpty
-                                            ? Image.network(
-                                                (b['avatar_url'] ?? '').toString(),
-                                                fit: BoxFit.contain,
-                                              )
-                                            : const Icon(Icons.business),
-                                      ),
-                                    ),
-                                    title: Text(userName.isNotEmpty ? userName : bName),
-                                    subtitle: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (bName.isNotEmpty && bName != userName)
-                                          Padding(
-                                            padding: const EdgeInsets.only(bottom: 2),
-                                            child: Text(
-                                              bName,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ),
-                                        if (job != null && job.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(bottom: 2),
-                                            child: Text(
-                                              job,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                          Text(
-                                            '${(b['business_type'] ?? '').toString().isNotEmpty ? businessCategoryLabel((b['business_type'] ?? '').toString(), subcategory: (b['business_subtype'] ?? '').toString(), isFrench: _isFrench) : l10n.tr('business')}'
-                                            '${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
-                                            '${(b['city'] ?? '').toString().isNotEmpty ? ' • ${(b['city'] ?? '').toString()}' : ''}',
-                                          ),
-                                        if (businessProfile.trim().isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 4),
-                                            child: Text(
-                                              businessProfile.trim(),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    trailing: IconButton(
-                                      icon: Icon(
-                                        _favoriteIds.contains(id)
-                                            ? Icons.favorite
-                                            : Icons.favorite_border,
-                                        color: _favoriteIds.contains(id)
-                                            ? Colors.red
-                                            : Colors.grey.shade500,
-                                      ),
-                                      onPressed: id.isEmpty
-                                          ? null
-                                          : () => _toggleFavorite(id),
-                                      tooltip: _favoriteIds.contains(id)
-                                          ? l10n.tr('remove_favorite')
-                                          : l10n.tr('add_favorite'),
-                                    ),
+                                    itemCount: businesses.length + (_loadingMore || _hasMore ? 1 : 0),
+                                    itemBuilder: (context, i) {
+                                      if (i >= businesses.length) {
+                                        return const Center(child: CircularProgressIndicator());
+                                      }
+                                      final b = businesses[i];
+                                      final lat = (b['latitude'] as num?)?.toDouble();
+                                      final lng = (b['longitude'] as num?)?.toDouble();
+                                      final dist = (_meLat != null && _meLng != null && lat != null && lng != null)
+                                          ? _distanceKm(_meLat!, _meLng!, lat, lng)
+                                          : null;
+                                      return _buildBusinessGridCard(b, dist, l10n);
+                                    },
+                                  )
+                                : ListView.builder(
+                                    controller: _scrollCtrl,
+                                    padding: const EdgeInsets.symmetric(vertical: 6),
+                                    itemCount: businesses.length + (_loadingMore || _hasMore ? 1 : 0),
+                                    itemBuilder: (context, i) {
+                                      if (i >= businesses.length) {
+                                        return const Padding(
+                                          padding: EdgeInsets.all(16),
+                                          child: Center(child: CircularProgressIndicator()),
+                                        );
+                                      }
+                                      final b = businesses[i];
+                                      final lat = (b['latitude'] as num?)?.toDouble();
+                                      final lng = (b['longitude'] as num?)?.toDouble();
+                                      final dist = (_meLat != null && _meLng != null && lat != null && lng != null)
+                                          ? _distanceKm(_meLat!, _meLng!, lat, lng)
+                                          : null;
+                                      return _buildBusinessListCard(b, dist, l10n);
+                                    },
                                   ),
-                                );
-                              },
-                            ),
                           ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryChip(String categoryKey, String label) {
+    final isSelected = _selectedCategory == categoryKey;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: FilterChip(
+        selected: isSelected,
+        label: Text(label),
+        labelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected ? Colors.white : const Color(0xFF374151),
+        ),
+        backgroundColor: Colors.grey.shade100,
+        selectedColor: const Color(0xFF0F766E),
+        checkmarkColor: Colors.white,
+        showCheckmark: false,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: isSelected ? const Color(0xFF0F766E) : Colors.grey.shade300,
+          ),
+        ),
+        onSelected: (_) {
+          setState(() {
+            _selectedCategory = categoryKey;
+            _selectedSubcategory = 'all';
+          });
+          _load();
+        },
+      ),
+    );
+  }
+
+  Widget _buildSubcategoryChip(String subKey, String label) {
+    final isSelected = _selectedSubcategory == subKey;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: FilterChip(
+        selected: isSelected,
+        label: Text(label),
+        labelStyle: TextStyle(
+          fontSize: 11,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected ? Colors.white : const Color(0xFF0F766E),
+        ),
+        backgroundColor: const Color(0xFF0F766E).withValues(alpha: 0.08),
+        selectedColor: const Color(0xFF0F766E),
+        checkmarkColor: Colors.white,
+        showCheckmark: false,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF0F766E).withValues(alpha: 0.25),
+          ),
+        ),
+        onSelected: (_) {
+          setState(() => _selectedSubcategory = subKey);
+          _load();
+        },
+      ),
+    );
+  }
+
+  void _openFilterModal(BuildContext context) {
+    final l10n = context.l10n;
+    double tempDist = _maxDistanceKm;
+    bool tempFav = _onlyFavorites;
+
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (_, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          l10n.tr('filters'),
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setModalState(() {
+                              tempDist = 50;
+                              tempFav = false;
+                            });
+                          },
+                          child: Text(l10n.tr('reset')),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          l10n.tr('distance_label'),
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        Text(
+                          tempDist >= 100
+                              ? '100+ km (Tous)'
+                              : '${tempDist.toStringAsFixed(0)} km',
+                          style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F766E)),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: tempDist,
+                      min: 5,
+                      max: 100,
+                      divisions: 19,
+                      activeColor: const Color(0xFF0F766E),
+                      label: tempDist >= 100 ? '100+ km' : '${tempDist.toStringAsFixed(0)} km',
+                      onChanged: (v) => setModalState(() => tempDist = v),
+                    ),
+                    const SizedBox(height: 6),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(l10n.tr('favorites_only')),
+                      value: tempFav,
+                      activeColor: const Color(0xFF0F766E),
+                      onChanged: (v) => setModalState(() => tempFav = v ?? false),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          setState(() {
+                            _maxDistanceKm = tempDist;
+                            _onlyFavorites = tempFav;
+                          });
+                          _load();
+                        },
+                        child: Text(l10n.tr('apply')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildBusinessGridCard(Map<String, dynamic> b, double? dist, AppLocalizations l10n) {
+    final id = (b['id'] ?? '').toString();
+    final userName = (b['full_name'] as String?) ?? '';
+    final bName = (b['business_name'] as String?) ?? userName;
+    final avatarUrl = (b['avatar_url'] ?? '').toString();
+    final categoryStr = (b['business_type'] ?? '').toString();
+    final categoryLabel = categoryStr.isNotEmpty
+        ? businessCategoryLabel(categoryStr, subcategory: (b['business_subtype'] ?? '').toString(), isFrench: _isFrench)
+        : l10n.tr('business');
+    final isUnclaimed = b['is_unclaimed'] == true;
+    final hasSiret = b['siret'] != null && (b['siret'] as String).trim().isNotEmpty;
+    final isFav = _favoriteIds.contains(id);
+
+    return Card(
+      elevation: 0.8,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.withValues(alpha: 0.18)),
+      ),
+      child: InkWell(
+        onTap: id.isEmpty ? null : () => context.push('/p/$id'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 1.5,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  avatarUrl.isNotEmpty
+                      ? Image.network(
+                          avatarUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _buildPlaceholderBanner(categoryStr),
+                        )
+                      : _buildPlaceholderBanner(categoryStr),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        categoryLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (dist != null)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F766E).withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${dist.toStringAsFixed(1)} km',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    bName.isNotEmpty ? bName : userName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 12, color: Colors.grey),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Text(
+                          (b['city'] ?? 'Ris-Orangis').toString(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (isUnclaimed)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFFDBA74)),
+                          ),
+                          child: Text(
+                            l10n.tr('unclaimed_business_badge'),
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFC2410C),
+                            ),
+                          ),
+                        )
+                      else if (hasSiret)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.green.shade300),
+                          ),
+                          child: Text(
+                            'SIRET',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.green.shade800,
+                            ),
+                          ),
+                        )
+                      else
+                        const Icon(Icons.verified, color: Colors.green, size: 16),
+                      InkWell(
+                        onTap: id.isEmpty ? null : () => _toggleFavorite(id),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(
+                            isFav ? Icons.favorite : Icons.favorite_border,
+                            size: 18,
+                            color: isFav ? Colors.red : Colors.grey.shade400,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBusinessListCard(Map<String, dynamic> b, double? dist, AppLocalizations l10n) {
+    final id = (b['id'] ?? '').toString();
+    final userName = (b['full_name'] as String?) ?? '';
+    final bName = (b['business_name'] as String?) ?? userName;
+    final avatarUrl = (b['avatar_url'] ?? '').toString();
+    final categoryStr = (b['business_type'] ?? '').toString();
+    final categoryLabel = categoryStr.isNotEmpty
+        ? businessCategoryLabel(categoryStr, subcategory: (b['business_subtype'] ?? '').toString(), isFrench: _isFrench)
+        : l10n.tr('business');
+    final isUnclaimed = b['is_unclaimed'] == true;
+    final hasSiret = b['siret'] != null && (b['siret'] as String).trim().isNotEmpty;
+    final isFav = _favoriteIds.contains(id);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      elevation: 0.5,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.withValues(alpha: 0.18)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: id.isEmpty ? null : () => context.push('/p/$id'),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: avatarUrl.isNotEmpty
+                      ? Image.network(
+                          avatarUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _buildPlaceholderBanner(categoryStr),
+                        )
+                      : _buildPlaceholderBanner(categoryStr),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            userName.isNotEmpty ? userName : bName,
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isUnclaimed)
+                          Container(
+                            margin: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFFDBA74)),
+                            ),
+                            child: Text(
+                              l10n.tr('unclaimed_business_badge'),
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFFC2410C),
+                              ),
+                            ),
+                          )
+                        else if (hasSiret)
+                          Container(
+                            margin: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.green.shade300),
+                            ),
+                            child: Text(
+                              'SIRET',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          )
+                        else
+                          const Icon(Icons.verified, color: Colors.green, size: 16),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$categoryLabel${dist != null ? ' • ${dist.toStringAsFixed(1)} km' : ''}'
+                      '${(b['city'] ?? '').toString().isNotEmpty ? ' • ${(b['city'] ?? '').toString()}' : ''}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    ),
+                    if (((b['business_profile'] as String?) ?? '').isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          (b['business_profile'] as String).trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  isFav ? Icons.favorite : Icons.favorite_border,
+                  size: 20,
+                  color: isFav ? Colors.red : Colors.grey.shade400,
+                ),
+                onPressed: id.isEmpty ? null : () => _toggleFavorite(id),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholderBanner(String categoryStr) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF0F766E).withValues(alpha: 0.15),
+            const Color(0xFF0D9488).withValues(alpha: 0.25),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.business_center_outlined, color: Color(0xFF0F766E), size: 36),
       ),
     );
   }

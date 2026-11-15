@@ -38,6 +38,9 @@ class Post {
   final double? distanceKm;
   final String itemStatus;
   final String? itemCondition;
+  final bool isOfficialBot;
+  final bool isUnclaimed;
+  final String? authorSiret;
 
   bool get hasDiscount =>
       originalPrice != null &&
@@ -82,6 +85,9 @@ class Post {
     this.distanceKm,
     this.itemStatus = 'available',
     this.itemCondition,
+    this.isOfficialBot = false,
+    this.isUnclaimed = false,
+    this.authorSiret,
   });
 
   factory Post.fromMap(Map<String, dynamic> map) {
@@ -120,6 +126,13 @@ class Post {
         profile?['business_name'] as String?;
 
     final String? authorJobTitle = profile?['job_title'] as String?;
+    final bool isOfficialBot = (map['is_official_bot'] as bool?) ??
+        (profile?['is_official_bot'] as bool?) ??
+        false;
+    final bool isUnclaimed = (map['is_unclaimed'] as bool?) ??
+        (profile?['is_unclaimed'] as bool?) ??
+        false;
+    final String? authorSiret = (profile?['siret'] as String?)?.trim();
 
     return Post(
       id: map['id'] as String,
@@ -140,8 +153,12 @@ class Post {
       createdAt: DateTime.parse(map['created_at'] as String),
       authorName: authorName,
       authorAvatarUrl: authorAvatarUrl,
-      authorType: map['author_profile_type'] as String?,
-      authorOrgKind: authorOrgKind,
+      authorType: (map['author_profile_type'] as String?) ??
+          (profile?['account_type'] as String?) ??
+          (profile?['profile_type'] as String?),
+      authorOrgKind: (map['author_org_kind'] as String?) ??
+          (profile?['org_kind'] as String?) ??
+          authorOrgKind,
       authorCity: authorCity,
       authorZipcode: authorZipcode,
       authorBusinessType: authorBusinessType,
@@ -159,6 +176,9 @@ class Post {
           ? (map['item_status'] as String).trim().toLowerCase()
           : 'available',
       itemCondition: (map['item_condition'] as String?)?.trim(),
+      isOfficialBot: isOfficialBot,
+      isUnclaimed: isUnclaimed,
+      authorSiret: authorSiret,
     );
   }
 }

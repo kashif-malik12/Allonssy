@@ -351,6 +351,25 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Text(l10n.tr('create_account_cta')),
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed: () => context.go('/feed'),
+                            icon: const Icon(Icons.explore_outlined, size: 20),
+                            label: Text(
+                              l10n.tr('continue_as_guest'),
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF4B5563),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         const _LegalFooter(),
                       ],
