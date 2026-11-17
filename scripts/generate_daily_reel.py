@@ -21,11 +21,26 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import imageio_ffmpeg
 
+import sys
+
 OUT_DIR = Path("/var/www/local_social_web/social_assets")
+REELS_DIR = Path("/var/www/local_social_web/reels")
+BASE_URL = "https://app.allonssy.com"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 W, H = 1080, 1920
+
+
+def attach_video_to_post(post_id: str, video_url: str) -> None:
+    esc_url = video_url.replace("'", "''")
+    sql = f"UPDATE public.posts SET video_url = '{esc_url}' WHERE id = '{post_id}';"
+    subprocess.run(
+        ["docker", "exec", "-i", "supabase-db", "psql", "-U", "postgres", "-d", "postgres", "-c", sql],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def query_db(sql: str) -> list[dict]:
@@ -216,69 +231,138 @@ def render_mp4_from_image(img_path: Path, out_mp4: Path, duration_sec: int = 10)
     return True
 
 
-def main():
+def generate_and_attach(
+    post_id: str,
+    badge_text: str,
+    title: str,
+    highlight_pill: str,
+    photo_url: str,
+    footer_cta: str,
+    theme: str,
+    alias_name: str | None = None,
+) -> bool:
+    REELS_DIR.mkdir(parents=True, exist_ok=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"[{datetime.now().isoformat()}] Generating daily 9:16 vertical videos for TikTok & Reels...")
 
-    # 1. Marketplace Bon Plan Reel
-    market_rows = query_db("""
+    img_frame = compose_vertical_frame(
+        badge_text=badge_text,
+        title=title,
+        highlight_pill=highlight_pill,
+        photo_url=photo_url,
+        footer_cta=footer_cta,
+        theme=theme,
+    )
+    reel_jpg = REELS_DIR / f"{post_id}.jpg"
+    reel_mp4 = REELS_DIR / f"{post_id}.mp4"
+    img_frame.save(reel_jpg, quality=90)
+
+    if not render_mp4_from_image(reel_jpg, reel_mp4, duration_sec=8):
+        return False
+
+    # Copy to daily social alias if requested (reel_bonplan.mp4 / reel_actu.mp4)
+    if alias_name:
+        (OUT_DIR / f"{alias_name}.jpg").write_bytes(reel_jpg.read_bytes())
+        (OUT_DIR / f"{alias_name}.mp4").write_bytes(reel_mp4.read_bytes())
+
+    # Attach directly to post.video_url so it automatically appears in the Allonssy Reels tab!
+    video_url = f"{BASE_URL}/reels/{post_id}.mp4"
+    attach_video_to_post(post_id, video_url)
+    print(f"✅ Reel live for post {post_id} -> {video_url} ({reel_mp4.stat().st_size // 1024} KB)")
+    return True
+
+
+def main():
+    seed_mode = "--seed-reels" in sys.argv
+    market_lim = 2 if seed_mode else 1
+    news_lim = 2 if seed_mode else 1
+    food_lim = 2 if seed_mode else 0
+
+    print(f"[{datetime.now().isoformat()}] Generating 9:16 vertical Reels (seed_mode={seed_mode})...")
+
+    # 1. Marketplace Bon Plan Reels
+    market_rows = query_db(f"""
     SELECT json_agg(m) FROM (
         SELECT id, market_title, market_price, location_name, image_url
         FROM posts
         WHERE post_type = 'market' AND image_url IS NOT NULL
+          AND (video_url IS NULL OR video_url = '')
         ORDER BY random()
-        LIMIT 1
+        LIMIT {market_lim}
     ) m;
     """)
-    if market_rows:
-        m = market_rows[0]
+    for idx, m in enumerate(market_rows):
         city = (m.get("location_name") or "Ris-Orangis").split("(")[0].strip().upper()
         title = m.get("market_title") or "Bon Plan Voisins"
         price = m.get("market_price") or 0
-        img_frame = compose_vertical_frame(
+        generate_and_attach(
+            post_id=m["id"],
             badge_text=f"BON PLAN • {city}",
             title=title,
             highlight_pill=f"SEULEMENT {price} EUR • 0 EUR PORT",
             photo_url=m.get("image_url", ""),
             footer_cta="Voir l'annonce entre voisins",
             theme="teal",
+            alias_name="reel_bonplan" if idx == 0 else None,
         )
-        jpg_path = OUT_DIR / "reel_bonplan.jpg"
-        mp4_path = OUT_DIR / "reel_bonplan.mp4"
-        img_frame.save(jpg_path, quality=92)
-        if render_mp4_from_image(jpg_path, mp4_path, duration_sec=10):
-            print(f"✅ Generated {mp4_path} ({mp4_path.stat().st_size // 1024} KB)")
 
-    # 2. Breaking Local News Reel
-    news_rows = query_db("""
+    # 2. Food / Restaurant Reels (in seed mode, or whenever we want variety)
+    if food_lim > 0:
+        food_rows = query_db(f"""
+        SELECT json_agg(f) FROM (
+            SELECT p.id, COALESCE(p.market_title, left(p.content, 50)) AS title,
+                   p.market_price, COALESCE(p.location_name, pr.city, 'Ris-Orangis') AS city,
+                   p.image_url, pr.business_name
+            FROM posts p
+            LEFT JOIN profiles pr ON p.user_id = pr.id
+            WHERE p.post_type = 'food_ad' AND p.image_url IS NOT NULL
+              AND (p.video_url IS NULL OR p.video_url = '')
+            ORDER BY random()
+            LIMIT {food_lim}
+        ) f;
+        """)
+        for f in food_rows:
+            city = (f.get("city") or "Ris-Orangis").split("(")[0].strip().upper()
+            resto = f.get("business_name") or "Restaurant Local"
+            title = f"{resto} : {f.get('title') or 'Plat du Jour'}"
+            price = f.get("market_price")
+            pill = f"A DECOUVRIR • {price} EUR" if price else "ADRESSE FOOD DU 91"
+            generate_and_attach(
+                post_id=f["id"],
+                badge_text=f"RESTO • {city}",
+                title=title,
+                highlight_pill=pill,
+                photo_url=f.get("image_url", ""),
+                footer_cta="Voir la carte sur Allonssy",
+                theme="teal",
+            )
+
+    # 3. Breaking Local News Reels
+    news_rows = query_db(f"""
     SELECT json_agg(nw) FROM (
         SELECT id, content, location_name, image_url
         FROM posts
         WHERE external_source = 'live_news'
+          AND (video_url IS NULL OR video_url = '')
         ORDER BY created_at DESC
-        LIMIT 1
+        LIMIT {news_lim}
     ) nw;
     """)
-    if news_rows:
-        nw = news_rows[0]
+    for idx, nw in enumerate(news_rows):
         city = (nw.get("location_name") or "Essonne 91").split("(")[0].strip().upper()
         first_line = (nw.get("content") or "").split("\n")[0]
         clean_headline = first_line.replace("📰", "").strip()
         if "]" in clean_headline:
             clean_headline = clean_headline.split("]", 1)[1].strip()
-        img_frame = compose_vertical_frame(
+        generate_and_attach(
+            post_id=nw["id"],
             badge_text=f"ACTU LOCALE • {city}",
             title=clean_headline,
             highlight_pill="ET VOUS, QU'EN PENSEZ-VOUS ?",
             photo_url=nw.get("image_url", ""),
             footer_cta="Rejoindre le debat sur Allonssy",
             theme="news",
+            alias_name="reel_actu" if idx == 0 else None,
         )
-        jpg_path = OUT_DIR / "reel_actu.jpg"
-        mp4_path = OUT_DIR / "reel_actu.mp4"
-        img_frame.save(jpg_path, quality=92)
-        if render_mp4_from_image(jpg_path, mp4_path, duration_sec=10):
-            print(f"✅ Generated {mp4_path} ({mp4_path.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":

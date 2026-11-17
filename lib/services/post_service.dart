@@ -484,6 +484,7 @@ class PostService {
     int? radiusKmOverride,
     DateTime? beforeCreatedAt,
     String? beforeId,
+    bool videosOnly = false,
   }) async {
     final user = _db.auth.currentUser;
     if (user == null) {
@@ -492,6 +493,10 @@ class PostService {
           .from('posts')
           .select(postSelect)
           .eq('visibility', 'public');
+
+      if (videosOnly) {
+        q = q.not('video_url', 'is', null).neq('video_url', '');
+      }
 
       if (postType != 'all') {
         if (postType == 'food_ad') {
@@ -531,9 +536,9 @@ class PostService {
     final radiusKm = radiusKmOverride ?? (me?['radius_km'] as int?) ?? 5;
 
     // 2) Fallback if location isn't set
-    // Also force direct query for food filter to support both legacy 'food'
-    // and newer 'food_ad' post_type values.
-    final forceDirectQuery = postType == 'food_ad';
+    // Also force direct query for food filter & videosOnly (Reels) so server-side filtering
+    // returns actual video posts instead of truncating to 8 non-video posts.
+    final forceDirectQuery = postType == 'food_ad' || videosOnly;
     if (lat == null || lng == null || forceDirectQuery) {
       if (scope != 'following') {
         // PUBLIC scope: only public posts (server-side filters + cursor)
@@ -541,6 +546,10 @@ class PostService {
             .from('posts')
             .select(postSelect)
             .eq('visibility', 'public');
+
+        if (videosOnly) {
+          q = q.not('video_url', 'is', null).neq('video_url', '');
+        }
 
         if (postType != 'all') {
           if (postType == 'food_ad') {
@@ -590,6 +599,10 @@ class PostService {
           .from('posts')
           .select(postSelect)
           .inFilter('user_id', ids.toList());
+
+      if (videosOnly) {
+        q = q.not('video_url', 'is', null).neq('video_url', '');
+      }
 
       if (postType != 'all') {
         if (postType == 'food_ad') {

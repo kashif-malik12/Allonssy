@@ -207,6 +207,7 @@ class _MobileVideoFeedState extends State<MobileVideoFeed> {
       radiusKmOverride: _scope == 'nearby' ? _profileRadiusKm : null,
       beforeCreatedAt: reset ? null : _beforeCreatedAt,
       beforeId: reset ? null : _beforeId,
+      videosOnly: true,
     );
 
     if (rows.isNotEmpty) {
