@@ -12,6 +12,8 @@ import subprocess
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
+import re
+import unicodedata
 
 HOME = Path.home()
 SUPABASE_ENV = HOME / "supabase-project" / ".env"
@@ -78,7 +80,15 @@ def query_new_posts(since_ts: str) -> list[dict]:
         FROM posts
         LEFT JOIN profiles ON posts.user_id = profiles.id
         WHERE posts.created_at > '{since_ts}'::timestamptz
+          AND posts.external_source IS NULL
+          AND posts.is_unclaimed = false
+          AND (profiles.email IS NULL OR profiles.email NOT LIKE '%@allonssy.com')
           AND posts.id::text NOT LIKE '66666666-%'
+          AND posts.id::text NOT LIKE '55555555-%'
+          AND posts.id::text NOT LIKE '44444444-%'
+          AND posts.id::text NOT LIKE '33333333-%'
+          AND posts.id::text NOT LIKE '22222222-%'
+          AND posts.id::text NOT LIKE '00000000-%'
         ORDER BY posts.created_at ASC
     ) p;
     """
@@ -120,7 +130,17 @@ def send_alert_email(post: dict) -> None:
     price = post.get("market_price")
     price_str = f"{price} €" if price is not None else "Non spécifié"
     post_id = post.get("id")
-    post_url = f"{APP_URL}/p/{post_id}"
+    
+    # Generate clean, descriptive French slug URL
+    clean_title = unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode('utf-8').lower()
+    clean_title = re.sub(r'[^a-z0-9]+', '-', clean_title).strip('-')[:45]
+
+    if ptype == 'market':
+        post_url = f"{APP_URL}/bonplan/{clean_title}--{post_id}"
+    elif ptype in ('service_request', 'service_offer'):
+        post_url = f"{APP_URL}/entraide/{clean_title}--{post_id}"
+    else:
+        post_url = f"{APP_URL}/post/{clean_title}--{post_id}"
 
     subject = f"🔔 [Allonssy] Nouveau {ptype_label} à {city} : {title}"
 
