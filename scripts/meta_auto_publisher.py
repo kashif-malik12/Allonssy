@@ -49,7 +49,8 @@ ENV_VALS = read_env(ENV_FILE)
 # Meta IDs & Tokens
 PAGE_ALLONSSY_ID = "1515002858354179"
 PAGE_ACTU_ID = "1492903483898849"
-IG_USER_ID = "17841470142563615"
+IG_USER_ID = os.environ.get("META_IG_USER_ID") or ENV_VALS.get("META_IG_USER_ID", "")
+IG_ACCESS_TOKEN = os.environ.get("META_IG_TOKEN") or ENV_VALS.get("META_IG_TOKEN", "")
 
 PAGE_ALLONSSY_TOKEN = os.environ.get("META_PAGE_ALLONSSY_TOKEN") or ENV_VALS.get("META_PAGE_ALLONSSY_TOKEN", "")
 PAGE_ACTU_TOKEN = os.environ.get("META_PAGE_ACTU_TOKEN") or ENV_VALS.get("META_PAGE_ACTU_TOKEN", "")
@@ -112,9 +113,27 @@ def post_to_facebook(page_id: str, access_token: str, message: str, link: str | 
         return None
 
 
-def post_to_instagram(image_url: str, caption: str, access_token: str) -> dict | None:
+def resolve_instagram_target() -> tuple[str, str]:
+    """Return (ig_user_id, access_token) for Allonssy Instagram, or ('', '') if not linked."""
+    if IG_USER_ID:
+        return IG_USER_ID, (IG_ACCESS_TOKEN or PAGE_ALLONSSY_TOKEN)
+    # Dynamically check if Allonssy FB Page now has a linked Instagram Business Account
+    try:
+        url = f"https://graph.facebook.com/v19.0/{PAGE_ALLONSSY_ID}?fields=instagram_business_account&access_token={PAGE_ALLONSSY_TOKEN}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            ig_acc = data.get("instagram_business_account", {})
+            if ig_acc.get("id"):
+                return ig_acc["id"], PAGE_ALLONSSY_TOKEN
+    except Exception as e:
+        log(f"IG lookup skipped: {e}")
+    return "", ""
+
+
+def post_to_instagram(ig_user_id: str, image_url: str, caption: str, access_token: str) -> dict | None:
     # 1. Create Media Container
-    container_url = f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media"
+    container_url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media"
     data = urllib.parse.urlencode({
         "image_url": image_url,
         "caption": caption,
@@ -134,7 +153,7 @@ def post_to_instagram(image_url: str, caption: str, access_token: str) -> dict |
         time.sleep(3)
 
         # 2. Publish Media
-        pub_url = f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish"
+        pub_url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media_publish"
         pub_data = urllib.parse.urlencode({
             "creation_id": container_id,
             "access_token": access_token
@@ -193,8 +212,10 @@ Rejoignez les habitants de Ris-Orangis, Grigny et Évry-Courcouronnes sur Allons
     if fb_res:
         log(f"✅ Published to Allonssy FB Page: {fb_res.get('id')}")
 
-    # 2. Post to Instagram @allonssy8
-    ig_caption = f"""🔥 BON PLAN DE LA SEMAINE À {m_city.upper()}
+    # 2. Post to Instagram (only if Allonssy IG is linked or configured — never posts to unrelated accounts)
+    ig_id, ig_tok = resolve_instagram_target()
+    if ig_id and ig_tok:
+        ig_caption = f"""🔥 BON PLAN DE LA SEMAINE À {m_city.upper()}
 
 Un habitant vend :
 📦 {m_title} pour seulement {m_price} € !
@@ -204,9 +225,11 @@ Remise en main propre entre voisins sans frais d'envoi.
 
 #Allonssy #RisOrangis #Evry #Grigny #Essonne #Essonne91 #GrandParisSud #BonPlan91 #Marketplace91"""
 
-    ig_res = post_to_instagram(img_url, ig_caption, PAGE_ALLONSSY_TOKEN)
-    if ig_res:
-        log(f"✅ Published to Instagram @allonssy8: {ig_res.get('id')}")
+        ig_res = post_to_instagram(ig_id, img_url, ig_caption, ig_tok)
+        if ig_res:
+            log(f"✅ Published to Allonssy Instagram ({ig_id}): {ig_res.get('id')}")
+    else:
+        log("ℹ️ Instagram not linked to Allonssy FB Page yet — skipped IG publish.")
 
 
 def publish_essonne_actu():
