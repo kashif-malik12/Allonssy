@@ -1,44 +1,103 @@
 #!/usr/bin/env python3
 """
 live_news_publisher.py
-Fetches live official and verified local press news for Ris-Orangis (91130) and Grand Paris Sud.
-Filters, deduplicates against database, and publishes fresh news articles to the Allonssy feed.
+Fetches live official and verified local press news for:
+  - Ris-Orangis (91130)
+  - Évry-Courcouronnes (91000)
+  - Grigny (91350)
+  - Essonne / Grand Paris Sud
+Filters, deduplicates against database, routes to respective municipal news agencies,
+and publishes fresh news articles to the Allonssy feed.
 """
 
-import sys
-import uuid
 import datetime
-import urllib.request
-import xml.etree.ElementTree as ET
-import subprocess
 import email.utils
 import re
+import subprocess
+import sys
+import urllib.request
+import uuid
+import xml.etree.ElementTree as ET
 
 FEEDS = [
     {
         "name": "Google News Ris-Orangis",
         "url": "https://news.google.com/rss/search?q=Ris-Orangis&hl=fr&gl=FR&ceid=FR:fr",
+        "default_city": "Ris-Orangis",
         "priority": 1,
     },
     {
-        "name": "Google News Grand Paris Sud",
-        "url": "https://news.google.com/rss/search?q=%22Grand+Paris+Sud%22&hl=fr&gl=FR&ceid=FR:fr",
+        "name": "Google News Évry-Courcouronnes",
+        "url": "https://news.google.com/rss/search?q=%22Evry-Courcouronnes%22+OR+%22Evry%22+Essonne&hl=fr&gl=FR&ceid=FR:fr",
+        "default_city": "Évry-Courcouronnes",
+        "priority": 1,
+    },
+    {
+        "name": "Google News Grigny",
+        "url": "https://news.google.com/rss/search?q=%22Grigny%22+Essonne&hl=fr&gl=FR&ceid=FR:fr",
+        "default_city": "Grigny",
+        "priority": 1,
+    },
+    {
+        "name": "Google News Grand Paris Sud & Essonne",
+        "url": "https://news.google.com/rss/search?q=%22Grand+Paris+Sud%22+OR+%22Essonne%22+actu&hl=fr&gl=FR&ceid=FR:fr",
+        "default_city": "Grand Paris Sud",
         "priority": 2,
     },
 ]
 
 IMAGE_PRESETS = [
-    "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80", # Town hall / civic
-    "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&auto=format&fit=crop&q=80", # Press & news
-    "https://images.unsplash.com/photo-1495020689067-958852a7765e?w=800&auto=format&fit=crop&q=80", # Newspaper reading
-    "https://images.unsplash.com/photo-1586339949916-3e9457bef6d3?w=800&auto=format&fit=crop&q=80", # Breaking updates
+    "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80",  # Town hall / civic
+    "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&auto=format&fit=crop&q=80",  # Press & news
+    "https://images.unsplash.com/photo-1495020689067-958852a7765e?w=800&auto=format&fit=crop&q=80",  # Newspaper reading
+    "https://images.unsplash.com/photo-1586339949916-3e9457bef6d3?w=800&auto=format&fit=crop&q=80",  # Breaking updates
 ]
 
-def clean_html(raw_html):
-    cleanr = re.compile('<.*?>')
+CITY_CONFIG = {
+    "Ris-Orangis": {
+        "email": "infos.ris-orangis@allonssy.com",
+        "location": "Ris-Orangis (91130)",
+        "lat": 48.6508,
+        "lng": 2.4143,
+    },
+    "Évry-Courcouronnes": {
+        "email": "infos.evry@allonssy.com",
+        "location": "Évry-Courcouronnes (91000)",
+        "lat": 48.6298,
+        "lng": 2.4418,
+    },
+    "Grigny": {
+        "email": "infos.grigny@allonssy.com",
+        "location": "Grigny (91350)",
+        "lat": 48.6536,
+        "lng": 2.3838,
+    },
+    "Grand Paris Sud": {
+        "email": "actu.essonne@allonssy.com",
+        "location": "Grand Paris Sud (91)",
+        "lat": 48.6298,
+        "lng": 2.4418,
+    },
+}
+
+
+def clean_html(raw_html: str) -> str:
+    cleanr = re.compile(r'<.*?>')
     return re.sub(cleanr, '', raw_html).strip()
 
-def get_existing_external_ids():
+
+def detect_city(title: str, desc: str, default_city: str) -> str:
+    text = f"{title} {desc}".lower()
+    if "ris-orangis" in text or "ris orangis" in text:
+        return "Ris-Orangis"
+    if "evry" in text or "évry" in text or "courcouronnes" in text:
+        return "Évry-Courcouronnes"
+    if "grigny" in text:
+        return "Grigny"
+    return default_city if default_city in CITY_CONFIG else "Grand Paris Sud"
+
+
+def get_existing_external_ids() -> set[str]:
     """Query postgres for all already published live_news external_ids to prevent duplicates."""
     sql = "SELECT external_id FROM public.posts WHERE external_source = 'live_news' AND external_id IS NOT NULL;"
     cmd = ["docker", "exec", "-i", "supabase-db", "psql", "-U", "postgres", "-d", "postgres", "-t", "-A"]
@@ -49,7 +108,8 @@ def get_existing_external_ids():
         print(f"Warning: could not fetch existing external_ids: {e}", file=sys.stderr)
         return set()
 
-def fetch_feed_items(url):
+
+def fetch_feed_items(url: str, default_city: str) -> list[dict]:
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
     with urllib.request.urlopen(req, timeout=12) as resp:
         xml_data = resp.read()
@@ -75,10 +135,12 @@ def fetch_feed_items(url):
             "guid": guid.strip(),
             "pub_date": parsed_date,
             "description": clean_html(desc),
+            "default_city": default_city,
         })
     return items
 
-def publish_news_article(article, img_url):
+
+def publish_news_article(article: dict, img_url: str) -> bool:
     post_id = str(uuid.uuid4())
     title = article["title"]
     source = "Presse Locale"
@@ -88,11 +150,13 @@ def publish_news_article(article, img_url):
         source = parts[1].strip()
 
     desc = article["description"]
-    # Truncate clean description to 250 chars if too long
     if len(desc) > 300:
         desc = desc[:297] + "..."
 
-    content = f"📰 [ACTUALITÉ LOCALE] {title}\n\n"
+    city_key = detect_city(title, desc, article.get("default_city", "Grand Paris Sud"))
+    city_info = CITY_CONFIG.get(city_key, CITY_CONFIG["Grand Paris Sud"])
+
+    content = f"📰 [ACTUALITÉ LOCALE • {city_key.upper()}] {title}\n\n"
     if desc and desc != title:
         content += f"{desc}\n\n"
     content += f"📌 Source : {source}\n🔗 Lire l'article complet : {article['link']}"
@@ -105,14 +169,16 @@ def publish_news_article(article, img_url):
 DO $$
 DECLARE
     v_user_id uuid;
-    v_lat double precision;
-    v_lng double precision;
 BEGIN
-    SELECT id, latitude, longitude
-    INTO v_user_id, v_lat, v_lng
+    SELECT id INTO v_user_id
     FROM public.profiles
-    WHERE email = 'infos.ris-orangis@allonssy.com'
+    WHERE email = '{city_info["email"]}'
     LIMIT 1;
+
+    IF v_user_id IS NULL THEN
+        -- Fallback to Ris-Orangis news profile if specific city not found
+        SELECT id INTO v_user_id FROM public.profiles WHERE email = 'infos.ris-orangis@allonssy.com' LIMIT 1;
+    END IF;
 
     IF v_user_id IS NOT NULL THEN
         INSERT INTO public.posts (
@@ -125,9 +191,9 @@ BEGIN
             '{content_esc}',
             {img_sql},
             'public',
-            'Ris-Orangis (91130)',
-            COALESCE(v_lat, 48.6508),
-            COALESCE(v_lng, 2.4143),
+            '{city_info["location"]}',
+            {city_info["lat"]},
+            {city_info["lng"]},
             now(),
             'org',
             'post',
@@ -142,11 +208,12 @@ END $$;
     cmd = ["docker", "exec", "-i", "supabase-db", "psql", "-U", "postgres", "-d", "postgres"]
     res = subprocess.run(cmd, input=sql, text=True, capture_output=True)
     if res.returncode == 0:
-        print(f"[{datetime.datetime.now().isoformat()}] Successfully published live news: {title} ({source})")
+        print(f"[{datetime.datetime.now().isoformat()}] Published news for {city_key}: {title} ({source})")
         return True
     else:
         print(f"Error publishing news: {res.stderr}", file=sys.stderr)
         return False
+
 
 def main():
     existing_ids = get_existing_external_ids()
@@ -157,12 +224,11 @@ def main():
 
     for feed in FEEDS:
         try:
-            items = fetch_feed_items(feed["url"])
+            items = fetch_feed_items(feed["url"], feed["default_city"])
             print(f"Fetched {len(items)} items from {feed['name']}.")
             for it in items:
                 if it["guid"] in existing_ids or it["link"] in existing_ids:
                     continue
-                # Date check
                 if it["pub_date"] and it["pub_date"] < cutoff_date:
                     continue
                 candidates.append((feed["priority"], it))
@@ -183,9 +249,8 @@ def main():
 
     print(f"Identified {len(unique_candidates)} fresh news candidates.")
 
-    # Limit to top 2-3 per run to keep feed balanced
     published_count = 0
-    max_to_publish = 2
+    max_to_publish = 4  # 1-2 per key city
 
     for it in unique_candidates:
         if published_count >= max_to_publish:
@@ -196,6 +261,17 @@ def main():
             published_count += 1
 
     print(f"Done. Published {published_count} new articles.")
+
+    # Automatically refresh the news portal and SEO sitemap
+    if published_count > 0:
+        try:
+            print("Refreshing actualites.html portal...")
+            subprocess.run(["python3", "/home/deploy/bin/generate_news_portal.py"], check=False)
+            print("Refreshing sitemap.xml...")
+            subprocess.run(["python3", "/home/deploy/bin/generate_seo_sitemap.py"], check=False)
+        except Exception as e:
+            print(f"Post-publish refresh error: {e}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

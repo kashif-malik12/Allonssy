@@ -104,7 +104,19 @@ def get_daily_highlights() -> dict:
     """)
     resto = resto_items[0] if resto_items else None
 
-    return {"market": market, "need": need, "resto": resto}
+    # 4. Fresh Local News Article
+    news_items = query_db("""
+    SELECT json_agg(nw) FROM (
+        SELECT id, content, location_name, image_url
+        FROM posts
+        WHERE external_source = 'live_news'
+        ORDER BY created_at DESC
+        LIMIT 1
+    ) nw;
+    """)
+    news = news_items[0] if news_items else None
+
+    return {"market": market, "need": need, "resto": resto, "news": news}
 
 
 def format_fb_share_url(link: str, quote: str) -> str:
@@ -200,6 +212,37 @@ Soutenez vos commerçants et restaurateurs locaux !
             "share_url": format_fb_share_url(r_link, copy)
         })
 
+    # Post 4: Fresh Local News & Debate
+    nw = data.get("news")
+    if nw:
+        nw_link = f"{BASE_URL}/post/{nw['id']}"
+        raw_lines = [l.strip() for l in nw.get("content", "").split("\n") if l.strip()]
+        headline = raw_lines[0] if raw_lines else "Actualité locale"
+        summary = raw_lines[1] if len(raw_lines) > 1 else ""
+        city = nw.get("location_name", "Grand Paris Sud")
+        city_tag = city.split()[0].replace("-", "").replace("É", "E").replace("é", "e")
+
+        copy = f"""📰 ÇA SE PASSE À {city.upper()} 🗣️
+
+{headline}
+
+{summary}
+
+Qu'en pensez-vous ? Réagissez avec les habitants du quartier et découvrez l'article complet ici :
+🔗 {nw_link}
+
+Suivez en direct l'actualité de Ris-Orangis, Grigny et Évry-Courcouronnes sur Allonssy !
+
+#Actu91 #{city_tag} #GrandParisSud #Essonne #Voisins #Allonssy"""
+        posts.append({
+            "badge": "📰 Actu & Débat",
+            "title": f"{headline[:55]}...",
+            "city": city,
+            "copy": copy,
+            "link": nw_link,
+            "share_url": format_fb_share_url(nw_link, copy)
+        })
+
     return posts
 
 
@@ -242,6 +285,28 @@ Pas de frais de port, pas d'attente : remise en main propre entre voisins.
             "title": f"Bon plan : {m.get('market_title')}",
             "caption": caption,
             "story_idea": f"Photo de l'article + sticker Prix '{m.get('market_price')} €' + Sticker Lien : app.allonssy.com"
+        })
+
+    nw = data.get("news")
+    if nw:
+        raw_lines = [l.strip() for l in nw.get("content", "").split("\n") if l.strip()]
+        headline = raw_lines[0] if raw_lines else "Actualité locale"
+        summary = raw_lines[1] if len(raw_lines) > 1 else ""
+        caption = f"""🚨 FLASH INFO 91 🚨
+
+{headline}
+
+{summary}
+
+Et vous, qu'en pensez-vous ? Réagissez dans les commentaires 👇
+L'article complet et les échanges sont disponibles sur l'app Allonssy (lien en bio).
+
+{hashtags}"""
+        items.append({
+            "type": "Flash Info / Débat",
+            "title": f"Actu : {headline[:40]}...",
+            "caption": caption,
+            "story_idea": f"Story Sondage : 'Tu en penses quoi ?' + Boîte à questions 'Votre avis' + Sticker Lien vers l'app"
         })
 
     return items
@@ -500,7 +565,7 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
     </header>
 
     <div class="nav-tabs">
-      <button class="tab-btn active" onclick="switchTab('fb')">👥 Facebook Groups (3)</button>
+      <button class="tab-btn active" onclick="switchTab('fb')">👥 Facebook Groups ({len(fb_posts)})</button>
       <button class="tab-btn" onclick="switchTab('ig')">📸 Instagram ({len(ig_pack)})</button>
       <button class="tab-btn" onclick="switchTab('tt')">🎵 TikTok Scripts ({len(tiktok_pack)})</button>
     </div>
