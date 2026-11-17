@@ -575,9 +575,10 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
     </header>
 
     <div class="nav-tabs">
-      <button class="tab-btn active" onclick="switchTab('fb')">👥 Facebook Groups ({len(fb_posts)})</button>
+      <button class="tab-btn active" onclick="switchTab('fb')">👥 Facebook ({len(fb_posts)})</button>
       <button class="tab-btn" onclick="switchTab('ig')">📸 Instagram ({len(ig_pack)})</button>
-      <button class="tab-btn" onclick="switchTab('tt')">🎵 TikTok Scripts ({len(tiktok_pack)})</button>
+      <button class="tab-btn" onclick="switchTab('tt')">🎵 TikTok ({len(tiktok_pack)})</button>
+      <button class="tab-btn" onclick="switchTab('kit')">🎬 Vidéos &amp; Stats</button>
     </div>
 
     <!-- Facebook Section -->
@@ -591,7 +592,7 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
     <!-- Instagram Section -->
     <div id="section-ig" class="section-content">
       <div style="background: #FDF2F8; border: 1px solid #FBCFE8; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #9D174D;">
-        📸 <b>Astuce Instagram :</b> Copiez le caption avec ses hashtags ciblés Essonne, publiez la photo du restaurant/produit et ajoutez le lien en Story avec le sticker Lien vers <code>https://app.allonssy.com</code>.
+        📸 <b>Astuce Instagram :</b> Copiez le caption avec ses hashtags ciblés Essonne, publiez la photo du restaurant/produit et mettez <code>https://app.allonssy.com/go.html</code> en lien bio.
       </div>
       {ig_cards}
     </div>
@@ -599,9 +600,47 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
     <!-- TikTok Section -->
     <div id="section-tt" class="section-content">
       <div style="background: #F3F4F6; border: 1px solid #E5E7EB; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #111827;">
-        🎵 <b>Format TikTok Viral :</b> Enregistrez face caméra ou filmez l'appli sur votre téléphone. Les 3 premières secondes (Hook) sont capitales pour retenir les jeunes d'Évry et Ris-Orangis !
+        🎵 <b>Format TikTok Viral :</b> Téléchargez nos vidéos verticales prêtes à l'emploi dans l'onglet <b>🎬 Vidéos &amp; Stats</b> ou enregistrez face caméra avec les scripts ci-dessous !
       </div>
       {tt_cards}
+    </div>
+
+    <!-- Videos, Brand Kit & Growth Stats Section -->
+    <div id="section-kit" class="section-content">
+      <div class="card">
+        <h4>🎬 Vidéos Verticales 9:16 du Jour (Prêtes pour TikTok &amp; Instagram Reels)</h4>
+        <p style="font-size:13px;color:#4B5563;margin-top:0;">Générées automatiquement chaque matin en 1080×1920 MP4 (format natif TikTok &amp; Reels) :</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:12px;">
+          <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:12px;text-align:center;">
+            <img src="/social_assets/reel_bonplan.jpg" alt="Reel Bon Plan" style="width:100%;max-height:280px;object-fit:contain;border-radius:8px;margin-bottom:10px;">
+            <a href="/social_assets/reel_bonplan.mp4" download class="btn btn-tt" style="display:inline-block;">⬇️ Vidéo Bon Plan (.mp4)</a>
+          </div>
+          <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:12px;text-align:center;">
+            <img src="/social_assets/reel_actu.jpg" alt="Reel Actu 91" style="width:100%;max-height:280px;object-fit:contain;border-radius:8px;margin-bottom:10px;">
+            <a href="/social_assets/reel_actu.mp4" download class="btn btn-fb" style="display:inline-block;">⬇️ Vidéo Actu 91 (.mp4)</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4>📊 Suivi Trafic &amp; Liens Rapides</h4>
+        <div class="actions">
+          <a href="/growth_stats.html" target="_blank" class="btn btn-fb" style="background:#0F766E;">📊 Tracker Croissance &amp; Trafic</a>
+          <a href="/go.html" target="_blank" class="btn btn-ig">🔗 Page Link-in-Bio (/go.html)</a>
+          <a href="/actualites.html" target="_blank" class="btn btn-secondary">📰 Portail Actu 91</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4>🎨 Kit Graphique Pages Facebook (Bannières &amp; Logos)</h4>
+        <p style="font-size:13px;color:#4B5563;margin-top:0;">Téléchargez et importez directement sur vos 2 pages Facebook :</p>
+        <div class="actions">
+          <a href="/social_assets/allonssy_logo.png" download class="btn btn-secondary">⬇️ Logo Allonssy</a>
+          <a href="/social_assets/allonssy_fb_cover.jpg" download class="btn btn-secondary">⬇️ Bannière FB Allonssy</a>
+          <a href="/social_assets/essonne_actu_logo.jpg" download class="btn btn-secondary">⬇️ Logo Essonne Actu 91</a>
+          <a href="/social_assets/essonne_actu_fb_cover.jpg" download class="btn btn-secondary">⬇️ Bannière FB Essonne Actu</a>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -612,8 +651,8 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
       
-      const idx = name === 'fb' ? 0 : (name === 'ig' ? 1 : 2);
-      document.querySelectorAll('.tab-btn')[idx].classList.add('active');
+      const map = {{'fb': 0, 'ig': 1, 'tt': 2, 'kit': 3}};
+      document.querySelectorAll('.tab-btn')[map[name] || 0].classList.add('active');
       document.getElementById('section-' + name).classList.add('active');
     }}
 
@@ -645,8 +684,34 @@ def send_email(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack: list[dict
         return
 
     today_str = datetime.now().strftime("%d/%m/%Y")
-    subject = f"📣 Vos publications Facebook, Instagram & TikTok du jour ({today_str})"
+    subject = f"📣 Vos publications Facebook, Instagram, TikTok & Stats du jour ({today_str})"
     dashboard_url = f"{BASE_URL}/social_briefing.html"
+
+    # Load live growth stats snapshot if available
+    stats_html = ""
+    stats_path = HOME / "monitoring" / "growth_stats.json"
+    if stats_path.exists():
+        try:
+            st = json.loads(stats_path.read_text(encoding="utf-8"))
+            stats_html = f"""
+            <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; font-size: 13px; color: #065F46;">
+              <b>📊 Bilan Croissance &amp; Trafic :</b>
+              👥 <b>{st.get('real_users_total', 0)}</b> vrais inscrits (+{st.get('real_users_24h', 0)} en 24h) •
+              📝 <b>{st.get('real_posts_total', 0)}</b> posts humains •
+              🔍 <b>{st.get('sitemap_urls', 0)}</b> pages SEO Google •
+              <a href="{BASE_URL}/growth_stats.html" style="color:#047857;font-weight:bold;">Voir le tableau complet ↗</a>
+            </div>
+            """
+        except Exception:
+            pass
+
+    videos_html = f"""
+    <div style="background: #111827; color: #ffffff; border-radius: 12px; padding: 16px; margin: 18px 0; text-align: center;">
+      <div style="font-weight: bold; font-size: 15px; margin-bottom: 10px;">🎬 Vidéos Verticales 9:16 Prêtes pour TikTok &amp; Instagram Reels</div>
+      <a href="{BASE_URL}/social_assets/reel_bonplan.mp4" style="display:inline-block;background:#F59E0B;color:#ffffff;text-decoration:none;padding:9px 16px;border-radius:8px;font-weight:bold;font-size:13px;margin:4px;">⬇️ Vidéo Bon Plan (.mp4)</a>
+      <a href="{BASE_URL}/social_assets/reel_actu.mp4" style="display:inline-block;background:#DC2626;color:#ffffff;text-decoration:none;padding:9px 16px;border-radius:8px;font-weight:bold;font-size:13px;margin:4px;">⬇️ Vidéo Actu 91 (.mp4)</a>
+    </div>
+    """
 
     # HTML Parts
     fb_html = ""
@@ -698,11 +763,15 @@ def send_email(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack: list[dict
         Voici votre pack de communication du jour pour animer la communauté et attirer du trafic local :
       </p>
 
+      {stats_html}
+
       <div style="text-align: center; margin: 20px 0;">
         <a href="{dashboard_url}" target="_blank" style="display: inline-block; background: #0F766E; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 10px; font-weight: bold; font-size: 15px; box-shadow: 0 3px 8px rgba(15,118,110,0.3);">
           ⚡ Ouvrir le Dashboard Mobile (Copie en 1 Clic)
         </a>
       </div>
+
+      {videos_html}
 
       <h3 style="color: #1877F2; margin-top: 28px; border-bottom: 2px solid #E5E7EB; padding-bottom: 8px;">👥 Publications Groupes Facebook</h3>
       {fb_html}
@@ -751,7 +820,11 @@ def main():
     except Exception as e:
         print(f"Dashboard write error: {e}")
 
-    # 2. Dispatch emails
+    # 2. Dispatch emails (unless --no-email flag passed)
+    import sys
+    if "--no-email" in sys.argv:
+        print("Skipped email dispatch (--no-email).")
+        return
     print(f"Sending daily multi-channel briefing to {', '.join(RECIPIENTS)}...")
     send_email(fb_posts, ig_pack, tiktok_pack)
 
