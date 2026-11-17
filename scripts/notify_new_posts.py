@@ -17,7 +17,13 @@ HOME = Path.home()
 SUPABASE_ENV = HOME / "supabase-project" / ".env"
 STATE_DIR = HOME / "monitoring"
 STATE_FILE = STATE_DIR / "last_notified_post_ts.txt"
-RECIPIENT = "kashif@tradsiter.com"
+# Notification recipients (supporting comma-separated list or fallback)
+RECIPIENTS = [
+    r.strip() for r in os.environ.get(
+        "ALERT_EMAIL_TO",
+        "kashif@tradister.com,ali.kashifmalik@gmail.com"
+    ).split(",") if r.strip()
+]
 APP_URL = "https://app.allonssy.com"
 
 POST_TYPE_LABELS = {
@@ -180,7 +186,7 @@ Allonssy Real-Time Engine
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = f"{sender_name} <{sender}>"
-    msg["To"] = RECIPIENT
+    msg["To"] = ", ".join(RECIPIENTS)
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 
@@ -188,7 +194,7 @@ Allonssy Real-Time Engine
         s.login(smtp_user, smtp_pass)
         s.send_message(msg)
 
-    print(f"Sent alert for post {post_id} to {RECIPIENT}")
+    print(f"Sent alert for post {post_id} to {RECIPIENTS}")
 
 def main():
     since_ts = get_last_ts()
