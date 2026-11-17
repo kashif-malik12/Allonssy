@@ -32,20 +32,27 @@ LOG_FILE = LOG_DIR / "meta_auto_publish.log"
 
 BASE_URL = "https://app.allonssy.com"
 
+def read_env(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"')
+    return values
+
+ENV_VALS = read_env(ENV_FILE)
+
 # Meta IDs & Tokens
 PAGE_ALLONSSY_ID = "1515002858354179"
 PAGE_ACTU_ID = "1492903483898849"
 IG_USER_ID = "17841470142563615"
 
-PAGE_ALLONSSY_TOKEN = os.environ.get(
-    "META_PAGE_ALLONSSY_TOKEN",
-    "EAAWjg0SOJOYBTPUv1AEnoZApDcQ4xCT6i0GHKMCpz1aGw1O3txVSrZCnzkQcnWCzNn8AZCXmLnlB7imvSVfZApDBA6OUWbwyJnfxrzZCQkyoQHsMoEPVJr1gWuSL4mZCyZAugP9kg8yljAFAl15VguTi56Jv9jIkXFXD19EgvJ41Wu02tFtw4HAMbT8CQpyELBKjrsRT58eldw7sIZCzDwhmKOHo4UznaqBdysMWtAiUjZBLaOFSiJZBetysIP"
-)
-
-PAGE_ACTU_TOKEN = os.environ.get(
-    "META_PAGE_ACTU_TOKEN",
-    "EAAWjg0SOJOYBTMyt4ZBsFivykgdHo5I7CSTZAbAzP6LSqzBqFzzQRoAnHNNEfsa7yZCZAU6M2PFshV1IHTIWzi1ZBFxhjLAhjg2ft8UZCt5iajZBzZCbnYWR1tHaU8TQKtUWuYy0KNqTWTx28xDoPLm09coKSH6m05vElH1kUtZCLvyNHfao1mkBdAtvFMHERXBV5jqtTTZAv8kE7ZBIsng9R5dzZCNSzDLymsNQiMB6sdg0bqUQXjOGdmATwT9t"
-)
+PAGE_ALLONSSY_TOKEN = os.environ.get("META_PAGE_ALLONSSY_TOKEN") or ENV_VALS.get("META_PAGE_ALLONSSY_TOKEN", "")
+PAGE_ACTU_TOKEN = os.environ.get("META_PAGE_ACTU_TOKEN") or ENV_VALS.get("META_PAGE_ACTU_TOKEN", "")
 
 
 def log(msg: str):
