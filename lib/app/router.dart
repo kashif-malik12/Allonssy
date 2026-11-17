@@ -117,7 +117,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           path == '/foods' ||
           path.startsWith('/foods/') ||
           path.startsWith('/p/') ||
-          path.startsWith('/post/');
+          path.startsWith('/post/') ||
+          path.startsWith('/actu/') ||
+          path.startsWith('/bonplan/') ||
+          path.startsWith('/entraide/');
 
       // 🔓 Guest mode: allow browsing public directory, restaurants, and feeds without immediate login wall
       if (!loggedIn) {
@@ -494,11 +497,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ManagedAdsScreen(mode: ManagedAdsMode.foods),
       ),
 
-      // ✅ Visit any profile
+      // ✅ Visit any profile (supports clean slugs: /p/resto-name--<uuid>)
       GoRoute(
         path: '/p/:id',
         builder: (context, state) {
-          final id = state.pathParameters['id']!;
+          final id = _extractEntityId(state.pathParameters['id']!);
           return ProfileDetailScreen(profileId: id);
         },
       ),
@@ -506,7 +509,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/p/:id/followers',
         builder: (context, state) {
-          final id = state.pathParameters['id']!;
+          final id = _extractEntityId(state.pathParameters['id']!);
           return FollowListScreen(
             profileId: id,
             mode: FollowListMode.followers,
@@ -517,7 +520,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/p/:id/following',
         builder: (context, state) {
-          final id = state.pathParameters['id']!;
+          final id = _extractEntityId(state.pathParameters['id']!);
           return FollowListScreen(
             profileId: id,
             mode: FollowListMode.following,
@@ -528,7 +531,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/p/:id/connections',
         builder: (context, state) {
-          final id = state.pathParameters['id']!;
+          final id = _extractEntityId(state.pathParameters['id']!);
           return FollowListScreen(
             profileId: id,
             mode: FollowListMode.connections,
@@ -536,10 +539,35 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
 
+      // ✅ Post details & aliases (supports clean slugs: /post/titre-article--<uuid>)
       GoRoute(
         path: '/post/:id',
         builder: (context, state) {
-          final id = state.pathParameters['id']!;
+          final id = _extractEntityId(state.pathParameters['id']!);
+          return PostDetailScreen(postId: id);
+        },
+      ),
+
+      GoRoute(
+        path: '/actu/:id',
+        builder: (context, state) {
+          final id = _extractEntityId(state.pathParameters['id']!);
+          return PostDetailScreen(postId: id);
+        },
+      ),
+
+      GoRoute(
+        path: '/bonplan/:id',
+        builder: (context, state) {
+          final id = _extractEntityId(state.pathParameters['id']!);
+          return PostDetailScreen(postId: id);
+        },
+      ),
+
+      GoRoute(
+        path: '/entraide/:id',
+        builder: (context, state) {
+          final id = _extractEntityId(state.pathParameters['id']!);
           return PostDetailScreen(postId: id);
         },
       ),
@@ -547,10 +575,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/post/:id/comments',
         builder: (context, state) {
-          final id = state.pathParameters['id']!;
+          final id = _extractEntityId(state.pathParameters['id']!);
           return CommentsScreen(postId: id);
         },
       ),
     ],
   );
 });
+
+/// Extracts a clean UUID from URLs that contain descriptive SEO slugs
+/// e.g. "velo-vintage-ris-orangis--66666666-0000-4000-8000-000000000124" -> "66666666-0000-4000-8000-000000000124"
+String _extractEntityId(String raw) {
+  final match = RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}').firstMatch(raw);
+  return match != null ? match.group(0)! : raw;
+}

@@ -21,6 +21,7 @@ import urllib.parse
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
+import re
 
 HOME = Path.home()
 SUPABASE_ENV = HOME / "supabase-project" / ".env"
@@ -119,6 +120,15 @@ def get_daily_highlights() -> dict:
     return {"market": market, "need": need, "resto": resto, "news": news}
 
 
+import unicodedata
+
+def make_slug(text: str) -> str:
+    # Normalize accents cleanly (é -> e, â -> a, etc.)
+    s = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8').lower()
+    s = re.sub(r'[^a-z0-9]+', '-', s).strip('-')
+    return s[:45]
+
+
 def format_fb_share_url(link: str, quote: str) -> str:
     params = {"u": link, "quote": quote}
     return f"https://www.facebook.com/sharer/sharer.php?{urllib.parse.urlencode(params)}"
@@ -129,9 +139,9 @@ def build_facebook_posts(data: dict) -> list[dict]:
 
     m = data.get("market")
     if m:
-        m_link = f"{BASE_URL}/post/{m['id']}"
         m_title = m.get("market_title", "Bon plan")
         m_city = m.get("location_name", "Grand Paris Sud")
+        m_link = f"{BASE_URL}/bonplan/{make_slug(m_title)}-{make_slug(m_city)}--{m['id']}"
         m_price = m.get("market_price", 0)
         orig = m.get("original_price")
         price_txt = f"{m_price} €" + (f" (au lieu de {orig} €)" if orig else "")
@@ -158,9 +168,9 @@ Retrouvez d'autres objets vendus près de chez vous sur Allonssy (Ris-Orangis, G
 
     n = data.get("need")
     if n:
-        n_link = f"{BASE_URL}/post/{n['id']}"
         n_title = n.get("market_title", "Besoin d'un coup de main")
         n_city = n.get("location_name", "Grand Paris Sud")
+        n_link = f"{BASE_URL}/entraide/{make_slug(n_title)}-{make_slug(n_city)}--{n['id']}"
         n_price = n.get("market_price")
         remun = f" (Rémunération : {n_price} €)" if n_price else ""
 
@@ -186,9 +196,9 @@ Allonssy permet à tous les habitants de se rendre service localement et simplem
 
     r = data.get("resto")
     if r:
-        r_link = f"{BASE_URL}/p/{r['id']}"
         r_name = r.get("business_name", "Restaurant local")
         r_city = r.get("city", "Ris-Orangis")
+        r_link = f"{BASE_URL}/p/{make_slug(r_name)}-{make_slug(r_city)}--{r['id']}"
         r_bio = r.get("bio", "Superbe adresse à découvrir.")
 
         copy = f"""🍔 DÉCOUVERTE RESTO DU JOUR À {r_city.upper()} 🍽️
@@ -215,12 +225,12 @@ Soutenez vos commerçants et restaurateurs locaux !
     # Post 4: Fresh Local News & Debate
     nw = data.get("news")
     if nw:
-        nw_link = f"{BASE_URL}/post/{nw['id']}"
         raw_lines = [l.strip() for l in nw.get("content", "").split("\n") if l.strip()]
         headline = raw_lines[0] if raw_lines else "Actualité locale"
         summary = raw_lines[1] if len(raw_lines) > 1 else ""
         city = nw.get("location_name", "Grand Paris Sud")
         city_tag = city.split()[0].replace("-", "").replace("É", "E").replace("é", "e")
+        nw_link = f"{BASE_URL}/actu/{make_slug(headline)}-{make_slug(city)}--{nw['id']}"
 
         copy = f"""📰 ÇA SE PASSE À {city.upper()} 🗣️
 

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import html
 import json
+import re
+import unicodedata
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -93,7 +95,9 @@ def render_html(articles: list[dict]) -> str:
 
         img = a.get("image_url") or "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80"
         created_at = a.get("created_at", "")[:10]
-        allonssy_post_url = f"{BASE_URL}/post/{p_id}"
+        clean_slug = unicodedata.normalize('NFKD', headline).encode('ascii', 'ignore').decode('utf-8').lower()
+        clean_slug = re.sub(r'[^a-z0-9]+', '-', clean_slug).strip('-')[:45]
+        allonssy_post_url = f"{BASE_URL}/actu/{clean_slug}--{p_id}"
 
         cards_html += f"""
         <article class="news-card" data-city="{city_slug}">
