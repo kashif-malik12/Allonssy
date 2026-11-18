@@ -1,0 +1,26 @@
+{
+  "android": {
+    "latest_version": "1.3.1",
+    "latest_build": 9,
+    "min_build": 9,
+    "store_url": "https://play.google.com/store/apps/details?id=com.allonssy.app",
+    "notes_fr": "Nouvelle version disponible : Reels locaux améliorés, photos commerçants uniques, liens propres et performances optimisées.",
+    "notes_en": "New version available: Improved local Reels, unique business visuals, clean links, and performance upgrades."
+  },
+  "ios": {
+    "latest_version": "1.3.1",
+    "latest_build": 9,
+    "min_build": 9,
+    "store_url": "https://app.allonssy.com/go.html",
+    "notes_fr": "Nouvelle version disponible : Reels locaux améliorés et performances optimisées.",
+    "notes_en": "New version available: Improved local Reels and performance upgrades."
+  },
+  "web": {
+    "latest_version": "1.3.2",
+    "latest_build": 10,
+    "min_build": 9,
+    "store_url": "https://app.allonssy.com/",
+    "notes_fr": "Une nouvelle version d'Allonssy est disponible ! Cliquez pour actualiser et profiter des dernières nouveautés.",
+    "notes_en": "A new version of Allonssy is available! Click to refresh and get the latest improvements."
+  }
+}

@@ -10,6 +10,7 @@ import '../app/chat_singletons.dart';
 import '../core/localization/app_locale_controller.dart';
 import '../core/localization/app_localizations.dart';
 import '../features/notifications/providers/notification_unread_provider.dart';
+import '../services/app_update_service.dart';
 import '../services/presence_service.dart';
 import 'router.dart' show appRouterNavigatorKey, appRouterProvider;
 
@@ -20,7 +21,7 @@ class App extends ConsumerStatefulWidget {
   ConsumerState<App> createState() => _AppState();
 }
 
-class _AppState extends ConsumerState<App> {
+class _AppState extends ConsumerState<App> with WidgetsBindingObserver {
   StreamSubscription<AuthState>? _authSub;
   bool _badgeInitialized = false;
   bool _notificationBadgeInitialized = false;
@@ -28,6 +29,13 @@ class _AppState extends ConsumerState<App> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Check for app updates once after first frame paints.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(AppUpdateService.instance.checkForUpdate());
+    });
 
     // If app restarts while already logged in, mark as initialized immediately
     // so the auth listener (which fires initialSession) doesn't also call init().
@@ -91,7 +99,15 @@ class _AppState extends ConsumerState<App> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(AppUpdateService.instance.checkForUpdate());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authSub?.cancel();
     PresenceService.instance.stop();
     if (_notificationBadgeInitialized) {
