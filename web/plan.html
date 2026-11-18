@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Allonssy! — Plan Stratégique, Statut Live & Horaires (CET)</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #F3F4F6;
+      color: #111827;
+      margin: 0;
+      padding: 16px 14px 48px;
+      line-height: 1.55;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; }
+    header {
+      background: linear-gradient(135deg, #0B4F4A, #0F766E);
+      color: #ffffff;
+      padding: 28px 24px;
+      border-radius: 18px;
+      margin-bottom: 22px;
+      box-shadow: 0 8px 24px rgba(15, 118, 110, 0.2);
+    }
+    header h1 { margin: 0; font-size: 24px; }
+    header p { margin: 6px 0 16px; opacity: 0.92; font-size: 14px; }
+    .nav { display: flex; gap: 8px; flex-wrap: wrap; }
+    .nav a {
+      background: rgba(255, 255, 255, 0.16);
+      color: #ffffff;
+      text-decoration: none;
+      padding: 8px 14px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+    .nav a:hover { background: rgba(255, 255, 255, 0.28); }
+    .card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 22px;
+      margin-bottom: 20px;
+      border: 1px solid #E5E7EB;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    }
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: #0F766E;
+      border-bottom: 2px solid #F3F4F6;
+      padding-bottom: 8px;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+    }
+    .status-box {
+      background: #F9FAFB;
+      border: 1px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .status-box .title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+    .status-box .desc { font-size: 12.5px; color: #4B5563; }
+    .badge-ok {
+      display: inline-block;
+      background: #ECFDF5;
+      color: #065F46;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #F3F4F6; vertical-align: top; }
+    th { color: #6B7280; font-size: 12px; text-transform: uppercase; background: #F9FAFB; }
+    .cet {
+      display: inline-block;
+      background: #EFF6FF;
+      color: #1D4ED8;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 6px;
+      white-space: nowrap;
+      font-size: 12.5px;
+    }
+    .phase-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    .phase {
+      border: 1px solid #E5E7EB;
+      border-radius: 14px;
+      padding: 16px;
+      background: #FAFAFA;
+    }
+    .phase.active {
+      border: 2px solid #0F766E;
+      background: #F0FDFA;
+    }
+    .phase h3 { margin: 0 0 8px; font-size: 15px; color: #111827; }
+    .phase ul { margin: 0; padding-left: 18px; font-size: 13px; color: #374151; }
+    .phase li { margin-bottom: 6px; }
+    .step-box {
+      background: #F9FAFB;
+      border-left: 4px solid #0F766E;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      font-size: 13.5px;
+    }
+    .step-box.tt { border-left-color: #111827; }
+    .step-box h4 { margin: 0 0 6px; font-size: 14.5px; }
+    .step-box ol, .step-box ul { margin: 6px 0 0; padding-left: 20px; }
+    .step-box li { margin-bottom: 5px; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .btn {
+      display: inline-block;
+      text-decoration: none;
+      padding: 9px 15px;
+      border-radius: 9px;
+      font-weight: 700;
+      font-size: 13px;
+      color: #ffffff;
+      background: #0F766E;
+    }
+    .btn.fb { background: #1877F2; }
+    .btn.ig { background: linear-gradient(45deg, #F58529, #DD2A7B, #8134AF); }
+    .btn.tt { background: #111827; }
+    .btn.sec { background: #4B5563; }
+    code { background: #E5E7EB; padding: 2px 6px; border-radius: 4px; font-size: 12.5px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>🗺️ Allonssy! — Plan Marketing, Statut Live &amp; Horaires (CET)</h1>
+      <p>Tableau de bord stratégique complet pour Ris-Orangis (91130), Grigny (91350) &amp; Évry-Courcouronnes (91000) • Tous les horaires sont en <b>heure de Paris (CET)</b>.</p>
+      <div class="nav">
+        <a href="/growth_stats.html">📊 Growth Tracker</a>
+        <a href="/social_briefing.html">📱 Social Copilot + Vidéos</a>
+        <a href="/actualites.html">📰 Portail Actu 91</a>
+        <a href="/go.html">🔗 Link-in-Bio</a>
+        <a href="/">🚀 Ouvrir l'App</a>
+      </div>
+    </header>
+
+    <!-- 1. CURRENT LIVE STATUS -->
+    <div class="card">
+      <h2>1. 🟢 Statut Actuel du Système (100% Opérationnel)</h2>
+      <div class="status-grid">
+        <div class="status-box">
+          <div class="badge-ok">✅ LIVE PRODUCTION</div>
+          <div class="title">App Web &amp; Google Play</div>
+          <div class="desc">Play Store v1.3.1 (Build 9) publié à 100%. App Web rapide sur <code>app.allonssy.com</code> avec liens propres (<code>/bonplan/</code>, <code>/actu/</code>, <code>/entraide/</code>).</div>
+        </div>
+        <div class="status-box">
+          <div class="badge-ok">✅ 100% UNIQUE &amp; 0 ERREUR</div>
+          <div class="title">Catalogue &amp; Visuels</div>
+          <div class="desc">101 pros avec logos uniques, 50 restos avec photos culinaires uniques, 35 annonces Marketplace, 33 services/entraide, 0 image 404, 0 accent cassé.</div>
+        </div>
+        <div class="status-box">
+          <div class="badge-ok">✅ AUTO-PUBLISH PERM.</div>
+          <div class="title">2 Pages FB + Instagram</div>
+          <div class="desc">Jetons Meta permanents (sans expiration) connectés sur <b>Allonssy 91</b>, <b>Essonne Actu &amp; Débats</b> et <b>@allonssy8</b> (tous brandés avec logos &amp; bannières).</div>
+        </div>
+        <div class="status-box">
+          <div class="badge-ok">✅ GOOGLE INDEXÉ</div>
+          <div class="title">SEO &amp; Portail Actu 91</div>
+          <div class="desc">Google Search Console vérifié + 439+ URLs dans <code>sitemap.xml</code> + Schema.org JSON-LD + SPF Cloudflare/Resend validé.</div>
+        </div>
+        <div class="status-box">
+          <div class="badge-ok">✅ REELS LIVE</div>
+          <div class="title">Reels Intégrés &amp; MP4</div>
+          <div class="desc">Bug Reels corrigé (filtre serveur <code>videosOnly</code>), 8+ vidéos verticales 9:16 déjà live dans l'app et 2 nouveaux Reels auto-ajoutés chaque matin.</div>
+        </div>
+        <div class="status-box">
+          <div class="badge-ok">✅ ZÉRO SPAM</div>
+          <div class="title">Alertes Vrais Habitants</div>
+          <div class="desc">Surveillance toutes les 60s : vous recevez un email uniquement quand un <b>vrai humain</b> publie un besoin ou une annonce.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. DAILY SCHEDULE IN CET -->
+    <div class="card">
+      <h2>2. ⏰ Planning Automatique Quotidien — Heure de Paris (CET)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Heure (CET)</th>
+            <th>Tâche Automatisée (VPS)</th>
+            <th>Action &amp; Destination</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="cet">04h00 CET</span></td>
+            <td><b>SEO Sitemap &amp; Robots</b></td>
+            <td>Indexe automatiquement tous les nouveaux commerces, annonces et articles dans <code>sitemap.xml</code> pour Googlebot.</td>
+          </tr>
+          <tr>
+            <td><span class="cet">08h20 CET</span></td>
+            <td><b>Générateur Vidéos Reels / TikTok</b></td>
+            <td>Crée 2 vidéos verticales 9:16 MP4 (1 Bon Plan + 1 Actu 91), les publie automatiquement dans l'onglet <b>Reels</b> de l'app et les met à disposition sur le Dashboard.</td>
+          </tr>
+          <tr>
+            <td><span class="cet">08h30 CET</span></td>
+            <td><b>Briefing Marketing Email + Dashboard</b></td>
+            <td>Envoie 1 email récapitulatif à <code>kashif@tradister.com</code> &amp; <code>ali.kashifmalik@gmail.com</code> (stats trafic + posts groupes FB + liens téléchargement vidéos MP4 + scripts TikTok).</td>
+          </tr>
+          <tr>
+            <td><span class="cet">09h00 CET</span></td>
+            <td><b>Vague Actu Locale #1 + Bilan Serveur</b></td>
+            <td>Récupère les dernières infos presse (Ris-Orangis, Grigny, Évry, Essonne) avec mise en forme propre sans liens longs, met à jour <code>actualites.html</code> &amp; <code>sitemap.xml</code>.</td>
+          </tr>
+          <tr>
+            <td><span class="cet">09h15 CET</span></td>
+            <td><b>🤖 Auto-Publication 3 Réseaux (100% Auto)</b></td>
+            <td>Publie automatiquement sans intervention : <b>FB Allonssy 91</b> (Bon Plan) + <b>Instagram @allonssy8</b> (Photo + Hashtags) + <b>FB Essonne Actu &amp; Débats</b> (Actu + Débat).</td>
+          </tr>
+          <tr>
+            <td><span class="cet">09h30 CET</span></td>
+            <td><b>Post Communauté Quotidien</b></td>
+            <td>Publie 1 question citoyenne / vie de quartier dans le fil Allonssy pour stimuler les commentaires.</td>
+          </tr>
+          <tr>
+            <td><span class="cet">13h00 CET</span></td>
+            <td><b>Vague Actu Locale #2</b></td>
+            <td>Nouveaux articles de la mi-journée sur Ris-Orangis, Grigny &amp; Évry + rafraîchissement du portail Actu.</td>
+          </tr>
+          <tr>
+            <td><span class="cet">19h00 CET</span></td>
+            <td><b>Vague Actu Locale #3</b></td>
+            <td>Infos du soir (transports RER D, sorties, vie municipale) + rafraîchissement du portail Actu.</td>
+          </tr>
+          <tr>
+            <td><span class="cet">Toutes les 2h</span></td>
+            <td><b>Growth &amp; Traffic Tracker</b></td>
+            <td>Met à jour <code>growth_stats.html</code> (vrais inscrits, vrais posts, commentaires, pages Google).</td>
+          </tr>
+          <tr>
+            <td><span class="cet">24/7 (60 sec)</span></td>
+            <td><b>Veille Vrais Utilisateurs</b></td>
+            <td>Alerte email immédiate dès qu'un vrai habitant publie un besoin, pour répondre en moins de 5 minutes.</td>
+          </tr>
+          <tr>
+            <td><span class="cet">Toutes les 6h</span></td>
+            <td><b>Sauvegarde Base de Données</b></td>
+            <td>Backup automatique complet de Supabase PostgreSQL sur le VPS.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3. YOUR 3-MINUTE DAILY ROUTINE -->
+    <div class="card">
+      <h2>3. 👥 Votre Routine Quotidienne (3 Minutes / Jour)</h2>
+
+      <div class="step-box">
+        <h4>Étape 1 : Partager dans les Groupes Facebook (La méthode en 5 secondes ⚡)</h4>
+        <p style="margin:4px 0;"><b>Pourquoi le bouton "Partager" par email ne prenait que le lien :</b> Meta a désactivé le pré-remplissage automatique du texte sur les liens externes (<code>sharer.php</code>). Voici les 2 meilleures méthodes :</p>
+        <ol>
+          <li><b>Méthode Recommandée (5 sec, zéro copier-coller) :</b> Après <b>09h15 CET</b>, ouvrez votre Page <a href="https://www.facebook.com/1492903483898849" target="_blank"><b>Essonne Actu &amp; Débats - 91</b></a> (le texte complet + lien + image y sont déjà publiés !). Cliquez sur <b>Partager → Partager dans un groupe</b> et choisissez 1 à 2 groupes (<i>« Tu sais que tu viens de Ris-Orangis quand... »</i>, <i>« Entraide Ris-Orangis »</i>, <i>« Évry-Courcouronnes »</i>). En plus de partager le texte complet, cela affiche un bouton <b>Suivre</b> pour faire grossir votre Page !</li>
+          <li><b>Méthode Dashboard (si vous voulez un autre post) :</b> Ouvrez <a href="/social_briefing.html"><b>social_briefing.html</b></a> et cliquez sur le bouton bleu <b>« Copier + Ouvrir Facebook »</b> — il copie tout le texte dans votre presse-papier automatiquement, puis vous faites simplement <b>Coller (Ctrl+V)</b> dans Facebook.</li>
+        </ol>
+      </div>
+
+      <div class="step-box">
+        <h4>Étape 2 : Répondre Vite aux Vrais Habitants</h4>
+        <p style="margin:4px 0;">Dès que vous recevez un email d'alerte <code>🔔 [Allonssy] Nouveau...</code>, cliquez sur le lien propre (<code>/entraide/...</code> ou <code>/bonplan/...</code>) et postez une réponse chaleureuse en moins de 10 minutes pour créer l'effet « communauté ultra-réactive ».</p>
+      </div>
+    </div>
+
+    <!-- 4. TIKTOK PLAYBOOK -->
+    <div class="card">
+      <h2>4. 🎵 Guide TikTok &amp; Reels : Comment Créer et Publier en 45 Secondes</h2>
+
+      <div class="step-box tt">
+        <h4>Option A : Vidéos Automatiques Prêtes à Publier (Zéro montage • 45 secondes / jour)</h4>
+        <p style="margin:4px 0;">Chaque matin à <b>08h20 CET</b>, votre serveur fabrique déjà <b>2 vidéos verticales 9:16 (1080×1920 MP4)</b> avec animation zoom, titre en français, badge ville et prix :</p>
+        <ol>
+          <li>Sur votre téléphone, ouvrez <a href="/social_briefing.html"><b>Social Copilot</b></a> → onglet <b>🎬 Vidéos &amp; Stats</b> → appuyez sur <b>⬇️ Vidéo Bon Plan (.mp4)</b> ou <b>⬇️ Vidéo Actu 91 (.mp4)</b> (la vidéo s'enregistre dans votre galerie).</li>
+          <li>Ouvrez l'app <b>TikTok</b> → appuyez sur <b>+</b> (en bas au centre) → <b>Téléverser (Upload)</b> → sélectionnez la vidéo téléchargée.</li>
+          <li>Appuyez sur <b>Ajouter un son</b> (en haut) → choisissez une musique tendance calme ou populaire en France (très important pour l'algorithme TikTok !).</li>
+          <li>Appuyez sur <b>Suivant</b> → collez la description + hashtags : <code>#RisOrangis #Evry #Grigny #Essonne91 #GrandParisSud #BonPlan91 #PourToi</code> → appuyez sur <b>Publier</b> !</li>
+          <li><i>Astuce Bio TikTok :</i> Mettez <code>https://app.allonssy.com/go.html</code> dans votre bio TikTok (une fois le lien activé ou compte Pro/Business TikTok gratuit).</li>
+        </ol>
+        <div class="btn-row">
+          <a href="/social_assets/reel_bonplan.mp4" download class="btn tt">⬇️ Vidéo Bon Plan du Jour (.mp4)</a>
+          <a href="/social_assets/reel_actu.mp4" download class="btn" style="background:#DC2626;">⬇️ Vidéo Actu 91 du Jour (.mp4)</a>
+        </div>
+      </div>
+
+      <div class="step-box tt">
+        <h4>Option B : Format Face Caméra / Enregistrement Écran (2 fois par semaine • 10x plus de vues 🔥)</h4>
+        <p style="margin:4px 0;">Sur TikTok en Essonne, une vidéo humaine de 15 secondes fait beaucoup plus de vues qu'une image animée :</p>
+        <ol>
+          <li>Ouvrez l'onglet <b>🎵 TikTok</b> dans <a href="/social_briefing.html"><b>Social Copilot</b></a> pour lire le script prêt du jour.</li>
+          <li>Filmez-vous 5 secondes face caméra en disant le <b>Hook</b> : <i>« Si tu habites à Ris-Orangis, Grigny ou Évry, arrête de scroller... »</i></li>
+          <li>Puis montrez votre écran sur Allonssy (un bon plan à 0€ de livraison ou un resto local) pendant 10 secondes et terminez par : <i>« Télécharge Allonssy gratuitement sur Google Play, lien en bio ! »</i></li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- 5. 3-PHASE MASTER ROADMAP -->
+    <div class="card">
+      <h2>5. 🚀 Feuille de Route Complète (3 Phases)</h2>
+      <div class="phase-grid">
+        <div class="phase active">
+          <h3>Phase 1 (En cours • Semaines 1–3)<br>Trafic Organique &amp; Activité</h3>
+          <ul>
+            <li>✅ App + SEO Google + Portail Actu 91 live</li>
+            <li>✅ Auto-publication quotidienne FB ×2 + IG @allonssy8</li>
+            <li>✅ Reels automatiques intégrés dans l'app + TikTok MP4</li>
+            <li>🎯 <b>Objectif :</b> Partager 1 post/jour dans les groupes FB + 3–4 TikToks/semaine + répondre en &lt;10 min aux premiers vrais voisins.</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <h3>Phase 2 (Semaines 3–6)<br>Flyers QR &amp; Commerçants</h3>
+          <ul>
+            <li>🖨️ Générer &amp; imprimer les flyers A5 avec QR code vers <code>app.allonssy.com/go.html</code> (boulangeries, laveries, tabacs, fac d'Évry).</li>
+            <li>🍽️ Démarcher les 50 restaurants &amp; 100 pros déjà pré-créés sur l'app avec preuves de trafic réel (<code>growth_stats.html</code>).</li>
+            <li>✅ Revendication gratuite des fiches commerces (Claim Flow).</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <h3>Phase 3 (Mois 2+)<br>Monétisation &amp; Expansion 91</h3>
+          <ul>
+            <li>💎 Offres Pro : mise en avant menus du midi, offres flash commerçants, badges pros vérifiés.</li>
+            <li>📍 Extension complète sur Corbeil-Essonnes, Draveil, Viry-Châtillon, Juvisy &amp; Sainte-Geneviève-des-Bois.</li>
+            <li>📱 Publication Build 10 Android (avec améliorations Reels &amp; retours premiers utilisateurs) + iOS App Store.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. MASTER LINKS -->
+    <div class="card">
+      <h2>6. 🔗 Tous Vos Liens Essentiels</h2>
+      <div class="btn-row">
+        <a href="https://app.allonssy.com/growth_stats.html" target="_blank" class="btn">📊 Growth Tracker</a>
+        <a href="https://app.allonssy.com/social_briefing.html" target="_blank" class="btn">📱 Social Copilot</a>
+        <a href="https://app.allonssy.com/actualites.html" target="_blank" class="btn sec">📰 Portail Actu 91</a>
+        <a href="https://app.allonssy.com/go.html" target="_blank" class="btn sec">🔗 Link-in-Bio</a>
+        <a href="https://www.facebook.com/1515002858354179" target="_blank" class="btn fb">👥 FB Allonssy 91</a>
+        <a href="https://www.facebook.com/1492903483898849" target="_blank" class="btn fb">📰 FB Essonne Actu</a>
+        <a href="https://www.instagram.com/allonssy8/" target="_blank" class="btn ig">📸 IG @allonssy8</a>
+        <a href="https://play.google.com/store/apps/details?id=com.allonssy.app" target="_blank" class="btn tt">📲 Google Play</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

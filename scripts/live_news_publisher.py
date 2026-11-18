@@ -12,6 +12,7 @@ and publishes fresh news articles to the Allonssy feed.
 
 import datetime
 import email.utils
+import html
 import re
 import subprocess
 import sys
@@ -91,7 +92,9 @@ CITY_CONFIG = {
 
 def clean_html(raw_html: str) -> str:
     cleanr = re.compile(r'<.*?>')
-    return re.sub(cleanr, '', raw_html).strip()
+    text = re.sub(cleanr, ' ', raw_html)
+    text = html.unescape(text)
+    return re.sub(r'\s+', ' ', text).strip()
 
 
 def detect_city(title: str, desc: str, default_city: str) -> str:
@@ -158,16 +161,20 @@ def publish_news_article(article: dict, img_url: str) -> bool:
         source = parts[1].strip()
 
     desc = article["description"]
-    if len(desc) > 300:
-        desc = desc[:297] + "..."
+    # Strip trailing source name if Google News just repeated the title + source
+    if source and desc.endswith(source):
+        desc = desc[:-len(source)].strip(" -–—·|")
+    if len(desc) > 280:
+        desc = desc[:277] + "..."
 
     city_key = detect_city(title, desc, article.get("default_city", "Grand Paris Sud"))
     city_info = CITY_CONFIG.get(city_key, CITY_CONFIG["Grand Paris Sud"])
 
-    content = f"📰 [ACTUALITÉ LOCALE • {city_key.upper()}] {title}\n\n"
-    if desc and desc != title:
+    content = f"📰 [ACTU • {city_key.upper()}] {title}\n\n"
+    # Only include description if it adds new information beyond the headline
+    if desc and desc.lower()[:45] != title.lower()[:45]:
         content += f"{desc}\n\n"
-    content += f"📌 Source : {source}\n🔗 Lire l'article complet : {article['link']}"
+    content += f"📌 Source : {source}\n💬 Qu'en pensez-vous ? Réagissez en commentaire avec vos voisins !"
 
     content_esc = content.replace("'", "''")
     ext_id_esc = article["guid"].replace("'", "''")

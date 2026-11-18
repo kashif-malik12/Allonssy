@@ -121,7 +121,7 @@ def collect_metrics() -> dict:
     if SITEMAP_FILE.exists():
         sitemap_urls = SITEMAP_FILE.read_text(encoding="utf-8", errors="ignore").count("<url>")
 
-    last_meta_pub = "En attente du prochain cycle (08:15 UTC)"
+    last_meta_pub = "En attente du prochain cycle (09h15 CET)"
     if META_LOG.exists():
         lines = [l for l in META_LOG.read_text(encoding="utf-8", errors="ignore").splitlines() if "Published to" in l]
         if lines:
@@ -268,6 +268,7 @@ def render_html(m: dict) -> str:
         <p>Mis à jour automatiquement le {m['updated_at']} • Ris-Orangis, Grigny & Évry</p>
       </div>
       <div class="nav-links">
+        <a href="/plan.html">🗺️ Plan &amp; Statut</a>
         <a href="/social_briefing.html">📱 Social Copilot</a>
         <a href="/actualites.html">📰 Actu 91</a>
         <a href="/go.html">🔗 Link-in-Bio</a>

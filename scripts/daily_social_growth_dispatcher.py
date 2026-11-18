@@ -374,8 +374,8 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
           <h4>{html.escape(p['title'])}</h4>
           <pre id="fb-copy-{i}">{safe_copy}</pre>
           <div class="actions">
-            <button onclick="copyText('fb-copy-{i}')" class="btn btn-secondary">📋 Copier le texte</button>
-            <a href="{p['share_url']}" target="_blank" class="btn btn-fb">📲 1-Clic : Partager sur Facebook</a>
+            <button onclick="copyText('fb-copy-{i}')" class="btn btn-secondary">📋 1. Copier le texte</button>
+            <button onclick="copyAndShareFb('fb-copy-{i}', '{p['share_url']}')" class="btn btn-fb">📲 Copier + Ouvrir Facebook (puis Coller)</button>
           </div>
         </div>
         """
@@ -583,8 +583,14 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
 
     <!-- Facebook Section -->
     <div id="section-fb" class="section-content active">
+      <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; color: #065F46; line-height: 1.5;">
+        ⚡ <b>Astuce 5 secondes (Texte + Photo déjà prêts !) :</b> Chaque matin à <b>09h15 CET</b>, le post complet est déjà publié automatiquement sur vos 2 Pages Facebook. Ouvrez une Page et cliquez <b>Partager → Partager dans un groupe</b> :<br>
+        <a href="https://www.facebook.com/1492903483898849" target="_blank" style="color:#047857;font-weight:bold;margin-right:12px;">📰 Ouvrir Essonne Actu &amp; Débats ↗</a>
+        <a href="https://www.facebook.com/1515002858354179" target="_blank" style="color:#047857;font-weight:bold;">🛒 Ouvrir Allonssy 91 ↗</a>
+      </div>
       <div style="background: #EBF5FF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #1E40AF;">
-        📌 <b>Groupes recommandés :</b> « Tu sais que tu viens de Ris-Orangis quand... » • « Entraide Ris-Orangis » • « Bons plans Évry-Courcouronnes »
+        📌 <b>Note Facebook :</b> Facebook ne pré-remplit plus le texte via les liens de partage. Le bouton bleu ci-dessous <b>copie automatiquement tout le texte</b> puis ouvre Facebook — il vous suffit de faire <b>Coller (Ctrl+V)</b> !<br>
+        <b>Groupes cibles :</b> « Tu sais que tu viens de Ris-Orangis quand... » • « Entraide Ris-Orangis » • « Bons plans Évry-Courcouronnes »
       </div>
       {fb_cards}
     </div>
@@ -623,8 +629,9 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
       </div>
 
       <div class="card">
-        <h4>📊 Suivi Trafic &amp; Liens Rapides</h4>
+        <h4>📊 Suivi Trafic, Plan &amp; Liens Rapides</h4>
         <div class="actions">
+          <a href="/plan.html" target="_blank" class="btn btn-fb" style="background:#1E40AF;">🗺️ Plan &amp; Statut Complet (CET)</a>
           <a href="/growth_stats.html" target="_blank" class="btn btn-fb" style="background:#0F766E;">📊 Tracker Croissance &amp; Trafic</a>
           <a href="/go.html" target="_blank" class="btn btn-ig">🔗 Page Link-in-Bio (/go.html)</a>
           <a href="/actualites.html" target="_blank" class="btn btn-secondary">📰 Portail Actu 91</a>
@@ -656,13 +663,19 @@ def render_web_dashboard(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack:
       document.getElementById('section-' + name).classList.add('active');
     }}
 
-    function copyText(id) {{
+    function copyText(id, customMsg) {{
       const text = document.getElementById(id).innerText;
       navigator.clipboard.writeText(text).then(() => {{
         const toast = document.getElementById('toast');
+        toast.innerText = customMsg || 'Texte copié dans le presse-papier ! ✅';
         toast.style.display = 'block';
-        setTimeout(() => {{ toast.style.display = 'none'; }}, 2500);
+        setTimeout(() => {{ toast.style.display = 'none'; }}, 3000);
       }});
+    }}
+
+    function copyAndShareFb(id, shareUrl) {{
+      copyText(id, 'Texte copié ! Faites Coller (Ctrl+V) dans Facebook ✅');
+      window.open(shareUrl, '_blank');
     }}
   </script>
 </body>
@@ -714,14 +727,22 @@ def send_email(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack: list[dict
     """
 
     # HTML Parts
-    fb_html = ""
+    fb_html = """
+    <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #065F46; line-height: 1.5;">
+      ⚡ <b>Méthode la plus rapide (5 sec, texte + image déjà publiés !) :</b> À <b>09h15 CET</b>, vos 2 Pages Facebook publient automatiquement le post complet. Ouvrez une Page et cliquez <b>Partager → Partager dans un groupe</b> :<br>
+      👉 <a href="https://www.facebook.com/1492903483898849" target="_blank" style="color:#047857;font-weight:bold;">Page Essonne Actu &amp; Débats ↗</a> &nbsp;•&nbsp;
+      👉 <a href="https://www.facebook.com/1515002858354179" target="_blank" style="color:#047857;font-weight:bold;">Page Allonssy 91 ↗</a><br>
+      <span style="color:#4B5563;font-size:12px;">(Info : Facebook a désactivé le pré-remplissage automatique du texte sur les liens de partage. Si vous utilisez les boutons ci-dessous, copiez d'abord le texte ou utilisez le Dashboard Mobile qui copie automatiquement avant d'ouvrir Facebook !)</span>
+    </div>
+    """
     for i, p in enumerate(fb_posts, 1):
         fb_html += f"""
         <div style="background: #ffffff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 18px; margin-bottom: 20px;">
           <h4 style="margin: 0 0 10px; color: #1877F2; font-size: 16px;">👥 Facebook {i} : {p['title']}</h4>
           <pre style="background: #F9FAFB; padding: 12px; border-radius: 8px; font-family: inherit; font-size: 13px; white-space: pre-wrap; line-height: 1.5; color: #1F2937;">{html.escape(p['copy'])}</pre>
           <div style="margin-top: 10px; text-align: right;">
-            <a href="{p['share_url']}" target="_blank" style="display: inline-block; background: #1877F2; color: #ffffff; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 13px;">📲 1-Clic : Partager sur Facebook</a>
+            <a href="{dashboard_url}" target="_blank" style="display: inline-block; background: #0F766E; color: #ffffff; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; margin-right: 6px;">📋 Copier + Ouvrir FB (Dashboard)</a>
+            <a href="{p['share_url']}" target="_blank" style="display: inline-block; background: #1877F2; color: #ffffff; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; font-size: 12px;">📲 Ouvrir lien Facebook</a>
           </div>
         </div>
         """
@@ -766,8 +787,11 @@ def send_email(fb_posts: list[dict], ig_pack: list[dict], tiktok_pack: list[dict
       {stats_html}
 
       <div style="text-align: center; margin: 20px 0;">
-        <a href="{dashboard_url}" target="_blank" style="display: inline-block; background: #0F766E; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 10px; font-weight: bold; font-size: 15px; box-shadow: 0 3px 8px rgba(15,118,110,0.3);">
-          ⚡ Ouvrir le Dashboard Mobile (Copie en 1 Clic)
+        <a href="{dashboard_url}" target="_blank" style="display: inline-block; background: #0F766E; color: #ffffff; text-decoration: none; padding: 11px 20px; border-radius: 10px; font-weight: bold; font-size: 14px; margin: 4px; box-shadow: 0 3px 8px rgba(15,118,110,0.3);">
+          ⚡ Dashboard Mobile (Copie 1-Clic)
+        </a>
+        <a href="{BASE_URL}/plan.html" target="_blank" style="display: inline-block; background: #1E40AF; color: #ffffff; text-decoration: none; padding: 11px 20px; border-radius: 10px; font-weight: bold; font-size: 14px; margin: 4px;">
+          🗺️ Plan &amp; Statut (CET)
         </a>
       </div>
 
