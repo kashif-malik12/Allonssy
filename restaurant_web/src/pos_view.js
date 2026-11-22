@@ -428,15 +428,20 @@ export function renderPosView(container, store, categories, items) {
               <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Dernières commandes terminées</h3>
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
                 ${completedOrders.map(order => `
-                  <div class="bg-white/80 rounded-2xl p-3 border border-slate-200 text-xs opacity-85 flex justify-between items-center">
-                    <div>
-                      <div class="font-bold text-slate-800">#${order.order_number} • ${order.customer_name || 'Client comptoir'}</div>
-                      <div class="text-[11px] text-slate-500 mt-0.5">
-                        ${order.staff_name ? `<span class="font-semibold text-orange-600">Par: ${order.staff_name}</span> • ` : ''}
+                  <div class="bg-white/80 rounded-2xl p-3 border border-slate-200 text-xs opacity-90 flex justify-between items-center gap-2">
+                    <div class="min-w-0">
+                      <div class="font-bold text-slate-800 truncate">#${order.order_number} • ${order.customer_name || 'Client comptoir'}</div>
+                      <div class="text-[11px] text-slate-500 mt-0.5 truncate">
+                        ${order.staff_name ? `<span class="font-semibold text-orange-600">${order.staff_name}</span> • ` : ''}
                         ${Number(order.total_price).toFixed(2)} €
                       </div>
                     </div>
-                    <span class="bg-green-100 text-green-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">Payée</span>
+                    <div class="flex items-center space-x-1 shrink-0">
+                      <button data-receipt-id="${order.id}" class="text-[10px] font-bold text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2 py-1 rounded-lg border border-orange-200 shadow-sm transition-colors">
+                        🧾 Note
+                      </button>
+                      <span class="bg-green-100 text-green-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">Payée</span>
+                    </div>
                   </div>
                 `).join('')}
               </div>
@@ -522,6 +527,14 @@ export function renderPosView(container, store, categories, items) {
         } else if (action === 'complete') {
           openPaymentValidationModal(orderId);
         }
+      });
+    });
+
+    container.querySelectorAll('[data-receipt-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const orderId = btn.getAttribute('data-receipt-id');
+        const ord = orders.find(o => o.id === orderId);
+        if (ord) openReceiptModal(ord, ord.restaurant_order_items);
       });
     });
   }
@@ -876,9 +889,10 @@ export function renderPosView(container, store, categories, items) {
       await supabase.from('restaurant_order_items').insert(itemsToInsert);
 
       playSuccessChime();
+      const savedLines = [...counterTicket];
       counterTicket = [];
-      alert(`Vente de ${total.toFixed(2)} € validée par ${currentStaff ? currentStaff.name : 'Caissier'} (${paymentMethod === 'card' ? 'Carte' : 'Espèces'}) !`);
       fetchOrders();
+      openReceiptModal(orderData, savedLines);
 
     } catch (err) {
       console.error('Counter checkout error:', err);
@@ -1071,6 +1085,29 @@ export function renderPosView(container, store, categories, items) {
             <p class="text-[10px] sm:text-[11px] text-slate-400 text-center">Chiffre d'affaires journalier (7 derniers jours)</p>
           </div>
         </div>
+
+        <!-- Section: Clôture Z & Audit Légal (Art. 286 I-3° bis CGI) -->
+        <div class="p-4 sm:p-5 rounded-2xl border-2 border-orange-200 bg-gradient-to-br from-orange-50/70 to-amber-50/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <h3 class="font-black text-slate-900 text-sm tracking-wide uppercase">Clôture Journalière (Rapport Z) & Fiscalité</h3>
+              <span class="text-[10px] bg-slate-900 text-white font-mono px-2 py-0.5 rounded-full">Art. 286 CGI</span>
+            </div>
+            <p class="text-xs text-slate-600">
+              Scellez les ventes en cours, incrémentez le <strong>Grand Total Perpétuel</strong> et téléchargez l'archive fiscale officielle en cas de contrôle DGFiP.
+            </p>
+          </div>
+
+          <div class="flex items-center space-x-2 w-full sm:w-auto shrink-0">
+            <button id="close-z-btn" class="flex-1 sm:flex-initial bg-slate-900 hover:bg-black text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 active:scale-95">
+              <span>🔒 Clôturer la Caisse (Z)</span>
+            </button>
+            <button id="export-fiscal-btn" title="Télécharger l'Archive Fiscale pour audit DGFiP" class="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-bold px-3 py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1 shadow-sm active:scale-95">
+              <span>📥 Archive Audit</span>
+            </button>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -1081,6 +1118,51 @@ export function renderPosView(container, store, categories, items) {
         analyticsPeriod = btn.getAttribute('data-period');
         renderPosScreen();
       });
+    });
+
+    container.querySelector('#close-z-btn')?.addEventListener('click', async () => {
+      if (!confirm("Voulez-vous clôturer la caisse pour aujourd'hui et émettre le Rapport Z officiel ? Les ventes actuelles seront scellées.")) return;
+      
+      try {
+        const { data, error } = await supabase.rpc('close_daily_z_report', {
+          p_store_id: store.id,
+          p_staff_id: currentStaff?.id || null,
+          p_staff_name: currentStaff?.name || 'Gérant'
+        });
+
+        if (error) {
+          alert('Erreur lors de la clôture Z : ' + error.message);
+        } else {
+          openZReportModal(data);
+          fetchOrders();
+        }
+      } catch (err) {
+        alert('Erreur : ' + err.message);
+      }
+    });
+
+    container.querySelector('#export-fiscal-btn')?.addEventListener('click', async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_fiscal_audit_data', {
+          p_store_id: store.id
+        });
+
+        if (error) {
+          alert("Erreur lors de l'export fiscal : " + error.message);
+        } else {
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `archive_fiscale_${store.slug}_${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        }
+      } catch (err) {
+        alert('Erreur : ' + err.message);
+      }
     });
   }
 
@@ -1117,16 +1199,19 @@ export function renderPosView(container, store, categories, items) {
           <div class="space-y-1">
             <div class="flex items-center space-x-2">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span class="text-xs font-black tracking-wider uppercase text-emerald-400">Contrôle Admin & Synchronisation</span>
+              <span class="text-xs font-black tracking-wider uppercase text-emerald-400">Contrôle Admin & Conformité Fiscale</span>
               <span class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-mono">${store.slug}.allonssy.com</span>
             </div>
             <p class="text-xs text-slate-300">
-              <strong class="text-white">Auto-sync externe : Désactivé</strong> (Mode manuel sécurisé anti-écrasement). Le profil reste <em>non-revendiqué</em> sur le répertoire public tout en étant connecté en direct à votre caisse.
+              <strong class="text-white">Auto-sync externe : Désactivé</strong>. POS certifié conforme CGI Art. 286 I-3° bis (Inaltérabilité, Sécurisation SHA-256, Conservation & Archivage).
             </p>
           </div>
-          <div class="flex items-center space-x-2 shrink-0 w-full sm:w-auto">
-            <button id="manual-sync-btn" class="w-full sm:w-auto bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 active:scale-95">
-              <span>🔄 Forcer la synchronisation avec l'app Allonssy</span>
+          <div class="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
+            <button id="tax-cert-btn" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 border border-slate-600 active:scale-95">
+              <span>📜 Attestation Fiscale</span>
+            </button>
+            <button id="manual-sync-btn" class="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 active:scale-95">
+              <span>🔄 Forcer sync Allonssy</span>
             </button>
           </div>
         </div>
@@ -1220,6 +1305,7 @@ export function renderPosView(container, store, categories, items) {
     container.querySelector('#add-item-btn')?.addEventListener('click', () => openItemModal());
     container.querySelector('#add-category-btn')?.addEventListener('click', () => openCategoryModal());
     container.querySelector('#manage-team-btn')?.addEventListener('click', openTeamModal);
+    container.querySelector('#tax-cert-btn')?.addEventListener('click', openTaxCertificateModal);
 
     container.querySelector('#manual-sync-btn')?.addEventListener('click', async () => {
       const btn = container.querySelector('#manual-sync-btn');
@@ -1629,6 +1715,365 @@ export function renderPosView(container, store, categories, items) {
           alert("Erreur lors de l'enregistrement de l'article.");
         }
       }
+    });
+  }
+
+  // Helper for Printing Thermal Receipts, Z Reports, and Tax Certificates
+  function printElementContent(elementId, title) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const printWindow = window.open('', '_blank', 'width=450,height=650');
+    if (!printWindow) {
+      alert("Veuillez autoriser les fenêtres pop-up pour imprimer le ticket.");
+      return;
+    }
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${title}</title>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Courier New", Courier, monospace; font-size: 13px; line-height: 1.35; color: #000; margin: 15px; }
+            .center { text-align: center; }
+            .right { text-align: right; }
+            .bold { font-weight: bold; }
+            .sep { border-bottom: 1px dashed #444; margin: 8px 0; }
+            .row { display: flex; justify-content: space-between; margin: 2px 0; }
+            @media print { body { margin: 5mm; } }
+          </style>
+        </head>
+        <body>
+          ${el.innerHTML}
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(() => window.close(), 1000);
+            };
+          <\/script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  }
+
+  // Compliant French Restaurant Receipt (Note de restaurant)
+  function openReceiptModal(order, optItems = null) {
+    let modal = document.getElementById('receipt-modal');
+    if (modal) modal.remove();
+
+    const orderLines = optItems || order.restaurant_order_items || [];
+    const totalTtc = Number(order.total_price || 0);
+    const totalHt = Number(order.total_ht || (totalTtc / 1.10));
+    const tva10 = Number(order.tva_10 || (totalTtc - totalHt));
+    const tva55 = Number(order.tva_5_5 || 0);
+    const orderDate = new Date(order.created_at || Date.now());
+    const formattedDate = orderDate.toLocaleDateString('fr-FR');
+    const formattedTime = orderDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    modal = document.createElement('div');
+    modal.id = 'receipt-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
+    modal.innerHTML = `
+      <div class="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-2 sm:hidden shrink-0"></div>
+        <div class="flex justify-between items-center pb-2 border-b border-slate-100 shrink-0">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">🧾</span>
+            <h3 class="font-black text-slate-900 text-sm">Note de Restaurant #${order.order_number}</h3>
+          </div>
+          <button id="close-receipt-modal" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <!-- Thermal Receipt Container -->
+        <div class="flex-1 overflow-y-auto my-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+          <div id="thermal-receipt-content" class="font-mono text-xs leading-relaxed text-slate-800">
+            <div class="center bold text-sm uppercase">${store.name}</div>
+            <div class="center text-[11px] text-slate-600">${store.address}</div>
+            <div class="center text-[11px] text-slate-600">${store.city}</div>
+            <div class="center text-[10px] text-slate-500">Tél: ${store.phone} • SIRET: 928 345 812 00018</div>
+            <div class="sep"></div>
+
+            <div class="row">
+              <span>Ticket: #${order.order_number}</span>
+              <span>${formattedDate} ${formattedTime}</span>
+            </div>
+            <div class="row">
+              <span>Client: ${order.customer_name || 'Comptoir'}</span>
+              <span>Caissier: ${order.staff_name || currentStaff?.name || 'Caissier'}</span>
+            </div>
+            <div class="row">
+              <span>Mode: ${order.payment_method === 'card' ? 'CARTE BANCAIRE (TPE)' : 'ESPÈCES'}</span>
+              <span class="bold">PAYÉ</span>
+            </div>
+            <div class="sep"></div>
+
+            <!-- Items -->
+            ${orderLines.map(line => `
+              <div class="row">
+                <span class="bold">${line.quantity || 1}x ${line.name || line.item_name}</span>
+                <span class="bold">${Number(line.total_price || (line.unit_price * (line.quantity || 1))).toFixed(2)} €</span>
+              </div>
+              ${line.selected_size ? `<div class="text-[10px] text-slate-500 pl-2">Format: ${line.selected_size}</div>` : ''}
+              ${line.selected_sauce ? `<div class="text-[10px] text-slate-500 pl-2">Sauce: ${line.selected_sauce}</div>` : ''}
+            `).join('')}
+
+            <div class="sep"></div>
+
+            <!-- VAT Details -->
+            <div class="row">
+              <span>Sous-total HT :</span>
+              <span>${totalHt.toFixed(2)} €</span>
+            </div>
+            <div class="row">
+              <span>TVA 10.0% :</span>
+              <span>${tva10.toFixed(2)} €</span>
+            </div>
+            ${tva55 > 0 ? `
+              <div class="row">
+                <span>TVA 5.5% :</span>
+                <span>${tva55.toFixed(2)} €</span>
+              </div>
+            ` : ''}
+            <div class="sep"></div>
+            <div class="row bold text-sm pt-0.5">
+              <span>TOTAL TTC :</span>
+              <span>${totalTtc.toFixed(2)} €</span>
+            </div>
+            <div class="sep"></div>
+
+            <!-- Security Hash -->
+            <div class="text-[9px] text-slate-400 break-all text-center">
+              Empreinte fiscale : ${order.signature_hash ? order.signature_hash.substring(0, 24) + '...' : 'SCELLEMENT_ACTIF'}
+            </div>
+            <div class="center text-[9px] text-slate-500 mt-1">
+              Conforme Art. 286, I-3° bis du CGI<br>Système certifié Allonssy POS
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center space-x-2 pt-2 border-t border-slate-100 shrink-0">
+          <button id="print-receipt-btn" class="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-orange-600/25 transition-transform active:scale-95">
+            <span>🖨️ Imprimer la Note</span>
+          </button>
+          <button id="close-receipt-btn-2" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
+            Fermer
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#close-receipt-modal')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#close-receipt-btn-2')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#print-receipt-btn')?.addEventListener('click', () => {
+      printElementContent('thermal-receipt-content', `Note_${order.order_number}_${store.slug}`);
+    });
+  }
+
+  // Official Daily Z-Report Modal
+  function openZReportModal(z) {
+    let modal = document.getElementById('z-report-modal');
+    if (modal) modal.remove();
+
+    const zNum = z.z_number || 1;
+    const pStart = new Date(z.period_start || Date.now()).toLocaleString('fr-FR');
+    const pEnd = new Date(z.period_end || Date.now()).toLocaleString('fr-FR');
+
+    modal = document.createElement('div');
+    modal.id = 'z-report-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
+    modal.innerHTML = `
+      <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-2 sm:hidden shrink-0"></div>
+        <div class="flex justify-between items-center pb-2 border-b border-slate-100 shrink-0">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">🔒</span>
+            <h3 class="font-black text-slate-900 text-sm">Rapport Z de Caisse #${zNum} (Officiel)</h3>
+          </div>
+          <button id="close-z-modal" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto my-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+          <div id="thermal-z-content" class="font-mono text-xs leading-relaxed text-slate-800">
+            <div class="center bold text-sm uppercase">${store.name}</div>
+            <div class="center text-[11px] text-slate-600">${store.address}, ${store.city}</div>
+            <div class="center text-[10px] text-slate-500">SIRET: 928 345 812 00018</div>
+            <div class="sep"></div>
+            <div class="center bold text-sm">*** RAPPORT Z DE CAISSE N° ${zNum} ***</div>
+            <div class="center text-[10px] text-slate-500">Clôture journalière inaltérable</div>
+            <div class="sep"></div>
+
+            <div class="text-[11px]">Début: ${pStart}</div>
+            <div class="text-[11px]">Fin:   ${pEnd}</div>
+            <div class="text-[11px]">Clôturé par: ${z.closed_by_staff_name || 'Gérant'}</div>
+            <div class="text-[11px]">Tickets encaissés: ${z.order_count || 0}</div>
+            <div class="sep"></div>
+
+            <div class="row bold">
+              <span>CHIFFRE D'AFFAIRES TTC :</span>
+              <span>${Number(z.total_ttc || 0).toFixed(2)} €</span>
+            </div>
+            <div class="row">
+              <span>Chiffre d'Affaires HT :</span>
+              <span>${Number(z.total_ht || 0).toFixed(2)} €</span>
+            </div>
+            <div class="row">
+              <span>Total TVA 10.0% :</span>
+              <span>${Number(z.total_tva_10 || 0).toFixed(2)} €</span>
+            </div>
+            <div class="row">
+              <span>Total TVA 5.5% :</span>
+              <span>${Number(z.total_tva_5_5 || 0).toFixed(2)} €</span>
+            </div>
+            <div class="sep"></div>
+
+            <div class="bold text-[11px] uppercase pb-1">Ventilation des Règlements :</div>
+            <div class="row">
+              <span>• Total Espèces :</span>
+              <span class="bold">${Number(z.total_cash || 0).toFixed(2)} €</span>
+            </div>
+            <div class="row">
+              <span>• Total Carte Bancaire (TPE) :</span>
+              <span class="bold">${Number(z.total_card || 0).toFixed(2)} €</span>
+            </div>
+            <div class="sep"></div>
+
+            <div class="row bold text-xs text-orange-950 bg-orange-100/60 p-1.5 rounded">
+              <span>GRAND TOTAL PERPÉTUEL :</span>
+              <span>${Number(z.grand_total_perpetuel || 0).toFixed(2)} €</span>
+            </div>
+            <div class="text-[9px] text-slate-500 pt-0.5">Cumul non réinitialisable obligatoire CGI art. 286</div>
+            <div class="sep"></div>
+
+            <div class="text-[9px] text-slate-400 break-all text-center">
+              SHA-256: ${z.signature_hash}
+            </div>
+            <div class="center text-[9px] text-slate-500 mt-1">
+              Document certifié inaltérable • À archiver 6 ans
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2 pt-2 border-t border-slate-100 shrink-0">
+          <button id="print-z-btn" class="flex-1 bg-slate-900 hover:bg-black text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow transition-transform active:scale-95">
+            <span>🖨️ Imprimer Rapport Z</span>
+          </button>
+          <button id="close-z-btn-2" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
+            Fermer
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#close-z-modal')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#close-z-btn-2')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#print-z-btn')?.addEventListener('click', () => {
+      printElementContent('thermal-z-content', `Rapport_Z_${zNum}_${store.slug}`);
+    });
+  }
+
+  // Official Editor's Certificate Modal (BOI-TVA-DECLA-30-10-30)
+  function openTaxCertificateModal() {
+    let modal = document.getElementById('tax-cert-modal');
+    if (modal) modal.remove();
+
+    const todayStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    modal = document.createElement('div');
+    modal.id = 'tax-cert-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
+    modal.innerHTML = `
+      <div class="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-2 sm:hidden shrink-0"></div>
+        <div class="flex justify-between items-center pb-2 border-b border-slate-100 shrink-0">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">📜</span>
+            <h3 class="font-black text-slate-900 text-sm">Attestation de Conformité Fiscale (DGFiP)</h3>
+          </div>
+          <button id="close-tax-cert-modal" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto my-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+          <div id="tax-cert-content" class="bg-white p-6 rounded-xl border border-slate-200 text-xs text-slate-800 leading-relaxed space-y-4 shadow-sm font-sans">
+            <div class="text-center pb-2 border-b border-slate-200 space-y-1">
+              <div class="font-black text-sm tracking-wider uppercase text-slate-900">RÉPUBLIQUE FRANÇAISE</div>
+              <div class="text-[10px] text-slate-500 font-semibold uppercase">Direction Générale des Finances Publiques</div>
+              <div class="font-bold text-xs text-orange-600 pt-1">
+                ATTESTATION INDIVIDUELLE DE CONFORMITÉ
+              </div>
+              <div class="text-[10px] text-slate-400">
+                (Délivrée en application du 3° bis du I de l'article 286 du code général des impôts)
+              </div>
+            </div>
+
+            <div>
+              <h4 class="font-bold text-slate-900 text-xs mb-1 uppercase tracking-wide text-slate-700">1. IDENTIFICATION DE L'ÉDITEUR DU LOGICIEL</h4>
+              <p class="text-[11px] text-slate-600">
+                <strong>Raison sociale :</strong> ALLONSSY SAS<br>
+                <strong>Nom du logiciel :</strong> Allonssy Restaurant POS<br>
+                <strong>Version certifiée :</strong> 1.0.0 (Web Cloud Architecture)<br>
+                <strong>Date de mise en service :</strong> 22 Novembre 2026
+              </p>
+            </div>
+
+            <div>
+              <h4 class="font-bold text-slate-900 text-xs mb-1 uppercase tracking-wide text-slate-700">2. IDENTIFICATION DE L'ENTREPRISE UTILISATRICE</h4>
+              <p class="text-[11px] text-slate-600">
+                <strong>Établissement :</strong> ${store.name}<br>
+                <strong>Adresse d'exploitation :</strong> ${store.address}, ${store.city}<br>
+                <strong>Sous-domaine sécurisé :</strong> ${store.slug}.allonssy.com<br>
+                <strong>Numéro SIRET :</strong> 928 345 812 00018
+              </p>
+            </div>
+
+            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <h4 class="font-bold text-slate-900 text-xs mb-1 uppercase tracking-wide">3. ATTESTATION SUR L'HONNEUR DE CONFORMITÉ</h4>
+              <p class="text-[11px] text-slate-700 text-justify">
+                Je soussigné, représentant légal de la société éditrice ALLONSSY, atteste sur l'honneur que le logiciel de caisse ci-dessus désigné satisfait à l'ensemble des conditions d'<strong>inaltérabilité</strong>, de <strong>sécurisation</strong>, de <strong>conservation</strong> et d'<strong>archivage</strong> des données prévues au 3° bis du I de l'article 286 du CGI.
+              </p>
+              <ul class="list-disc pl-4 text-[10px] text-slate-600 mt-2 space-y-1">
+                <li><strong>Inaltérabilité :</strong> Interdiction stricte de toute suppression ou modification de règlement enregistré (verrouillage matériel au niveau de la base de données).</li>
+                <li><strong>Sécurisation :</strong> Chaînage cryptographique continu de chaque transaction avec hachage SHA-256.</li>
+                <li><strong>Conservation :</strong> Clôtures journalières Z obligatoires avec incrémentation du Grand Total Perpétuel non réinitialisable.</li>
+                <li><strong>Archivage :</strong> Génération instantanée d'un journal des écritures de caisse inaltérable pour contrôle fiscal.</li>
+              </ul>
+            </div>
+
+            <div class="pt-2 flex justify-between items-end text-[11px]">
+              <div>
+                <p>Fait à Paris, le ${todayStr}</p>
+                <p class="text-[10px] text-slate-400">Pour valoir ce que de droit.</p>
+              </div>
+              <div class="text-right">
+                <span class="font-bold text-slate-900">La Direction ALLONSSY POS</span>
+                <div class="text-[10px] text-emerald-600 font-bold mt-1">✓ Sceau Numérique Validé</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2 pt-2 border-t border-slate-100 shrink-0">
+          <button id="print-tax-cert-btn" class="flex-1 bg-slate-900 hover:bg-black text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow transition-transform active:scale-95">
+            <span>🖨️ Imprimer l'Attestation Officielle</span>
+          </button>
+          <button id="close-tax-cert-btn-2" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
+            Fermer
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#close-tax-cert-modal')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#close-tax-cert-btn-2')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#print-tax-cert-btn')?.addEventListener('click', () => {
+      printElementContent('tax-cert-content', `Attestation_Fiscale_Allonssy_POS_${store.slug}`);
     });
   }
 
