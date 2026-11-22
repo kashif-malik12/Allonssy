@@ -2012,46 +2012,76 @@ export function renderPosView(container, store, categories, items) {
             </div>
 
             <div>
-              <h4 class="font-bold text-slate-900 text-xs mb-1 uppercase tracking-wide text-slate-700">1. IDENTIFICATION DE L'ÉDITEUR DU LOGICIEL</h4>
-              <p class="text-[11px] text-slate-600">
-                <strong>Raison sociale :</strong> ALLONSSY SAS<br>
+              <div class="bg-slate-900 text-white p-2 rounded-lg font-black text-xs uppercase tracking-wide text-center mb-3">
+                VOLET 1 – ATTESTATION DE L'ÉDITEUR DU LOGICIEL
+              </div>
+              <p class="text-[11px] text-slate-600 mb-2">
+                <strong>Société éditrice :</strong> TRADISTER SAS<br>
+                <strong>Numéro SIREN :</strong> 988 318 945 | <strong>SIRET :</strong> 988 318 945 00017<br>
+                <strong>Code NAF :</strong> 62.02A (Conseil en systèmes et logiciels informatiques)<br>
+                <strong>Siège social :</strong> 11 Rue du Château d'Eau, 91130 Ris-Orangis, France<br>
+                <strong>Représentant légal :</strong> Bisma KASHIF, Président de SAS<br>
                 <strong>Nom du logiciel :</strong> Allonssy Restaurant POS<br>
                 <strong>Version certifiée :</strong> 1.0.0 (Web Cloud Architecture)<br>
-                <strong>Date de mise en service :</strong> 22 Novembre 2026
+                <strong>Date de mise sur le marché :</strong> 22 Novembre 2026
               </p>
+              
+              <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 my-2">
+                <p class="text-[11px] text-slate-700 text-justify">
+                  Je soussigné(e), Bisma KASHIF, agissant en qualité de Président de la société éditrice <strong>TRADISTER SAS</strong>, atteste sur l'honneur que le logiciel ci-dessus désigné satisfait à l'ensemble des conditions d'<strong>inaltérabilité</strong>, de <strong>sécurisation</strong>, de <strong>conservation</strong> et d'<strong>archivage</strong> des données prévues au 3° bis du I de l'article 286 du CGI.
+                </p>
+                <ul class="list-disc pl-4 text-[10px] text-slate-600 mt-2 space-y-1">
+                  <li><strong>Inaltérabilité :</strong> Interdiction stricte de toute suppression ou modification de règlement enregistré (verrouillage PostgreSQL au niveau serveur).</li>
+                  <li><strong>Sécurisation :</strong> Chaînage cryptographique continu de chaque transaction avec signature hachée SHA-256.</li>
+                  <li><strong>Conservation :</strong> Clôtures journalières Z obligatoires avec incrémentation du Grand Total Perpétuel non réinitialisable.</li>
+                  <li><strong>Archivage :</strong> Génération instantanée d'un journal des écritures de caisse inaltérable pour contrôle fiscal DGFiP (Art. L. 80 O LPF).</li>
+                </ul>
+              </div>
+
+              <div class="flex justify-between items-end text-[10px] pt-1">
+                <div>
+                  <p>Fait à Ris-Orangis, le ${todayStr}</p>
+                  <p class="text-slate-400">Pour valoir ce que de droit.</p>
+                </div>
+                <div class="text-right">
+                  <span class="font-bold text-slate-900">Pour TRADISTER SAS</span>
+                  <div class="text-[9px] text-emerald-600 font-bold mt-0.5">✓ Certificat Éditeur Scellé</div>
+                </div>
+              </div>
             </div>
 
-            <div>
-              <h4 class="font-bold text-slate-900 text-xs mb-1 uppercase tracking-wide text-slate-700">2. IDENTIFICATION DE L'ENTREPRISE UTILISATRICE</h4>
-              <p class="text-[11px] text-slate-600">
-                <strong>Établissement :</strong> ${store.name}<br>
+            <div class="pt-3 border-t border-dashed border-slate-300">
+              <div class="bg-orange-600 text-white p-2 rounded-lg font-black text-xs uppercase tracking-wide text-center mb-3">
+                VOLET 2 – ATTESTATION DE L'ENTREPRISE UTILISATRICE
+              </div>
+              <p class="text-[11px] text-slate-600 mb-2">
+                <strong>Établissement exploitant :</strong> ${store.name}<br>
                 <strong>Adresse d'exploitation :</strong> ${store.address}, ${store.city}<br>
                 <strong>Sous-domaine sécurisé :</strong> ${store.slug}.allonssy.com<br>
-                <strong>Numéro SIRET :</strong> 928 345 812 00018
+                <strong>Numéro SIRET client :</strong> 928 345 812 00018<br>
+                <strong>Date de début d'utilisation :</strong> 22 Novembre 2026
               </p>
-            </div>
-
-            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <h4 class="font-bold text-slate-900 text-xs mb-1 uppercase tracking-wide">3. ATTESTATION SUR L'HONNEUR DE CONFORMITÉ</h4>
-              <p class="text-[11px] text-slate-700 text-justify">
-                Je soussigné, représentant légal de la société éditrice ALLONSSY, atteste sur l'honneur que le logiciel de caisse ci-dessus désigné satisfait à l'ensemble des conditions d'<strong>inaltérabilité</strong>, de <strong>sécurisation</strong>, de <strong>conservation</strong> et d'<strong>archivage</strong> des données prévues au 3° bis du I de l'article 286 du CGI.
-              </p>
-              <ul class="list-disc pl-4 text-[10px] text-slate-600 mt-2 space-y-1">
-                <li><strong>Inaltérabilité :</strong> Interdiction stricte de toute suppression ou modification de règlement enregistré (verrouillage matériel au niveau de la base de données).</li>
-                <li><strong>Sécurisation :</strong> Chaînage cryptographique continu de chaque transaction avec hachage SHA-256.</li>
-                <li><strong>Conservation :</strong> Clôtures journalières Z obligatoires avec incrémentation du Grand Total Perpétuel non réinitialisable.</li>
-                <li><strong>Archivage :</strong> Génération instantanée d'un journal des écritures de caisse inaltérable pour contrôle fiscal.</li>
-              </ul>
-            </div>
-
-            <div class="pt-2 flex justify-between items-end text-[11px]">
-              <div>
-                <p>Fait à Paris, le ${todayStr}</p>
-                <p class="text-[10px] text-slate-400">Pour valoir ce que de droit.</p>
+              
+              <div class="p-3 bg-amber-50/60 rounded-xl border border-amber-200 text-[10px] text-slate-700 space-y-1">
+                <p>
+                  L'entreprise utilisatrice certifie utiliser le logiciel Allonssy Restaurant POS (v1.0.0) édité par TRADISTER SAS pour l'enregistrement de l'ensemble des encaissements de ses clients particuliers.
+                </p>
+                <p class="text-slate-500 italic">
+                  Ce document (Volet 1 et Volet 2) doit être conservé dans l'établissement et être présenté immédiatement à toute réquisition des agents de l'administration fiscale (Article L. 80 O du LPF).
+                </p>
               </div>
-              <div class="text-right">
-                <span class="font-bold text-slate-900">La Direction ALLONSSY POS</span>
-                <div class="text-[10px] text-emerald-600 font-bold mt-1">✓ Sceau Numérique Validé</div>
+
+              <div class="flex justify-between items-end text-[10px] pt-2">
+                <div>
+                  <p>Signature et cachet du restaurateur :</p>
+                  <div class="w-36 h-12 border border-dashed border-slate-300 rounded mt-1 flex items-center justify-center text-[9px] text-slate-400">
+                    Cachet & Signature
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="font-bold text-slate-900">Statut Conformité DGFiP</span>
+                  <div class="text-[10px] text-emerald-600 font-bold mt-1">✓ Conforme Art. 286 CGI</div>
+                </div>
               </div>
             </div>
           </div>
