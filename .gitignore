@@ -62,3 +62,6 @@ scripts/seeding/*.sql
 
 flutter_01.png
 android/.kotlin/
+
+restaurant_web/node_modules/
+restaurant_web/dist/
