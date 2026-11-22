@@ -1,0 +1,85 @@
+supabase.allonssy.com {
+  reverse_proxy 127.0.0.1:8000
+}
+
+app.allonssy.com {
+  root * /var/www/local_social_web
+
+  handle /restaurant_web/* {
+    uri strip_prefix /restaurant_web
+    root * /var/www/local_social_web/restaurant_web
+    try_files {path} {path}/ /index.html
+    file_server
+  }
+
+  handle /restaurant_web {
+    redir /restaurant_web/ 308
+  }
+
+  handle /.well-known/apple-app-site-association {
+    header Content-Type "application/json"
+    file_server
+  }
+
+  handle /.well-known/* {
+    file_server
+  }
+
+  @socialBots {
+    header_regexp User-Agent "(?i)(facebookexternalhit|WhatsApp|Twitterbot|TelegramBot|LinkedInBot|Slackbot|Googlebot|Discordbot|Applebot)"
+    path_regexp previewPath "^/(p|post|foods|marketplace/product|gigs/service)/[a-zA-Z0-9-]+"
+  }
+  handle @socialBots {
+    reverse_proxy 127.0.0.1:8088
+  }
+
+  @noCache {
+    path *.js *.json
+  }
+  header @noCache Cache-Control "no-cache, no-store, must-revalidate"
+
+  handle {
+    try_files {path} /index.html
+    file_server
+  }
+}
+
+royalfood.allonssy.com, *.allonssy.com {
+  tls internal
+  root * /var/www/local_social_web/restaurant_web
+  encode gzip zstd
+
+  @noCache {
+    path *.js *.json
+  }
+  header @noCache Cache-Control "no-cache, no-store, must-revalidate"
+
+  handle {
+    try_files {path} {path}/ /index.html
+    file_server
+  }
+}
+
+http://tradister.com, http://www.tradister.com, https://tradister.com, https://www.tradister.com {
+  root * /home/deploy/tradister-web
+  encode gzip zstd
+
+  @static {
+    file
+    path *.png *.jpg *.jpeg *.svg *.css *.js *.ico
+  }
+  header @static Cache-Control "public, max-age=86400"
+
+  handle {
+    try_files {path} {path}.html /index.html
+    file_server
+  }
+}
+
+http://plan.tradister.com, https://plan.tradister.com {
+  reverse_proxy 127.0.0.1:8092
+}
+
+http://compte.tradister.com, https://compte.tradister.com {
+  reverse_proxy 127.0.0.1:8093
+}
