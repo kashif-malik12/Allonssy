@@ -5,7 +5,7 @@ BASE_DIR="${HOME}/supabase-project"
 BACKUP_ROOT="${HOME}/backups/supabase"
 TIMESTAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 WORK_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
-RETENTION_DAYS="${RETENTION_DAYS:-14}"
+RETENTION_DAYS="${RETENTION_DAYS:-2}"
 FISCAL_DIR="${BACKUP_ROOT}/fiscal_archives/$(date -u +%Y-%m)"
 
 mkdir -p "${WORK_DIR}/db" "${WORK_DIR}/storage" "${WORK_DIR}/config" "${FISCAL_DIR}"
