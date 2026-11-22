@@ -210,6 +210,7 @@ def polish_professionals():
         FROM profiles
         WHERE account_type = 'business' AND is_restaurant = false
           AND business_name IS NOT NULL AND business_name != ''
+          AND COALESCE(auto_sync_disabled, false) = false
         ORDER BY id
     ) p;
     """)
@@ -245,6 +246,8 @@ def polish_restaurants():
                (SELECT image_url FROM posts WHERE user_id = p.id AND post_type = 'food_ad' AND image_url IS NOT NULL AND image_url NOT LIKE '%1576107232684%' LIMIT 1) AS dish_img
         FROM profiles p
         WHERE p.is_restaurant = true
+          AND COALESCE(p.auto_sync_disabled, false) = false
+          AND p.restaurant_store_id IS NULL
         ORDER BY p.id
     ) r;
     """)

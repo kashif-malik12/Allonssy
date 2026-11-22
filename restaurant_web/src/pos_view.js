@@ -952,6 +952,25 @@ export function renderPosView(container, store, categories, items) {
           </div>
         </div>
 
+        <!-- Admin & Auto-sync Control Card -->
+        <div class="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-4 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span class="text-xs font-black tracking-wider uppercase text-emerald-400">Contrôle Admin & Synchronisation</span>
+              <span class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-mono">${store.slug}.allonssy.com</span>
+            </div>
+            <p class="text-xs text-slate-300">
+              <strong class="text-white">Auto-sync externe : Désactivé</strong> (Mode manuel sécurisé anti-écrasement). Le profil reste <em>non-revendiqué</em> sur le répertoire public tout en étant connecté en direct à votre caisse.
+            </p>
+          </div>
+          <div class="flex items-center space-x-2 shrink-0">
+            <button id="manual-sync-btn" class="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow flex items-center space-x-1.5 active:scale-95">
+              <span>🔄 Forcer la synchronisation avec l'app Allonssy</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Filter Categories Bar -->
         <div class="flex space-x-2 overflow-x-auto pb-1 shrink-0">
           <button data-mgr-cat="all" class="mgr-cat-btn px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${managerSelectedCat === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
@@ -1041,6 +1060,30 @@ export function renderPosView(container, store, categories, items) {
     container.querySelector('#add-item-btn')?.addEventListener('click', () => openItemModal());
     container.querySelector('#add-category-btn')?.addEventListener('click', () => openCategoryModal());
     container.querySelector('#manage-team-btn')?.addEventListener('click', openTeamModal);
+
+    container.querySelector('#manual-sync-btn')?.addEventListener('click', async () => {
+      const btn = container.querySelector('#manual-sync-btn');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<span>⏳ Synchronisation...</span>';
+      btn.disabled = true;
+
+      try {
+        const { data, error } = await supabase.rpc('sync_all_restaurant_items_to_posts', {
+          p_store_id: store.id
+        });
+
+        if (error) {
+          alert('Erreur lors de la synchronisation : ' + error.message);
+        } else {
+          alert(`✅ Synchronisation réussie ! ${data} plats sont synchronisés en direct avec l\\'application Allonssy.`);
+        }
+      } catch (err) {
+        alert('Erreur : ' + err.message);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    });
 
     container.querySelectorAll('[data-toggle-stock]').forEach(btn => {
       btn.addEventListener('click', async () => {
