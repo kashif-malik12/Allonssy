@@ -1210,6 +1210,9 @@ export function renderPosView(container, store, categories, items) {
             <button id="tax-cert-btn" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 border border-slate-600 active:scale-95">
               <span>📜 Attestation Fiscale</span>
             </button>
+            <button id="tech-dossier-btn" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 border border-slate-600 active:scale-95">
+              <span>📄 Dossier Technique</span>
+            </button>
             <button id="manual-sync-btn" class="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 active:scale-95">
               <span>🔄 Forcer sync Allonssy</span>
             </button>
@@ -1306,6 +1309,7 @@ export function renderPosView(container, store, categories, items) {
     container.querySelector('#add-category-btn')?.addEventListener('click', () => openCategoryModal());
     container.querySelector('#manage-team-btn')?.addEventListener('click', openTeamModal);
     container.querySelector('#tax-cert-btn')?.addEventListener('click', openTaxCertificateModal);
+    container.querySelector('#tech-dossier-btn')?.addEventListener('click', openTechDossierModal);
 
     container.querySelector('#manual-sync-btn')?.addEventListener('click', async () => {
       const btn = container.querySelector('#manual-sync-btn');
@@ -2104,6 +2108,105 @@ export function renderPosView(container, store, categories, items) {
     modal.querySelector('#close-tax-cert-btn-2')?.addEventListener('click', () => modal.remove());
     modal.querySelector('#print-tax-cert-btn')?.addEventListener('click', () => {
       printElementContent('tax-cert-content', `Attestation_Fiscale_Allonssy_POS_${store.slug}`);
+    });
+  }
+
+  // Official Technical File Modal (Article L. 80 O LPF & Art. 286 I-3° bis CGI)
+  function openTechDossierModal() {
+    let modal = document.getElementById('tech-dossier-modal');
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = 'tech-dossier-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
+    modal.innerHTML = `
+      <div class="bg-white w-full max-w-2xl rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-2 sm:hidden shrink-0"></div>
+        <div class="flex justify-between items-center pb-2 border-b border-slate-100 shrink-0">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">📄</span>
+            <h3 class="font-black text-slate-900 text-sm">Dossier Technique de Conformité (DGFiP)</h3>
+          </div>
+          <button id="close-tech-dossier-modal" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto my-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+          <div id="tech-dossier-content" class="bg-white p-6 rounded-xl border border-slate-200 text-xs text-slate-800 leading-relaxed space-y-4 shadow-sm font-sans">
+            <div class="text-center pb-3 border-b border-slate-200 space-y-1">
+              <div class="font-black text-sm tracking-wider uppercase text-slate-900">DOSSIER TECHNIQUE D'HOMOLOGATION FISCALE</div>
+              <div class="text-[10px] text-slate-500 font-semibold uppercase">Système de Caisse Sécurisé – Article 286, I-3° bis du CGI</div>
+              <div class="text-[10px] text-orange-600 font-bold">Réf. Doctrine BOFiP BOI-TVA-DECLA-30-10-30 & Article L. 80 O du LPF</div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div>
+                <strong class="text-slate-900">Éditeur :</strong> TRADISTER SAS<br>
+                <strong class="text-slate-900">SIRET :</strong> 988 318 945 00017<br>
+                <strong class="text-slate-900">Siège :</strong> 11 Rue du Château d'Eau, 91130 Ris-Orangis<br>
+                <strong class="text-slate-900">Dirigeant :</strong> Bisma KASHIF, Président
+              </div>
+              <div>
+                <strong class="text-slate-900">Logiciel :</strong> Allonssy Restaurant POS<br>
+                <strong class="text-slate-900">Version :</strong> 1.0.0 (Production)<br>
+                <strong class="text-slate-900">Établissement :</strong> ${store.name}<br>
+                <strong class="text-slate-900">Sous-domaine :</strong> ${store.slug}.allonssy.com
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <h4 class="font-black text-slate-900 text-xs uppercase text-orange-600">1. Inaltérabilité des Écritures</h4>
+                <p class="text-[11px] text-slate-600 text-justify">
+                  Le système interdit formellement la suppression ou la modification discrète de règlements encaissés via un verrouillage au niveau du moteur de base de données PostgreSQL (<code>trg_guard_order_inalterability</code>). Toute tentative de DELETE sur un ticket payé lève une exception SQL bloquante. Tout remboursement ou correction s'effectue obligatoirement sous forme d'un avoir lié (<code>is_refund = TRUE</code>).
+                </p>
+              </div>
+
+              <div>
+                <h4 class="font-black text-slate-900 text-xs uppercase text-orange-600">2. Sécurisation & Chaînage Cryptographique</h4>
+                <p class="text-[11px] text-slate-600 text-justify">
+                  Chaque ticket est scellé à l'encaissement via une empreinte cryptographique SHA-256 (<code>trg_seal_order_trigger</code>). Le calcul intègre les identifiants, montants, ventilations TVA (10% et 5.5%), horodatage et la signature du ticket précédent (<code>previous_signature_hash</code>), formant une chaîne séquentielle continue et infalsifiable.
+                </p>
+              </div>
+
+              <div>
+                <h4 class="font-black text-slate-900 text-xs uppercase text-orange-600">3. Conservation & Clôture Z (Grand Total Perpétuel)</h4>
+                <p class="text-[11px] text-slate-600 text-justify">
+                  À la fin de chaque journée de vente, la fonction <code>close_daily_z_report</code> consolide les encaissements par moyen de paiement et incrémente le <strong>Grand Total Perpétuel (GTP)</strong>. Ce compteur est strictement cumulatif et non réinitialisable, garantissant une cohérence permanente entre le tiroir-caisse et la comptabilité.
+                </p>
+              </div>
+
+              <div>
+                <h4 class="font-black text-slate-900 text-xs uppercase text-orange-600">4. Archivage & Contrôle Fiscal (Art. L. 80 O LPF)</h4>
+                <p class="text-[11px] text-slate-600 text-justify">
+                  La fonction <code>get_fiscal_audit_data</code> exporte en un clic l'intégralité du journal d'audit scellé pour remise immédiate aux inspecteurs des impôts. Les archives sont sauvegardées automatiquement chaque nuit sur serveur dédié et conservées pendant <strong>6 années</strong> conformément à l'article L. 102 B du Livre des procédures fiscales.
+                </p>
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-500">
+              <span>Document interne d'homologation – TRADISTER SAS</span>
+              <span class="text-emerald-600 font-bold">✓ Homologation Active v1.0.0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2 pt-2 border-t border-slate-100 shrink-0">
+          <button id="print-tech-dossier-btn" class="flex-1 bg-slate-900 hover:bg-black text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow transition-transform active:scale-95">
+            <span>🖨️ Imprimer le Dossier Technique</span>
+          </button>
+          <button id="close-tech-dossier-btn-2" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
+            Fermer
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#close-tech-dossier-modal')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#close-tech-dossier-btn-2')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#print-tech-dossier-btn')?.addEventListener('click', () => {
+      printElementContent('tech-dossier-content', `Dossier_Technique_Conformite_DGFiP_${store.slug}`);
     });
   }
 
