@@ -91,9 +91,9 @@ export function renderPosView(container, store, categories, items) {
           ` : ''}
 
           <div class="space-y-4">
-            <input type="password" id="pos-pin-input" maxlength="4" placeholder="Code PIN (ex: 1234)" class="w-full text-center tracking-[0.5em] text-2xl font-bold py-3 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none">
+            <input type="password" inputmode="numeric" pattern="[0-9]*" id="pos-pin-input" maxlength="4" placeholder="••••" class="w-full text-center tracking-[0.5em] text-3xl font-black py-3.5 px-4 rounded-2xl border-2 border-slate-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 focus:outline-none bg-slate-50">
             
-            <button id="unlock-pin-btn" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-600/30 transition-transform active:scale-[0.99]">
+            <button id="unlock-pin-btn" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-orange-600/30 transition-transform active:scale-[0.98]">
               Déverrouiller
             </button>
           </div>
@@ -235,60 +235,91 @@ export function renderPosView(container, store, categories, items) {
   }
 
   function renderPosScreen() {
+    const uncompletedCount = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').length;
+
     container.innerHTML = `
-      <div class="flex-1 flex flex-col bg-slate-100 h-full overflow-hidden">
+      <div class="flex-1 flex flex-col bg-slate-100 min-h-screen lg:h-full lg:overflow-hidden">
         <!-- Top Cashier Bar -->
-        <header class="bg-slate-900 text-white px-5 py-3 flex items-center justify-between shadow-md shrink-0">
-          <div class="flex items-center space-x-3">
-            <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
-            <div class="leading-tight">
-              <h1 class="text-base font-black tracking-tight">${store.name}</h1>
-              <p class="text-[11px] text-slate-400">Caisse & Analytics Temps Réel</p>
+        <header class="bg-slate-900 text-white px-3.5 sm:px-5 py-2.5 sm:py-3 shadow-md shrink-0">
+          <div class="flex items-center justify-between gap-2">
+            <!-- Left: Store title & status -->
+            <div class="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+              <div class="leading-tight truncate">
+                <h1 class="text-sm sm:text-base font-black tracking-tight truncate">${store.name}</h1>
+                <p class="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">Caisse & Analytics Temps Réel</p>
+              </div>
+            </div>
+
+            <!-- Center (Desktop/Tablet): Tab Switches -->
+            <div class="hidden md:flex items-center bg-slate-800 p-1 rounded-xl space-x-1">
+              <button id="tab-live-orders" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'live_orders' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
+                <span>🔔 Commandes</span>
+                ${uncompletedCount > 0 ? `
+                  <span class="bg-white text-orange-600 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                    ${uncompletedCount}
+                  </span>
+                ` : ''}
+              </button>
+              <button id="tab-counter-pos" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'counter_pos' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
+                <span>🧾 Caisse</span>
+              </button>
+              <button id="tab-analytics" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'analytics' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
+                <span>📊 Statistiques & Ventes</span>
+              </button>
+              <button id="tab-menu-manager" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'menu_manager' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
+                <span>🍽️ Carte & Équipe</span>
+              </button>
+            </div>
+
+            <!-- Right: Staff Profile & Actions -->
+            <div class="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+              <!-- Active Cashier Pill -->
+              <button id="switch-staff-btn" class="text-xs bg-slate-800 hover:bg-slate-700 text-orange-400 px-2.5 sm:px-3 py-1.5 rounded-xl font-bold flex items-center space-x-1 transition-colors border border-slate-700">
+                <span class="w-2 h-2 rounded-full bg-orange-500 shrink-0"></span>
+                <span class="truncate max-w-[85px] sm:max-w-none">${currentStaff ? currentStaff.name : 'Caissier'}</span>
+                <span class="text-[10px] text-slate-400 font-normal hidden sm:inline">(${currentStaff?.role === 'owner' ? 'Patron' : 'Caissier'})</span>
+              </button>
+
+              <button id="test-sound-btn" title="Tester la sonnerie" class="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+              </button>
+              <button id="lock-pos-btn" title="Verrouiller" class="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors">
+                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+              </button>
             </div>
           </div>
 
-          <!-- Tab Switches -->
-          <div class="flex items-center bg-slate-800 p-1 rounded-xl space-x-1">
-            <button id="tab-live-orders" class="px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'live_orders' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-              <span>🔔 Commandes</span>
-              ${orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').length > 0 ? `
-                <span class="bg-white text-orange-600 text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                  ${orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').length}
-                </span>
-              ` : ''}
+          <!-- Mobile Tab Bar (Visible on mobile screens) -->
+          <div class="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-slate-800/80 md:hidden">
+            <button id="mobile-tab-live-orders" class="py-1.5 px-1 rounded-xl text-center font-bold text-[11px] flex flex-col items-center justify-center transition-all ${activeTab === 'live_orders' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}">
+              <span class="relative text-sm">
+                🔔
+                ${uncompletedCount > 0 ? `
+                  <span class="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                    ${uncompletedCount}
+                  </span>
+                ` : ''}
+              </span>
+              <span class="mt-0.5 leading-none">Commandes</span>
             </button>
-            <button id="tab-counter-pos" class="px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'counter_pos' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-              <span>🧾 Caisse</span>
+            <button id="mobile-tab-counter-pos" class="py-1.5 px-1 rounded-xl text-center font-bold text-[11px] flex flex-col items-center justify-center transition-all ${activeTab === 'counter_pos' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}">
+              <span class="text-sm">🧾</span>
+              <span class="mt-0.5 leading-none">Caisse</span>
             </button>
-            <button id="tab-analytics" class="px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'analytics' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-              <span>📊 Statistiques & Ventes</span>
+            <button id="mobile-tab-analytics" class="py-1.5 px-1 rounded-xl text-center font-bold text-[11px] flex flex-col items-center justify-center transition-all ${activeTab === 'analytics' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}">
+              <span class="text-sm">📊</span>
+              <span class="mt-0.5 leading-none">Ventes</span>
             </button>
-            <button id="tab-menu-manager" class="px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'menu_manager' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-              <span>🍽️ Carte & Équipe</span>
-            </button>
-          </div>
-
-          <!-- Staff Profile & Actions -->
-          <div class="flex items-center space-x-2">
-            <!-- Active Cashier Pill -->
-            <button id="switch-staff-btn" class="text-xs bg-slate-800 hover:bg-slate-700 text-orange-400 px-3 py-1.5 rounded-xl font-bold flex items-center space-x-1.5 transition-colors border border-slate-700">
-              <span class="w-2 h-2 rounded-full bg-orange-500"></span>
-              <span>${currentStaff ? currentStaff.name : 'Caissier'}</span>
-              <span class="text-[10px] text-slate-400 font-normal">(${currentStaff?.role === 'owner' ? 'Patron' : 'Caissier'})</span>
-            </button>
-
-            <button id="test-sound-btn" title="Tester la sonnerie" class="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
-            </button>
-            <button id="lock-pos-btn" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl font-bold flex items-center space-x-1 transition-colors">
-              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-              <span>Verrouiller</span>
+            <button id="mobile-tab-menu-manager" class="py-1.5 px-1 rounded-xl text-center font-bold text-[11px] flex flex-col items-center justify-center transition-all ${activeTab === 'menu_manager' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}">
+              <span class="text-sm">🍽️</span>
+              <span class="mt-0.5 leading-none">Carte</span>
             </button>
           </div>
         </header>
 
         <!-- Main Workspace -->
-        <div class="flex-1 overflow-hidden flex flex-col p-4">
+        <div class="flex-1 overflow-y-auto lg:overflow-hidden flex flex-col p-2.5 sm:p-4 pb-24 lg:pb-4">
           ${activeTab === 'live_orders' 
             ? renderLiveOrdersWorkspace() 
             : activeTab === 'counter_pos' 
@@ -300,23 +331,23 @@ export function renderPosView(container, store, categories, items) {
       </div>
     `;
 
-    // Bind Top Tabs
-    container.querySelector('#tab-live-orders')?.addEventListener('click', () => {
-      activeTab = 'live_orders';
+    // Bind Desktop & Mobile Tabs
+    const switchTab = (tab) => {
+      activeTab = tab;
       renderPosScreen();
-    });
-    container.querySelector('#tab-counter-pos')?.addEventListener('click', () => {
-      activeTab = 'counter_pos';
-      renderPosScreen();
-    });
-    container.querySelector('#tab-analytics')?.addEventListener('click', () => {
-      activeTab = 'analytics';
-      renderPosScreen();
-    });
-    container.querySelector('#tab-menu-manager')?.addEventListener('click', () => {
-      activeTab = 'menu_manager';
-      renderPosScreen();
-    });
+    };
+
+    container.querySelector('#tab-live-orders')?.addEventListener('click', () => switchTab('live_orders'));
+    container.querySelector('#mobile-tab-live-orders')?.addEventListener('click', () => switchTab('live_orders'));
+
+    container.querySelector('#tab-counter-pos')?.addEventListener('click', () => switchTab('counter_pos'));
+    container.querySelector('#mobile-tab-counter-pos')?.addEventListener('click', () => switchTab('counter_pos'));
+
+    container.querySelector('#tab-analytics')?.addEventListener('click', () => switchTab('analytics'));
+    container.querySelector('#mobile-tab-analytics')?.addEventListener('click', () => switchTab('analytics'));
+
+    container.querySelector('#tab-menu-manager')?.addEventListener('click', () => switchTab('menu_manager'));
+    container.querySelector('#mobile-tab-menu-manager')?.addEventListener('click', () => switchTab('menu_manager'));
 
     container.querySelector('#switch-staff-btn')?.addEventListener('click', openStaffSwitchModal);
     container.querySelector('#lock-pos-btn')?.addEventListener('click', lockPos);
@@ -339,65 +370,65 @@ export function renderPosView(container, store, categories, items) {
     const completedOrders = orders.filter(o => o.status === 'completed').slice(0, 8);
 
     return `
-      <div class="flex-1 flex flex-col min-h-0 space-y-4">
+      <div class="flex-1 flex flex-col min-h-0 space-y-3 sm:space-y-4">
         <!-- Live Stats summary -->
-        <div class="grid grid-cols-4 gap-3 shrink-0">
-          <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 shrink-0">
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[11px] font-bold text-slate-400 uppercase">En Attente / Reçues</div>
-              <div class="text-2xl font-black text-amber-600">${orders.filter(o => o.status === 'received').length}</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Reçues / Attente</div>
+              <div class="text-xl sm:text-2xl font-black text-amber-600">${orders.filter(o => o.status === 'received').length}</div>
             </div>
-            <span class="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center font-bold">1</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center font-black text-xs sm:text-sm">1</span>
           </div>
 
-          <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between">
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[11px] font-bold text-slate-400 uppercase">Au Four / En Cours</div>
-              <div class="text-2xl font-black text-blue-600">${orders.filter(o => o.status === 'preparing').length}</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Au Four / En Cours</div>
+              <div class="text-xl sm:text-2xl font-black text-blue-600">${orders.filter(o => o.status === 'preparing').length}</div>
             </div>
-            <span class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">2</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-black text-xs sm:text-sm">2</span>
           </div>
 
-          <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between">
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[11px] font-bold text-slate-400 uppercase">Prêtes au Retrait</div>
-              <div class="text-2xl font-black text-green-600">${orders.filter(o => o.status === 'ready').length}</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Prêtes au Retrait</div>
+              <div class="text-xl sm:text-2xl font-black text-green-600">${orders.filter(o => o.status === 'ready').length}</div>
             </div>
-            <span class="w-8 h-8 rounded-full bg-green-50 text-green-600 flex items-center justify-center font-bold">3</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-green-50 text-green-600 flex items-center justify-center font-black text-xs sm:text-sm">3</span>
           </div>
 
-          <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between">
+          <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[11px] font-bold text-slate-400 uppercase">Total Commandes Jour</div>
-              <div class="text-2xl font-black text-slate-800">${orders.length}</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Total Jour</div>
+              <div class="text-xl sm:text-2xl font-black text-slate-800">${orders.length}</div>
             </div>
-            <span class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold">✓</span>
+            <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-black text-xs sm:text-sm">✓</span>
           </div>
         </div>
 
         <!-- Orders Queue Grid -->
         <div class="flex-1 overflow-y-auto">
           ${activeOrders.length === 0 ? `
-            <div class="h-full flex flex-col items-center justify-center text-center p-8 bg-white rounded-3xl border border-slate-200 shadow-sm">
-              <div class="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mb-3">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div class="h-full min-h-[220px] flex flex-col items-center justify-center text-center p-6 sm:p-8 bg-white rounded-3xl border border-slate-200 shadow-sm">
+              <div class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mb-3">
+                <svg class="w-7 h-7 sm:w-8 sm:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               </div>
-              <h3 class="font-bold text-slate-800 text-lg">Aucune commande en attente</h3>
+              <h3 class="font-bold text-slate-800 text-base sm:text-lg">Aucune commande en attente</h3>
               <p class="text-xs text-slate-400 max-w-sm mt-1">Les nouvelles commandes en ligne ou au comptoir apparaîtront ici automatiquement avec une alerte sonore.</p>
             </div>
           ` : `
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               ${activeOrders.map(order => renderOrderCard(order)).join('')}
             </div>
           `}
 
           <!-- Completed Orders Section -->
           ${completedOrders.length > 0 ? `
-            <div class="mt-8 pt-4">
+            <div class="mt-6 sm:mt-8 pt-4">
               <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Dernières commandes terminées</h3>
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
                 ${completedOrders.map(order => `
-                  <div class="bg-white/80 rounded-2xl p-3.5 border border-slate-200 text-xs opacity-85 flex justify-between items-center">
+                  <div class="bg-white/80 rounded-2xl p-3 border border-slate-200 text-xs opacity-85 flex justify-between items-center">
                     <div>
                       <div class="font-bold text-slate-800">#${order.order_number} • ${order.customer_name || 'Client comptoir'}</div>
                       <div class="text-[11px] text-slate-500 mt-0.5">
@@ -500,27 +531,28 @@ export function renderPosView(container, store, categories, items) {
     if (!order) return;
 
     const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
     modal.innerHTML = `
-      <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center space-y-5">
+      <div class="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl text-center space-y-4 safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-2 sm:hidden shrink-0"></div>
         <h3 class="text-lg font-black text-slate-900">Encaisser la Commande #${order.order_number}</h3>
         <div class="text-3xl font-black text-orange-600">${Number(order.total_price).toFixed(2)} €</div>
         <p class="text-xs text-slate-500">
           Encaissé par : <strong>${currentStaff?.name || 'Caissier'}</strong>
         </p>
 
-        <div class="grid grid-cols-2 gap-3">
-          <button id="pay-cash-btn" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-800 font-bold text-sm flex flex-col items-center space-y-1 transition-all">
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <button id="pay-cash-btn" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-800 font-bold text-sm flex flex-col items-center space-y-1 transition-all active:scale-95">
             <span class="text-2xl">💵</span>
             <span>Espèces</span>
           </button>
-          <button id="pay-card-btn" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-800 font-bold text-sm flex flex-col items-center space-y-1 transition-all">
+          <button id="pay-card-btn" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-800 font-bold text-sm flex flex-col items-center space-y-1 transition-all active:scale-95">
             <span class="text-2xl">💳</span>
             <span>Carte (TPE)</span>
           </button>
         </div>
 
-        <button id="cancel-pay-btn" class="text-xs text-slate-400 hover:text-slate-600 font-semibold">Annuler</button>
+        <button id="cancel-pay-btn" class="text-xs text-slate-400 hover:text-slate-600 font-semibold pt-2">Annuler</button>
       </div>
     `;
 
@@ -545,33 +577,34 @@ export function renderPosView(container, store, categories, items) {
   function renderCounterPosWorkspace() {
     const catItems = items.filter(i => i.category_id === counterSelectedCat);
     const total = counterTicket.reduce((sum, line) => sum + (line.unit_price * line.quantity), 0);
+    const totalItemsCount = counterTicket.reduce((sum, line) => sum + line.quantity, 0);
 
     return `
-      <div class="flex-1 flex gap-4 min-h-0">
+      <div class="flex-1 flex flex-col lg:flex-row gap-3 sm:gap-4 min-h-0 relative">
         <!-- Left: Categories & Grid -->
-        <div class="flex-1 flex flex-col bg-white rounded-3xl p-4 border border-slate-200 shadow-sm min-h-0">
+        <div class="flex-1 flex flex-col bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-4 border border-slate-200 shadow-sm min-h-0">
           <!-- Categories Bar -->
-          <div class="flex space-x-2 overflow-x-auto pb-3 shrink-0">
+          <div class="flex space-x-2 overflow-x-auto pb-2.5 sm:pb-3 shrink-0 hide-scrollbar">
             ${categories.map(c => `
-              <button data-counter-cat="${c.id}" class="counter-cat-btn px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${c.id === counterSelectedCat ? 'bg-orange-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+              <button data-counter-cat="${c.id}" class="counter-cat-btn px-3.5 py-2 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${c.id === counterSelectedCat ? 'bg-orange-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
                 ${c.name}
               </button>
             `).join('')}
           </div>
 
           <!-- Items Grid -->
-          <div class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
+          <div class="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3 pt-2">
             ${catItems.map(item => `
-              <button data-counter-item-id="${item.id}" class="counter-product-card bg-slate-50 hover:bg-orange-50 hover:border-orange-300 border border-slate-200 rounded-2xl p-3 text-left transition-all flex flex-col justify-between h-28 active:scale-95">
-                <span class="font-bold text-slate-900 text-sm line-clamp-2 leading-tight">${item.name}</span>
-                <span class="font-extrabold text-orange-600 text-sm mt-2">${Number(item.price).toFixed(2)} €</span>
+              <button data-counter-item-id="${item.id}" class="counter-product-card bg-slate-50 hover:bg-orange-50 hover:border-orange-300 border border-slate-200 rounded-2xl p-2.5 sm:p-3 text-left transition-all flex flex-col justify-between h-24 sm:h-28 active:scale-95 shadow-sm">
+                <span class="font-bold text-slate-900 text-xs sm:text-sm line-clamp-2 leading-tight">${item.name}</span>
+                <span class="font-extrabold text-orange-600 text-xs sm:text-sm mt-1 sm:mt-2">${Number(item.price).toFixed(2)} €</span>
               </button>
             `).join('')}
           </div>
         </div>
 
-        <!-- Right: Active Ticket -->
-        <div class="w-80 md:w-96 bg-white rounded-3xl p-5 border border-slate-200 shadow-sm flex flex-col min-h-0 shrink-0">
+        <!-- Right (Desktop): Active Ticket Sidebar -->
+        <div class="hidden lg:flex flex-col w-80 xl:w-96 bg-white rounded-3xl p-5 border border-slate-200 shadow-sm min-h-0 shrink-0">
           <div class="flex justify-between items-center pb-3 border-b border-slate-100">
             <div>
               <h3 class="font-black text-slate-900 text-base">Ticket Comptoir</h3>
@@ -621,8 +654,129 @@ export function renderPosView(container, store, categories, items) {
             </div>
           </div>
         </div>
+
+        <!-- Floating Bottom Bar (Mobile only) -->
+        <div class="lg:hidden fixed bottom-3 left-3 right-3 z-30 bg-slate-900 text-white rounded-2xl p-3 shadow-2xl border border-slate-800 flex items-center justify-between gap-2 safe-bottom">
+          <button id="mobile-open-ticket-btn" class="flex items-center space-x-2 text-left min-w-0 flex-1">
+            <span class="w-7 h-7 rounded-full bg-orange-600 font-black text-xs flex items-center justify-center shrink-0">
+              ${totalItemsCount}
+            </span>
+            <div class="truncate">
+              <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Ticket en cours</div>
+              <div class="text-base font-black text-orange-400 leading-tight">${total.toFixed(2)} €</div>
+            </div>
+          </button>
+
+          <div class="flex items-center space-x-1.5 shrink-0">
+            <button id="mobile-open-ticket-btn-2" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-2.5 py-2 rounded-xl transition-colors">
+              Détails
+            </button>
+            <button id="mobile-quick-pay-cash" ${counterTicket.length === 0 ? 'disabled' : ''} title="Paiement Espèces" class="bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-bold px-2.5 py-2 rounded-xl">
+              💵
+            </button>
+            <button id="mobile-quick-pay-card" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-orange-600 hover:bg-orange-700 disabled:opacity-30 text-white text-xs font-bold px-3 py-2 rounded-xl shadow">
+              💳 Payer
+            </button>
+          </div>
+        </div>
       </div>
     `;
+  }
+
+  function openMobileTicketDrawer() {
+    let modal = document.getElementById('mobile-ticket-drawer');
+    if (modal) modal.remove();
+
+    const total = counterTicket.reduce((sum, line) => sum + (line.unit_price * line.quantity), 0);
+
+    modal = document.createElement('div');
+    modal.id = 'mobile-ticket-drawer';
+    modal.className = 'fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-0 animate-fade-in lg:hidden';
+    modal.innerHTML = `
+      <div class="bg-white w-full rounded-t-3xl p-5 shadow-2xl max-h-[85vh] flex flex-col safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3 shrink-0"></div>
+        <div class="flex justify-between items-center pb-3 border-b border-slate-100 shrink-0">
+          <div>
+            <h3 class="font-black text-slate-900 text-base">Ticket Comptoir</h3>
+            <p class="text-[11px] text-slate-400">Saisie par : <strong class="text-orange-600">${currentStaff ? currentStaff.name : 'Caissier'}</strong></p>
+          </div>
+          <div class="flex items-center space-x-2">
+            ${counterTicket.length > 0 ? `
+              <button id="drawer-clear-ticket-btn" class="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1">Vider</button>
+            ` : ''}
+            <button id="drawer-close-ticket-btn" class="p-1.5 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full">✕</button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto py-3 space-y-2">
+          ${counterTicket.length === 0 ? `
+            <div class="h-40 flex flex-col items-center justify-center text-center text-slate-400 p-4">
+              <span class="text-3xl mb-2">🛒</span>
+              <p class="text-xs font-semibold">Le ticket est vide</p>
+            </div>
+          ` : counterTicket.map((line, idx) => `
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
+              <div class="flex-1 pr-2">
+                <div class="font-bold text-slate-900">${line.name}</div>
+                <div class="text-[10px] text-slate-500">
+                  ${line.selected_size ? `Taille: ${line.selected_size}` : ''}
+                  ${line.selected_sauce ? `• ${line.selected_sauce}` : ''}
+                </div>
+              </div>
+              <div class="flex items-center space-x-2">
+                <span class="font-bold text-slate-900">${(line.unit_price * line.quantity).toFixed(2)} €</span>
+                <button data-drawer-remove="${idx}" class="text-red-500 font-bold px-2 py-1 bg-red-50 hover:bg-red-100 rounded-lg">✕</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 space-y-3 shrink-0">
+          <div class="flex justify-between items-center">
+            <span class="font-bold text-slate-600 text-sm">Total à régler</span>
+            <span class="text-2xl font-black text-slate-900">${total.toFixed(2)} €</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button id="drawer-pay-cash" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-slate-900 hover:bg-black disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-transform active:scale-95">
+              <span>💵 Espèces</span>
+            </button>
+            <button id="drawer-pay-card" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-orange-600 hover:bg-orange-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-transform active:scale-95 shadow-lg shadow-orange-600/20">
+              <span>💳 Carte / TPE</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#drawer-close-ticket-btn')?.addEventListener('click', () => modal.remove());
+    modal.querySelector('#drawer-clear-ticket-btn')?.addEventListener('click', () => {
+      counterTicket = [];
+      modal.remove();
+      renderPosScreen();
+    });
+
+    modal.querySelectorAll('[data-drawer-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-drawer-remove'));
+        counterTicket.splice(idx, 1);
+        modal.remove();
+        openMobileTicketDrawer();
+        renderPosScreen();
+      });
+    });
+
+    modal.querySelector('#drawer-pay-cash')?.addEventListener('click', () => {
+      modal.remove();
+      completeCounterSale('cash');
+    });
+
+    modal.querySelector('#drawer-pay-card')?.addEventListener('click', () => {
+      modal.remove();
+      completeCounterSale('card');
+    });
   }
 
   function bindCounterPosEvents() {
@@ -674,6 +828,12 @@ export function renderPosView(container, store, categories, items) {
     container.querySelector('#quick-pay-card')?.addEventListener('click', () => {
       completeCounterSale('card');
     });
+
+    // Mobile Ticket Triggers
+    container.querySelector('#mobile-open-ticket-btn')?.addEventListener('click', openMobileTicketDrawer);
+    container.querySelector('#mobile-open-ticket-btn-2')?.addEventListener('click', openMobileTicketDrawer);
+    container.querySelector('#mobile-quick-pay-cash')?.addEventListener('click', () => completeCounterSale('cash'));
+    container.querySelector('#mobile-quick-pay-card')?.addEventListener('click', () => completeCounterSale('card'));
   }
 
   async function completeCounterSale(paymentMethod) {
@@ -784,94 +944,94 @@ export function renderPosView(container, store, categories, items) {
     const maxDayTotal = Math.max(...dailyTrend.map(d => d.total), 50);
 
     return `
-      <div class="flex-1 flex flex-col bg-white rounded-3xl p-5 border border-slate-200 shadow-sm min-h-0 space-y-5 overflow-y-auto">
+      <div class="flex-1 flex flex-col bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 border border-slate-200 shadow-sm min-h-0 space-y-4 sm:space-y-5 overflow-y-auto">
         <!-- Top Filter Controls -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100 shrink-0">
           <div>
-            <h2 class="text-xl font-black text-slate-900 tracking-tight">Rapports & Analyse des Ventes</h2>
+            <h2 class="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Rapports & Analyse des Ventes</h2>
             <p class="text-xs text-slate-500">Chiffre d'affaires, répartition par caissier et suivi des performances.</p>
           </div>
 
           <!-- Time Period Pills -->
-          <div class="flex items-center bg-slate-100 p-1 rounded-xl space-x-1">
-            <button data-period="today" class="period-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'today' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
+          <div class="flex items-center bg-slate-100 p-1 rounded-xl space-x-1 overflow-x-auto hide-scrollbar w-full sm:w-auto shrink-0">
+            <button data-period="today" class="period-btn whitespace-nowrap px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'today' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
               Aujourd'hui
             </button>
-            <button data-period="week" class="period-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'week' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
+            <button data-period="week" class="period-btn whitespace-nowrap px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'week' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
               7 Derniers Jours
             </button>
-            <button data-period="month" class="period-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'month' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
+            <button data-period="month" class="period-btn whitespace-nowrap px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'month' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
               Ce Mois
             </button>
-            <button data-period="all" class="period-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'all' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
+            <button data-period="all" class="period-btn whitespace-nowrap px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${analyticsPeriod === 'all' ? 'bg-orange-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}">
               Historique Global
             </button>
           </div>
         </div>
 
         <!-- 4 Big Metric Cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div class="p-4 rounded-2xl bg-orange-50/60 border border-orange-100 flex flex-col justify-between">
-            <span class="text-xs font-bold text-orange-900 uppercase tracking-wider">Chiffre d'Affaires</span>
-            <div class="text-3xl font-black text-orange-600 mt-2">${totalSales.toFixed(2)} €</div>
-            <span class="text-[11px] text-orange-700/80 mt-1">${orderCount} commandes encaissées</span>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+          <div class="p-3 sm:p-4 rounded-2xl bg-orange-50/70 border border-orange-100 flex flex-col justify-between">
+            <span class="text-[10px] sm:text-xs font-bold text-orange-900 uppercase tracking-wider">Chiffre Total</span>
+            <div class="text-xl sm:text-3xl font-black text-orange-600 mt-1 sm:mt-2">${totalSales.toFixed(2)} €</div>
+            <span class="text-[10px] sm:text-[11px] text-orange-700/80 mt-1">${orderCount} commandes</span>
           </div>
 
-          <div class="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 flex flex-col justify-between">
-            <span class="text-xs font-bold text-blue-900 uppercase tracking-wider">Panier Moyen</span>
-            <div class="text-3xl font-black text-blue-600 mt-2">${avgBasket.toFixed(2)} €</div>
-            <span class="text-[11px] text-blue-700/80 mt-1">Par ticket / client</span>
+          <div class="p-3 sm:p-4 rounded-2xl bg-blue-50/70 border border-blue-100 flex flex-col justify-between">
+            <span class="text-[10px] sm:text-xs font-bold text-blue-900 uppercase tracking-wider">Panier Moyen</span>
+            <div class="text-xl sm:text-3xl font-black text-blue-600 mt-1 sm:mt-2">${avgBasket.toFixed(2)} €</div>
+            <span class="text-[10px] sm:text-[11px] text-blue-700/80 mt-1">Par ticket / client</span>
           </div>
 
-          <div class="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 flex flex-col justify-between">
-            <span class="text-xs font-bold text-emerald-900 uppercase tracking-wider">Paiements Carte (TPE)</span>
-            <div class="text-3xl font-black text-emerald-600 mt-2">${cardSales.toFixed(2)} €</div>
-            <span class="text-[11px] text-emerald-700/80 mt-1">${totalSales > 0 ? ((cardSales / totalSales) * 100).toFixed(0) : 0}% du chiffre total</span>
+          <div class="p-3 sm:p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100 flex flex-col justify-between">
+            <span class="text-[10px] sm:text-xs font-bold text-emerald-900 uppercase tracking-wider">Carte (TPE)</span>
+            <div class="text-xl sm:text-3xl font-black text-emerald-600 mt-1 sm:mt-2">${cardSales.toFixed(2)} €</div>
+            <span class="text-[10px] sm:text-[11px] text-emerald-700/80 mt-1">${totalSales > 0 ? ((cardSales / totalSales) * 100).toFixed(0) : 0}% du chiffre</span>
           </div>
 
-          <div class="p-4 rounded-2xl bg-amber-50/60 border border-amber-100 flex flex-col justify-between">
-            <span class="text-xs font-bold text-amber-900 uppercase tracking-wider">Paiements Espèces</span>
-            <div class="text-3xl font-black text-amber-600 mt-2">${cashSales.toFixed(2)} €</div>
-            <span class="text-[11px] text-amber-700/80 mt-1">${totalSales > 0 ? ((cashSales / totalSales) * 100).toFixed(0) : 0}% du chiffre total</span>
+          <div class="p-3 sm:p-4 rounded-2xl bg-amber-50/70 border border-amber-100 flex flex-col justify-between">
+            <span class="text-[10px] sm:text-xs font-bold text-amber-900 uppercase tracking-wider">Espèces</span>
+            <div class="text-xl sm:text-3xl font-black text-amber-600 mt-1 sm:mt-2">${cashSales.toFixed(2)} €</div>
+            <span class="text-[10px] sm:text-[11px] text-amber-700/80 mt-1">${totalSales > 0 ? ((cashSales / totalSales) * 100).toFixed(0) : 0}% du chiffre</span>
           </div>
         </div>
 
         <!-- 2 Column Section: Staff Performance vs Weekly Evolution -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
           <!-- Left: Sales by Person / Staff -->
-          <div class="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col space-y-4">
+          <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col space-y-3 sm:space-y-4">
             <div class="flex justify-between items-center">
               <h3 class="font-extrabold text-slate-900 text-sm flex items-center space-x-1.5">
                 <span>👤</span>
-                <span>Ventes par Personne / Caissier</span>
+                <span>Ventes par Personne</span>
               </h3>
-              <span class="text-xs font-bold text-slate-400">${staffSalesList.length} caissiers actifs</span>
+              <span class="text-xs font-bold text-slate-400">${staffSalesList.length} caissiers</span>
             </div>
 
-            <div class="space-y-3">
+            <div class="space-y-2.5 sm:space-y-3">
               ${staffSalesList.length === 0 ? `
                 <p class="text-xs text-slate-400 py-4 text-center">Aucune vente enregistrée sur cette période.</p>
               ` : staffSalesList.map(st => {
                 const pct = totalSales > 0 ? ((st.total / totalSales) * 100).toFixed(0) : 0;
                 return `
-                  <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col space-y-2">
+                  <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col space-y-2">
                     <div class="flex justify-between items-center">
                       <div class="flex items-center space-x-2">
-                        <span class="w-7 h-7 rounded-full bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center">
+                        <span class="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-slate-900 text-white font-extrabold text-[11px] sm:text-xs flex items-center justify-center">
                           ${st.name.charAt(0)}
                         </span>
                         <div>
                           <span class="font-bold text-slate-900 text-xs">${st.name}</span>
-                          <span class="text-[10px] text-slate-400 ml-1">(${st.count} ventes)</span>
+                          <span class="text-[10px] text-slate-400 ml-1">(${st.count} v.)</span>
                         </div>
                       </div>
                       <div class="text-right">
-                        <span class="font-extrabold text-slate-900 text-sm">${st.total.toFixed(2)} €</span>
+                        <span class="font-extrabold text-slate-900 text-xs sm:text-sm">${st.total.toFixed(2)} €</span>
                         <span class="text-[10px] text-orange-600 font-bold block">${pct}%</span>
                       </div>
                     </div>
                     <!-- Progress bar -->
-                    <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div class="w-full bg-slate-100 h-1.5 sm:h-2 rounded-full overflow-hidden">
                       <div class="bg-orange-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
                     </div>
                   </div>
@@ -881,34 +1041,34 @@ export function renderPosView(container, store, categories, items) {
           </div>
 
           <!-- Right: Weekly Trend Chart (Visual Bars) -->
-          <div class="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between space-y-4">
+          <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between space-y-3 sm:space-y-4">
             <div class="flex justify-between items-center">
               <h3 class="font-extrabold text-slate-900 text-sm flex items-center space-x-1.5">
                 <span>📈</span>
-                <span>Évolution des 7 Derniers Jours</span>
+                <span>Évolution 7 Derniers Jours</span>
               </h3>
               <span class="text-xs font-bold text-slate-500">Total : ${dailyTrend.reduce((s, d) => s + d.total, 0).toFixed(2)} €</span>
             </div>
 
             <!-- Visual Bar Chart -->
-            <div class="grid grid-cols-7 gap-2 items-end h-44 pt-6 pb-2 px-1">
+            <div class="grid grid-cols-7 gap-1.5 sm:gap-2 items-end h-40 sm:h-44 pt-5 pb-2 px-1">
               ${dailyTrend.map(d => {
                 const barHeight = Math.max(12, Math.round((d.total / maxDayTotal) * 100));
                 return `
                   <div class="flex flex-col items-center h-full justify-end group">
-                    <span class="text-[10px] font-bold text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity mb-1 whitespace-nowrap">
+                    <span class="text-[9px] sm:text-[10px] font-bold text-slate-700 mb-1 whitespace-nowrap block">
                       ${d.total.toFixed(0)}€
                     </span>
                     <div class="w-full bg-orange-100 hover:bg-orange-500 rounded-t-lg transition-colors cursor-pointer relative" style="height: ${barHeight}%;">
-                      <div class="bg-orange-500 h-full rounded-t-lg opacity-80 group-hover:opacity-100"></div>
+                      <div class="bg-orange-500 h-full rounded-t-lg opacity-85 group-hover:opacity-100"></div>
                     </div>
-                    <span class="text-[10px] font-semibold text-slate-500 mt-2 capitalize">${d.label}</span>
+                    <span class="text-[9px] sm:text-[10px] font-semibold text-slate-500 mt-1.5 capitalize truncate max-w-full">${d.label}</span>
                   </div>
                 `;
               }).join('')}
             </div>
 
-            <p class="text-[11px] text-slate-400 text-center">Survolez une barre pour voir le chiffre d'affaires exact du jour.</p>
+            <p class="text-[10px] sm:text-[11px] text-slate-400 text-center">Chiffre d'affaires journalier (7 derniers jours)</p>
           </div>
         </div>
       </div>
@@ -931,29 +1091,29 @@ export function renderPosView(container, store, categories, items) {
       : items.filter(i => i.category_id === managerSelectedCat);
 
     return `
-      <div class="flex-1 flex flex-col bg-white rounded-3xl p-5 border border-slate-200 shadow-sm min-h-0 space-y-4">
+      <div class="flex-1 flex flex-col bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 border border-slate-200 shadow-sm min-h-0 space-y-3.5 sm:space-y-4">
         <!-- Header Controls -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100 shrink-0">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 sm:gap-3 pb-3 border-b border-slate-100 shrink-0">
           <div>
-            <h2 class="text-lg font-black text-slate-900">Carte & Gestion des Employés</h2>
+            <h2 class="text-base sm:text-lg font-black text-slate-900">Carte & Gestion des Employés</h2>
             <p class="text-xs text-slate-500">Gérez les plats du restaurant et les comptes de vos caissiers.</p>
           </div>
 
-          <div class="flex items-center space-x-2">
-            <button id="manage-team-btn" class="text-xs bg-slate-900 hover:bg-black text-white px-3.5 py-2.5 rounded-xl font-bold transition-colors flex items-center space-x-1.5 shadow">
-              <span>👥 Gérer l'Équipe (${staffList.length})</span>
+          <div class="grid grid-cols-3 sm:flex items-center gap-1.5 sm:space-x-2 w-full sm:w-auto">
+            <button id="manage-team-btn" class="text-[11px] sm:text-xs bg-slate-900 hover:bg-black text-white px-2 sm:px-3.5 py-2 sm:py-2.5 rounded-xl font-bold transition-colors flex items-center justify-center space-x-1 shadow">
+              <span>👥 Équipe (${staffList.length})</span>
             </button>
-            <button id="add-category-btn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2.5 rounded-xl font-bold transition-colors">
+            <button id="add-category-btn" class="text-[11px] sm:text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 sm:px-3.5 py-2 sm:py-2.5 rounded-xl font-bold transition-colors text-center">
               + Catégorie
             </button>
-            <button id="add-item-btn" class="text-xs bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-xl font-bold shadow-md shadow-orange-600/25 transition-transform active:scale-95 flex items-center space-x-1.5">
-              <span>+ Ajouter un Article</span>
+            <button id="add-item-btn" class="text-[11px] sm:text-xs bg-orange-600 hover:bg-orange-700 text-white px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold shadow-md shadow-orange-600/25 transition-transform active:scale-95 flex items-center justify-center space-x-1">
+              <span>+ Article</span>
             </button>
           </div>
         </div>
 
         <!-- Admin & Auto-sync Control Card -->
-        <div class="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-4 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow">
+        <div class="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-3.5 sm:p-4 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow">
           <div class="space-y-1">
             <div class="flex items-center space-x-2">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -964,15 +1124,15 @@ export function renderPosView(container, store, categories, items) {
               <strong class="text-white">Auto-sync externe : Désactivé</strong> (Mode manuel sécurisé anti-écrasement). Le profil reste <em>non-revendiqué</em> sur le répertoire public tout en étant connecté en direct à votre caisse.
             </p>
           </div>
-          <div class="flex items-center space-x-2 shrink-0">
-            <button id="manual-sync-btn" class="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow flex items-center space-x-1.5 active:scale-95">
+          <div class="flex items-center space-x-2 shrink-0 w-full sm:w-auto">
+            <button id="manual-sync-btn" class="w-full sm:w-auto bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 active:scale-95">
               <span>🔄 Forcer la synchronisation avec l'app Allonssy</span>
             </button>
           </div>
         </div>
 
         <!-- Filter Categories Bar -->
-        <div class="flex space-x-2 overflow-x-auto pb-1 shrink-0">
+        <div class="flex space-x-2 overflow-x-auto pb-1 shrink-0 hide-scrollbar">
           <button data-mgr-cat="all" class="mgr-cat-btn px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${managerSelectedCat === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
             Tous les articles (${items.length})
           </button>
@@ -1140,12 +1300,13 @@ export function renderPosView(container, store, categories, items) {
   // Staff Switch Modal
   function openStaffSwitchModal() {
     const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
     modal.innerHTML = `
-      <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4">
+      <div class="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-1 sm:hidden shrink-0"></div>
         <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-          <h3 class="text-base font-black text-slate-900">Changer d'Utilisateur / Caissier</h3>
-          <button id="close-staff-modal" class="text-slate-400 hover:text-slate-600">✕</button>
+          <h3 class="text-base font-black text-slate-900">Changer de Caissier</h3>
+          <button id="close-staff-modal" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
         </div>
 
         <p class="text-xs text-slate-500">Sélectionnez la personne qui prend les commandes à la caisse :</p>
@@ -1194,12 +1355,13 @@ export function renderPosView(container, store, categories, items) {
   // Manage Team Modal
   function openTeamModal() {
     const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
     modal.innerHTML = `
-      <div class="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+      <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[88vh] overflow-y-auto safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-1 sm:hidden shrink-0"></div>
         <div class="flex justify-between items-center pb-2 border-b border-slate-100">
           <h3 class="text-base font-black text-slate-900">Équipe & Sous-Comptes Caissiers</h3>
-          <button id="close-team-modal" class="text-slate-400 hover:text-slate-600">✕</button>
+          <button id="close-team-modal" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
         </div>
 
         <div class="space-y-2">
@@ -1284,9 +1446,10 @@ export function renderPosView(container, store, categories, items) {
 
   function openCategoryModal() {
     const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
     modal.innerHTML = `
-      <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4">
+      <div class="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-1 sm:hidden shrink-0"></div>
         <h3 class="text-lg font-black text-slate-900">Nouvelle Catégorie</h3>
         
         <div>
@@ -1331,13 +1494,14 @@ export function renderPosView(container, store, categories, items) {
   function openItemModal(itemToEdit = null) {
     const isEdit = !!itemToEdit;
     const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in';
+    modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in';
 
     modal.innerHTML = `
-      <div class="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-1 sm:hidden shrink-0"></div>
         <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-          <h3 class="text-lg font-black text-slate-900">${isEdit ? 'Modifier l\'Article' : 'Ajouter un Nouvel Article'}</h3>
-          <button id="close-modal-x" class="text-slate-400 hover:text-slate-600">✕</button>
+          <h3 class="text-base sm:text-lg font-black text-slate-900">${isEdit ? 'Modifier l\'Article' : 'Ajouter un Nouvel Article'}</h3>
+          <button id="close-modal-x" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
         </div>
 
         <div class="space-y-3 text-sm">

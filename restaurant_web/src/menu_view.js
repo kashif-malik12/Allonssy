@@ -100,14 +100,15 @@ export function renderMenuView(container, store, categories, items) {
     const currentPrice = calculateModalPrice();
 
     modal.innerHTML = `
-      <div class="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+      <div class="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl safe-bottom">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 mb-1 sm:hidden shrink-0"></div>
         <!-- Header -->
-        <div class="p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/50">
-          <div>
-            <h3 class="text-xl font-bold text-slate-900">${customizerItem.name}</h3>
-            ${customizerItem.description ? `<p class="text-xs text-slate-500 mt-1 line-clamp-2">${customizerItem.description}</p>` : ''}
+        <div class="p-4 sm:p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/70 shrink-0">
+          <div class="pr-3">
+            <h3 class="text-lg sm:text-xl font-black text-slate-900 leading-tight">${customizerItem.name}</h3>
+            ${customizerItem.description ? `<p class="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">${customizerItem.description}</p>` : ''}
           </div>
-          <button id="close-modal-btn" class="p-2 text-slate-400 hover:text-slate-700 bg-white rounded-full shadow-sm border border-slate-100">
+          <button id="close-modal-btn" class="p-2 text-slate-400 hover:text-slate-700 bg-white rounded-full shadow-sm border border-slate-200 shrink-0">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
         </div>
@@ -263,7 +264,7 @@ export function renderMenuView(container, store, categories, items) {
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'floating-cart-bar';
-      bar.className = 'fixed bottom-4 left-4 right-4 z-40 max-w-xl mx-auto';
+      bar.className = 'fixed bottom-3 sm:bottom-4 left-3 right-3 sm:left-4 sm:right-4 z-40 max-w-lg mx-auto safe-bottom';
       document.body.appendChild(bar);
     }
 
@@ -631,34 +632,39 @@ export function renderMenuView(container, store, categories, items) {
   // Initial Main Render
   container.innerHTML = `
     <!-- Restaurant Header -->
-    <header class="bg-white border-b border-slate-100 shadow-sm sticky top-0 z-30">
-      <div class="max-w-5xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div class="flex items-center space-x-2">
-            <h1 class="text-2xl font-black text-slate-900 tracking-tight">${store.name}</h1>
-            <span class="bg-green-100 text-green-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">Ouvert</span>
+    <header class="bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm sticky top-0 z-30">
+      <div class="max-w-5xl mx-auto px-4 py-3 sm:py-4">
+        <!-- Top Row: Brand & Status & Quick POS access -->
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center space-x-2 min-w-0">
+            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight truncate">${store.name}</h1>
+            <span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">Ouvert</span>
           </div>
-          <p class="text-xs text-slate-500 mt-1 flex items-center space-x-1">
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
-            <span>${store.address}, ${store.city}</span>
-            <span class="text-slate-300">•</span>
-            <a href="tel:${store.phone}" class="text-orange-600 font-medium hover:underline">${store.phone}</a>
-          </p>
+
+          <a href="#pos" class="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl flex items-center space-x-1.5 transition-colors shrink-0 border border-slate-200">
+            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <span class="hidden sm:inline">Espace</span><span>Caisse / POS</span>
+          </a>
         </div>
 
-        <!-- POS Access Pill -->
-        <div class="flex items-center space-x-2 self-stretch sm:self-auto">
-          <a href="#pos" class="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-xl flex items-center space-x-1.5 transition-colors">
-            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-            <span>Espace Caisse / POS</span>
+        <!-- Info Row: Address & Phone -->
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 mt-1.5">
+          <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address + ' ' + store.city)}" target="_blank" rel="noopener noreferrer" class="hover:text-slate-800 flex items-center space-x-1 text-slate-600 truncate">
+            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+            <span class="truncate">${store.address}, ${store.city}</span>
+          </a>
+          <span class="text-slate-300 hidden sm:inline">•</span>
+          <a href="tel:${store.phone}" class="text-orange-600 font-bold hover:underline flex items-center space-x-1 shrink-0">
+            <svg class="w-3.5 h-3.5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+            <span>${store.phone}</span>
           </a>
         </div>
       </div>
 
       <!-- Categories Pills Navigation -->
-      <div class="max-w-5xl mx-auto px-4 overflow-x-auto hide-scrollbar flex space-x-2 py-2.5 border-t border-slate-50">
+      <div class="max-w-5xl mx-auto px-4 overflow-x-auto hide-scrollbar flex space-x-2 py-2 border-t border-slate-100">
         ${categories.map(c => `
-          <button data-cat-id="${c.id}" class="cat-pill-btn whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all ${c.id === activeCategory ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+          <button data-cat-id="${c.id}" class="cat-pill-btn whitespace-nowrap px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all ${c.id === activeCategory ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
             ${c.name}
           </button>
         `).join('')}
