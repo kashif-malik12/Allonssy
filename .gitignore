@@ -70,3 +70,8 @@ restaurant_web/dist/
 backups_external/
 *.dump
 
+# Marketing Automation Output & State
+output/
+*.state.json
+.daily_post_state.json
+
