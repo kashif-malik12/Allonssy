@@ -27,28 +27,29 @@ echo "[$(date -u +%FT%TZ)] Starting offsite backup to Cloudflare R2..."
 # 2. Package Allonssy Database & Fiscal Archives
 echo "--> Bundling Allonssy database & 6-year fiscal archives..."
 if [ -d "${HOME}/backups/supabase/latest" ]; then
-  cp -r "${HOME}/backups/supabase/latest" "${BACKUP_TMP_DIR}/allonssy/latest"
+  # Dereference symlink to copy actual database dump, storage and config
+  cp -rL "${HOME}/backups/supabase/latest" "${BACKUP_TMP_DIR}/allonssy/system_recovery_snapshot"
 fi
 if [ -d "${HOME}/backups/supabase/fiscal_archives" ]; then
   cp -r "${HOME}/backups/supabase/fiscal_archives" "${BACKUP_TMP_DIR}/allonssy/fiscal_archives"
 fi
 
-# Package Allonssy Web Code
+# Package Allonssy Web Code (excluding transient caches)
 echo "--> Bundling Allonssy Web assets..."
-tar -C "/var/www" -czf "${BACKUP_TMP_DIR}/allonssy/allonssy_web_${TIMESTAMP}.tar.gz" local_social_web
+tar -C "/var/www" --exclude='.git' -czf "${BACKUP_TMP_DIR}/allonssy/allonssy_web_${TIMESTAMP}.tar.gz" local_social_web
 
-# 3. Package Tradister
+# 3. Package Tradister (excluding redundant local PHP backups)
 echo "--> Bundling Tradister Compte & Tradister Plan..."
-tar -C "${HOME}" -czf "${BACKUP_TMP_DIR}/tradister/tradister_compte_${TIMESTAMP}.tar.gz" tradister-compte
-tar -C "${HOME}" -czf "${BACKUP_TMP_DIR}/tradister/tradister_plan_${TIMESTAMP}.tar.gz" tradister-plan
+tar -C "${HOME}" --exclude='tradister-compte/backups' --exclude='.git' -czf "${BACKUP_TMP_DIR}/tradister/tradister_compte_${TIMESTAMP}.tar.gz" tradister-compte
+tar -C "${HOME}" --exclude='.git' -czf "${BACKUP_TMP_DIR}/tradister/tradister_plan_${TIMESTAMP}.tar.gz" tradister-plan
 
 # 4. Upload to Cloudflare R2 using rclone
 echo "--> Syncing to Cloudflare R2 bucket: allonssy-backups..."
-/home/deploy/bin/rclone copy "${BACKUP_TMP_DIR}/allonssy/" "r2:allonssy-backups/allonssy/${DATE_MONTH}/" --stats 10s
-/home/deploy/bin/rclone copy "${BACKUP_TMP_DIR}/tradister/" "r2:allonssy-backups/tradister/${DATE_MONTH}/" --stats 10s
+/home/deploy/bin/rclone copy -L "${BACKUP_TMP_DIR}/allonssy/" "r2:allonssy-backups/allonssy/${DATE_MONTH}/" --stats 10s
+/home/deploy/bin/rclone copy -L "${BACKUP_TMP_DIR}/tradister/" "r2:allonssy-backups/tradister/${DATE_MONTH}/" --stats 10s
 
 # Keep a "latest" copy in R2 root
-/home/deploy/bin/rclone sync "${BACKUP_TMP_DIR}/" "r2:allonssy-backups/latest/" --stats 10s
+/home/deploy/bin/rclone sync -L "${BACKUP_TMP_DIR}/" "r2:allonssy-backups/latest/" --stats 10s
 
 # 5. Clean temporary bundle
 rm -rf "${BACKUP_TMP_DIR}"

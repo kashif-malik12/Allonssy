@@ -1,7 +1,9 @@
 import { supabase } from './supabase.js';
 import { playOrderAlert, playSuccessChime } from './sound.js';
+import { t, getLang, setLang, renderLangSwitch } from './i18n.js';
 
 export function renderPosView(container, store, categories, items) {
+  let currentLang = getLang();
   let isUnlocked = sessionStorage.getItem(`allonssy_pos_auth_${store.id}`) === 'true';
   let activeTab = 'live_orders'; // 'live_orders', 'counter_pos', 'menu_manager', 'analytics'
   let orders = [];
@@ -49,7 +51,7 @@ export function renderPosView(container, store, categories, items) {
       sessionStorage.setItem(`allonssy_pos_auth_${store.id}`, 'true');
       initPos();
     } else {
-      alert('Code PIN incorrect. Veuillez réessayer.');
+      alert(t('pin_error', currentLang));
     }
   }
 
@@ -63,9 +65,33 @@ export function renderPosView(container, store, categories, items) {
     renderPinLock();
   }
 
+
+  function bindLangSwitchEvents() {
+    container.querySelectorAll('.lang-switch-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newLang = btn.getAttribute('data-set-lang');
+        if (newLang && newLang !== currentLang) {
+          currentLang = newLang;
+          setLang(newLang);
+          if (isUnlocked) {
+            renderPosScreen();
+          } else {
+            renderPinLock();
+          }
+        }
+      });
+    });
+  }
+
   function renderPinLock() {
     container.innerHTML = `
-      <div class="flex-1 flex items-center justify-center p-4 bg-slate-900 animate-fade-in">
+      <div class="flex-1 flex flex-col items-center justify-center p-4 bg-slate-900 animate-fade-in relative min-h-screen">
+        <!-- Language Switcher Top Right -->
+        <div class="absolute top-4 right-4 z-20">
+          ${renderLangSwitch(currentLang)}
+        </div>
+
         <div class="bg-white w-full max-w-sm rounded-3xl p-8 shadow-2xl text-center space-y-6">
           <div class="w-16 h-16 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
@@ -73,17 +99,17 @@ export function renderPosView(container, store, categories, items) {
 
           <div>
             <h2 class="text-xl font-black text-slate-900">${store.name}</h2>
-            <p class="text-xs font-semibold text-slate-500 mt-1">Connexion Caisse & Analyse des Ventes</p>
+            <p class="text-xs font-semibold text-slate-500 mt-1">${t('pin_lock_subtitle', currentLang)}</p>
           </div>
 
           <!-- Select Staff user if available -->
           ${staffList.length > 0 ? `
             <div class="text-left space-y-1.5">
-              <label class="block text-xs font-bold text-slate-700">Sélectionner l'utilisateur :</label>
+              <label class="block text-xs font-bold text-slate-700">${t('pin_select_user', currentLang)}</label>
               <select id="lock-staff-select" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 text-sm bg-white font-medium">
                 ${staffList.map(st => `
                   <option value="${st.id}" ${currentStaff?.id === st.id ? 'selected' : ''}>
-                    ${st.name} (${st.role === 'owner' ? 'Patron' : 'Caissier'})
+                    ${st.name} (${st.role === 'owner' ? t('role_owner', currentLang) : t('role_cashier', currentLang)})
                   </option>
                 `).join('')}
               </select>
@@ -91,15 +117,15 @@ export function renderPosView(container, store, categories, items) {
           ` : ''}
 
           <div class="space-y-4">
-            <input type="password" inputmode="numeric" pattern="[0-9]*" id="pos-pin-input" maxlength="4" placeholder="••••" class="w-full text-center tracking-[0.5em] text-3xl font-black py-3.5 px-4 rounded-2xl border-2 border-slate-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 focus:outline-none bg-slate-50">
+            <input type="password" inputmode="numeric" pattern="[0-9]*" id="pos-pin-input" maxlength="4" placeholder="${t('pin_placeholder', currentLang)}" class="w-full text-center tracking-[0.5em] text-3xl font-black py-3.5 px-4 rounded-2xl border-2 border-slate-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 focus:outline-none bg-slate-50">
             
             <button id="unlock-pin-btn" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-orange-600/30 transition-transform active:scale-[0.98]">
-              Déverrouiller
+              ${t('pin_unlock', currentLang)}
             </button>
           </div>
 
           <div class="pt-2">
-            <a href="#" class="text-xs text-slate-500 hover:text-slate-800 font-medium">← Retour au Menu Public</a>
+            <a href="#" class="text-xs text-slate-500 hover:text-slate-800 font-medium">${t('pin_back_to_menu', currentLang)}</a>
           </div>
         </div>
       </div>
@@ -121,6 +147,7 @@ export function renderPosView(container, store, categories, items) {
       }
     });
 
+    bindLangSwitchEvents();
     pinInput.focus();
   }
 
@@ -247,14 +274,14 @@ export function renderPosView(container, store, categories, items) {
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
               <div class="leading-tight truncate">
                 <h1 class="text-sm sm:text-base font-black tracking-tight truncate">${store.name}</h1>
-                <p class="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">Caisse & Analytics Temps Réel</p>
+                <p class="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">${t('app_subtitle', currentLang)}</p>
               </div>
             </div>
 
             <!-- Center (Desktop/Tablet): Tab Switches -->
             <div class="hidden md:flex items-center bg-slate-800 p-1 rounded-xl space-x-1">
               <button id="tab-live-orders" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'live_orders' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-                <span>🔔 Commandes</span>
+                <span>${t('tab_orders', currentLang)}</span>
                 ${uncompletedCount > 0 ? `
                   <span class="bg-white text-orange-600 text-[10px] font-black px-1.5 py-0.2 rounded-full">
                     ${uncompletedCount}
@@ -262,18 +289,21 @@ export function renderPosView(container, store, categories, items) {
                 ` : ''}
               </button>
               <button id="tab-counter-pos" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'counter_pos' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-                <span>🧾 Caisse</span>
+                <span>${t('tab_counter', currentLang)}</span>
               </button>
               <button id="tab-analytics" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'analytics' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-                <span>📊 Statistiques & Ventes</span>
+                <span>${t('tab_analytics', currentLang)}</span>
               </button>
               <button id="tab-menu-manager" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${activeTab === 'menu_manager' ? 'bg-orange-600 text-white shadow' : 'text-slate-300 hover:text-white'}">
-                <span>🍽️ Carte & Équipe</span>
+                <span>${t('tab_menu', currentLang)}</span>
               </button>
             </div>
 
-            <!-- Right: Staff Profile & Actions -->
+            <!-- Right: Staff Profile, Language & Actions -->
             <div class="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+              <!-- Language Switcher -->
+              ${renderLangSwitch(currentLang)}
+
               <!-- Active Cashier Pill -->
               <button id="switch-staff-btn" class="text-xs bg-slate-800 hover:bg-slate-700 text-orange-400 px-2.5 sm:px-3 py-1.5 rounded-xl font-bold flex items-center space-x-1 transition-colors border border-slate-700">
                 <span class="w-2 h-2 rounded-full bg-orange-500 shrink-0"></span>
@@ -281,10 +311,10 @@ export function renderPosView(container, store, categories, items) {
                 <span class="text-[10px] text-slate-400 font-normal hidden sm:inline">(${currentStaff?.role === 'owner' ? 'Patron' : 'Caissier'})</span>
               </button>
 
-              <button id="test-sound-btn" title="Tester la sonnerie" class="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors">
+              <button id="test-sound-btn" title="${t('sound_test_title', currentLang)}" class="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
               </button>
-              <button id="lock-pos-btn" title="Verrouiller" class="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors">
+              <button id="lock-pos-btn" title="${t('lock_title', currentLang)}" class="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors">
                 <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
               </button>
             </div>
@@ -301,19 +331,19 @@ export function renderPosView(container, store, categories, items) {
                   </span>
                 ` : ''}
               </span>
-              <span class="mt-0.5 leading-none">Commandes</span>
+              <span class="mt-0.5 leading-none">${t('tab_orders_short', currentLang)}</span>
             </button>
             <button id="mobile-tab-counter-pos" class="py-1.5 px-1 rounded-xl text-center font-bold text-[11px] flex flex-col items-center justify-center transition-all ${activeTab === 'counter_pos' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}">
               <span class="text-sm">🧾</span>
-              <span class="mt-0.5 leading-none">Caisse</span>
+              <span class="mt-0.5 leading-none">${t('tab_counter_short', currentLang)}</span>
             </button>
             <button id="mobile-tab-analytics" class="py-1.5 px-1 rounded-xl text-center font-bold text-[11px] flex flex-col items-center justify-center transition-all ${activeTab === 'analytics' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}">
               <span class="text-sm">📊</span>
-              <span class="mt-0.5 leading-none">Ventes</span>
+              <span class="mt-0.5 leading-none">${t('tab_analytics_short', currentLang)}</span>
             </button>
             <button id="mobile-tab-menu-manager" class="py-1.5 px-1 rounded-xl text-center font-bold text-[11px] flex flex-col items-center justify-center transition-all ${activeTab === 'menu_manager' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}">
               <span class="text-sm">🍽️</span>
-              <span class="mt-0.5 leading-none">Carte</span>
+              <span class="mt-0.5 leading-none">${t('tab_menu_short', currentLang)}</span>
             </button>
           </div>
         </header>
@@ -349,6 +379,7 @@ export function renderPosView(container, store, categories, items) {
     container.querySelector('#tab-menu-manager')?.addEventListener('click', () => switchTab('menu_manager'));
     container.querySelector('#mobile-tab-menu-manager')?.addEventListener('click', () => switchTab('menu_manager'));
 
+    bindLangSwitchEvents();
     container.querySelector('#switch-staff-btn')?.addEventListener('click', openStaffSwitchModal);
     container.querySelector('#lock-pos-btn')?.addEventListener('click', lockPos);
     container.querySelector('#test-sound-btn')?.addEventListener('click', () => playOrderAlert());
@@ -375,7 +406,7 @@ export function renderPosView(container, store, categories, items) {
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 shrink-0">
           <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Reçues / Attente</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">${t('stat_received', currentLang)}</div>
               <div class="text-xl sm:text-2xl font-black text-amber-600">${orders.filter(o => o.status === 'received').length}</div>
             </div>
             <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center font-black text-xs sm:text-sm">1</span>
@@ -383,7 +414,7 @@ export function renderPosView(container, store, categories, items) {
 
           <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Au Four / En Cours</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">${t('stat_preparing', currentLang)}</div>
               <div class="text-xl sm:text-2xl font-black text-blue-600">${orders.filter(o => o.status === 'preparing').length}</div>
             </div>
             <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-black text-xs sm:text-sm">2</span>
@@ -391,7 +422,7 @@ export function renderPosView(container, store, categories, items) {
 
           <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Prêtes au Retrait</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">${t('stat_ready', currentLang)}</div>
               <div class="text-xl sm:text-2xl font-black text-green-600">${orders.filter(o => o.status === 'ready').length}</div>
             </div>
             <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-green-50 text-green-600 flex items-center justify-center font-black text-xs sm:text-sm">3</span>
@@ -399,7 +430,7 @@ export function renderPosView(container, store, categories, items) {
 
           <div class="bg-white rounded-2xl p-2.5 sm:p-3 border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">Total Jour</div>
+              <div class="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-tight">${t('stat_total_today', currentLang)}</div>
               <div class="text-xl sm:text-2xl font-black text-slate-800">${orders.length}</div>
             </div>
             <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-black text-xs sm:text-sm">✓</span>
@@ -413,8 +444,8 @@ export function renderPosView(container, store, categories, items) {
               <div class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mb-3">
                 <svg class="w-7 h-7 sm:w-8 sm:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               </div>
-              <h3 class="font-bold text-slate-800 text-base sm:text-lg">Aucune commande en attente</h3>
-              <p class="text-xs text-slate-400 max-w-sm mt-1">Les nouvelles commandes en ligne ou au comptoir apparaîtront ici automatiquement avec une alerte sonore.</p>
+              <h3 class="font-bold text-slate-800 text-base sm:text-lg">${t('no_orders_title', currentLang)}</h3>
+              <p class="text-xs text-slate-400 max-w-sm mt-1">${t('no_orders_desc', currentLang)}</p>
             </div>
           ` : `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -425,12 +456,12 @@ export function renderPosView(container, store, categories, items) {
           <!-- Completed Orders Section -->
           ${completedOrders.length > 0 ? `
             <div class="mt-6 sm:mt-8 pt-4">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Dernières commandes terminées</h3>
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">${t('last_completed_orders', currentLang)}</h3>
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
                 ${completedOrders.map(order => `
                   <div class="bg-white/80 rounded-2xl p-3 border border-slate-200 text-xs opacity-90 flex justify-between items-center gap-2">
                     <div class="min-w-0">
-                      <div class="font-bold text-slate-800 truncate">#${order.order_number} • ${order.customer_name || 'Client comptoir'}</div>
+                      <div class="font-bold text-slate-800 truncate">#${order.order_number} • ${order.customer_name || t('counter_customer', currentLang)}</div>
                       <div class="text-[11px] text-slate-500 mt-0.5 truncate">
                         ${order.staff_name ? `<span class="font-semibold text-orange-600">${order.staff_name}</span> • ` : ''}
                         ${Number(order.total_price).toFixed(2)} €
@@ -440,7 +471,7 @@ export function renderPosView(container, store, categories, items) {
                       <button data-receipt-id="${order.id}" class="text-[10px] font-bold text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2 py-1 rounded-lg border border-orange-200 shadow-sm transition-colors">
                         🧾 Note
                       </button>
-                      <span class="bg-green-100 text-green-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">Payée</span>
+                      <span class="bg-green-100 text-green-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">${t('status_paid', currentLang)}</span>
                     </div>
                   </div>
                 `).join('')}
@@ -463,18 +494,18 @@ export function renderPosView(container, store, categories, items) {
             <div class="flex items-center space-x-2">
               <span class="text-2xl font-black text-slate-900">#${order.order_number}</span>
               <span class="text-xs font-bold px-2.5 py-0.5 rounded-full ${isNew ? 'bg-amber-100 text-amber-900' : isPreparing ? 'bg-blue-100 text-blue-900' : 'bg-green-100 text-green-900'}">
-                ${isNew ? 'Reçue' : isPreparing ? 'Au Four' : 'Prête'}
+                ${isNew ? t('status_received', currentLang) : isPreparing ? t('status_preparing', currentLang) : t('status_ready', currentLang)}
               </span>
             </div>
             <span class="text-sm font-extrabold text-slate-900">${Number(order.total_price).toFixed(2)} €</span>
           </div>
 
           <div class="text-xs text-slate-500 mt-1 flex items-center justify-between">
-            <span class="font-bold text-slate-800">${order.customer_name || 'Client'}</span>
+            <span class="font-bold text-slate-800">${order.customer_name || t('client_default', currentLang)}</span>
             ${order.customer_phone ? `<a href="tel:${order.customer_phone}" class="text-orange-600 font-semibold hover:underline">${order.customer_phone}</a>` : ''}
           </div>
           <div class="text-[11px] text-orange-600 font-semibold mt-0.5">
-            Heure souhaitée: ${order.pickup_time || 'Dès que possible'}
+            ${t('desired_time', currentLang)} ${order.pickup_time || t('asap', currentLang)}
           </div>
         </div>
 
@@ -484,9 +515,9 @@ export function renderPosView(container, store, categories, items) {
               <div>
                 <span class="font-bold text-slate-900">${it.quantity}x ${it.item_name}</span>
                 <div class="text-[11px] text-slate-500 space-y-0.5 mt-0.5">
-                  ${it.selected_size ? `<div>Taille: <strong class="text-slate-700">${it.selected_size}</strong></div>` : ''}
-                  ${it.selected_sauce ? `<div>Sauce: <strong class="text-slate-700">${it.selected_sauce}</strong></div>` : ''}
-                  ${it.selected_extras && it.selected_extras.length > 0 ? `<div>Extras: ${it.selected_extras.map(e => e.name).join(', ')}</div>` : ''}
+                  ${it.selected_size ? `<div>${t('size', currentLang)} <strong class="text-slate-700">${it.selected_size}</strong></div>` : ''}
+                  ${it.selected_sauce ? `<div>${t('sauce', currentLang)} <strong class="text-slate-700">${it.selected_sauce}</strong></div>` : ''}
+                  ${it.selected_extras && it.selected_extras.length > 0 ? `<div>${t('extras', currentLang)} ${it.selected_extras.map(e => e.name).join(', ')}</div>` : ''}
                   ${it.notes ? `<div class="text-orange-600 font-semibold italic">"${it.notes}"</div>` : ''}
                 </div>
               </div>
@@ -498,15 +529,15 @@ export function renderPosView(container, store, categories, items) {
         <div class="pt-2 border-t border-slate-100 flex items-center gap-2">
           ${isNew ? `
             <button data-order-id="${order.id}" data-action="prepare" class="order-action-btn flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-colors shadow">
-              En préparation (Four)
+              ${t('btn_prepare', currentLang)}
             </button>
           ` : isPreparing ? `
             <button data-order-id="${order.id}" data-action="ready" class="order-action-btn flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-colors shadow">
-              Commande Prête !
+              ${t('btn_mark_ready', currentLang)}
             </button>
           ` : `
             <button data-order-id="${order.id}" data-action="complete" class="order-action-btn flex-1 bg-slate-900 hover:bg-black text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-colors shadow">
-              Encaisser & Terminer
+              ${t('btn_pay_complete', currentLang)}
             </button>
           `}
         </div>
@@ -548,24 +579,24 @@ export function renderPosView(container, store, categories, items) {
     modal.innerHTML = `
       <div class="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl text-center space-y-4 safe-bottom">
         <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-2 sm:hidden shrink-0"></div>
-        <h3 class="text-lg font-black text-slate-900">Encaisser la Commande #${order.order_number}</h3>
+        <h3 class="text-lg font-black text-slate-900">${t('pay_modal_title', currentLang, order.order_number)}</h3>
         <div class="text-3xl font-black text-orange-600">${Number(order.total_price).toFixed(2)} €</div>
         <p class="text-xs text-slate-500">
-          Encaissé par : <strong>${currentStaff?.name || 'Caissier'}</strong>
+          ${t('cashed_by', currentLang)} <strong>${currentStaff?.name || t('role_cashier', currentLang)}</strong>
         </p>
 
         <div class="grid grid-cols-2 gap-3 pt-1">
           <button id="pay-cash-btn" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-800 font-bold text-sm flex flex-col items-center space-y-1 transition-all active:scale-95">
             <span class="text-2xl">💵</span>
-            <span>Espèces</span>
+            <span>${t('pay_cash', currentLang)}</span>
           </button>
           <button id="pay-card-btn" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-800 font-bold text-sm flex flex-col items-center space-y-1 transition-all active:scale-95">
             <span class="text-2xl">💳</span>
-            <span>Carte (TPE)</span>
+            <span>${t('pay_card', currentLang)}</span>
           </button>
         </div>
 
-        <button id="cancel-pay-btn" class="text-xs text-slate-400 hover:text-slate-600 font-semibold pt-2">Annuler</button>
+        <button id="cancel-pay-btn" class="text-xs text-slate-400 hover:text-slate-600 font-semibold pt-2">${t('cancel', currentLang)}</button>
       </div>
     `;
 
@@ -620,11 +651,11 @@ export function renderPosView(container, store, categories, items) {
         <div class="hidden lg:flex flex-col w-80 xl:w-96 bg-white rounded-3xl p-5 border border-slate-200 shadow-sm min-h-0 shrink-0">
           <div class="flex justify-between items-center pb-3 border-b border-slate-100">
             <div>
-              <h3 class="font-black text-slate-900 text-base">Ticket Comptoir</h3>
-              <p class="text-[11px] text-slate-400">Saisie par : <strong class="text-orange-600">${currentStaff ? currentStaff.name : 'Caissier'}</strong></p>
+              <h3 class="font-black text-slate-900 text-base">${t('counter_ticket_title', currentLang)}</h3>
+              <p class="text-[11px] text-slate-400">${t('taken_by', currentLang)} <strong class="text-orange-600">${currentStaff ? currentStaff.name : t('role_cashier', currentLang)}</strong></p>
             </div>
             ${counterTicket.length > 0 ? `
-              <button id="clear-ticket-btn" class="text-xs text-red-500 hover:text-red-700 font-bold">Vider</button>
+              <button id="clear-ticket-btn" class="text-xs text-red-500 hover:text-red-700 font-bold">${t('clear_ticket', currentLang)}</button>
             ` : ''}
           </div>
 
@@ -632,7 +663,7 @@ export function renderPosView(container, store, categories, items) {
             ${counterTicket.length === 0 ? `
               <div class="h-full flex flex-col items-center justify-center text-center text-slate-400 p-4">
                 <span class="text-3xl mb-2">🛒</span>
-                <p class="text-xs font-semibold">Tapez sur les articles pour les ajouter au ticket</p>
+                <p class="text-xs font-semibold">${t('empty_ticket_hint', currentLang)}</p>
               </div>
             ` : counterTicket.map((line, idx) => `
               <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
@@ -653,16 +684,16 @@ export function renderPosView(container, store, categories, items) {
 
           <div class="pt-3 border-t border-slate-100 space-y-3">
             <div class="flex justify-between items-center">
-              <span class="font-bold text-slate-600 text-sm">Total à régler</span>
+              <span class="font-bold text-slate-600 text-sm">${t('total_to_pay', currentLang)}</span>
               <span class="text-2xl font-black text-slate-900">${total.toFixed(2)} €</span>
             </div>
 
             <div class="grid grid-cols-2 gap-2">
               <button id="quick-pay-cash" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-slate-900 hover:bg-black disabled:opacity-40 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-transform active:scale-95">
-                <span>💵 Espèces</span>
+                <span>💵 ${t('pay_cash', currentLang)}</span>
               </button>
               <button id="quick-pay-card" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-orange-600 hover:bg-orange-700 disabled:opacity-40 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-transform active:scale-95 shadow-lg shadow-orange-600/20">
-                <span>💳 Carte / TPE</span>
+                <span>💳 ${t('pay_card', currentLang)}</span>
               </button>
             </div>
           </div>
@@ -675,7 +706,7 @@ export function renderPosView(container, store, categories, items) {
               ${totalItemsCount}
             </span>
             <div class="truncate">
-              <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Ticket en cours</div>
+              <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">${t('active_ticket', currentLang)}</div>
               <div class="text-base font-black text-orange-400 leading-tight">${total.toFixed(2)} €</div>
             </div>
           </button>
@@ -684,11 +715,11 @@ export function renderPosView(container, store, categories, items) {
             <button id="mobile-open-ticket-btn-2" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-2.5 py-2 rounded-xl transition-colors">
               Détails
             </button>
-            <button id="mobile-quick-pay-cash" ${counterTicket.length === 0 ? 'disabled' : ''} title="Paiement Espèces" class="bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-bold px-2.5 py-2 rounded-xl">
+            <button id="mobile-quick-pay-cash" ${counterTicket.length === 0 ? 'disabled' : ''} title="Paiement ${t('cash', currentLang)}" class="bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-bold px-2.5 py-2 rounded-xl">
               💵
             </button>
             <button id="mobile-quick-pay-card" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-orange-600 hover:bg-orange-700 disabled:opacity-30 text-white text-xs font-bold px-3 py-2 rounded-xl shadow">
-              💳 Payer
+              💳 ${t('pay', currentLang)}
             </button>
           </div>
         </div>
@@ -710,12 +741,12 @@ export function renderPosView(container, store, categories, items) {
         <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3 shrink-0"></div>
         <div class="flex justify-between items-center pb-3 border-b border-slate-100 shrink-0">
           <div>
-            <h3 class="font-black text-slate-900 text-base">Ticket Comptoir</h3>
-            <p class="text-[11px] text-slate-400">Saisie par : <strong class="text-orange-600">${currentStaff ? currentStaff.name : 'Caissier'}</strong></p>
+            <h3 class="font-black text-slate-900 text-base">${t('counter_ticket_title', currentLang)}</h3>
+            <p class="text-[11px] text-slate-400">${t('taken_by', currentLang)} <strong class="text-orange-600">${currentStaff ? currentStaff.name : t('role_cashier', currentLang)}</strong></p>
           </div>
           <div class="flex items-center space-x-2">
             ${counterTicket.length > 0 ? `
-              <button id="drawer-clear-ticket-btn" class="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1">Vider</button>
+              <button id="drawer-clear-ticket-btn" class="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1">${t('clear_ticket', currentLang)}</button>
             ` : ''}
             <button id="drawer-close-ticket-btn" class="p-1.5 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full">✕</button>
           </div>
@@ -746,16 +777,16 @@ export function renderPosView(container, store, categories, items) {
 
         <div class="pt-3 border-t border-slate-100 space-y-3 shrink-0">
           <div class="flex justify-between items-center">
-            <span class="font-bold text-slate-600 text-sm">Total à régler</span>
+            <span class="font-bold text-slate-600 text-sm">${t('total_to_pay', currentLang)}</span>
             <span class="text-2xl font-black text-slate-900">${total.toFixed(2)} €</span>
           </div>
 
           <div class="grid grid-cols-2 gap-2">
             <button id="drawer-pay-cash" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-slate-900 hover:bg-black disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-transform active:scale-95">
-              <span>💵 Espèces</span>
+              <span>💵 ${t('pay_cash', currentLang)}</span>
             </button>
             <button id="drawer-pay-card" ${counterTicket.length === 0 ? 'disabled' : ''} class="bg-orange-600 hover:bg-orange-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-transform active:scale-95 shadow-lg shadow-orange-600/20">
-              <span>💳 Carte / TPE</span>
+              <span>💳 ${t('pay_card', currentLang)}</span>
             </button>
           </div>
         </div>
@@ -945,7 +976,7 @@ export function renderPosView(container, store, categories, items) {
       const d = new Date(now.getTime() - (i * 24 * 60 * 60 * 1000));
       const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
       const dayEnd = dayStart + (24 * 60 * 60 * 1000);
-      const dayLabel = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
+      const dayLabel = d.toLocaleDateString(currentLang === 'en' ? 'en-GB' : 'fr-FR', { weekday: 'short', day: 'numeric' });
 
       const dayOrders = paidOrders.filter(o => {
         const t = new Date(o.created_at).getTime();
@@ -962,8 +993,8 @@ export function renderPosView(container, store, categories, items) {
         <!-- Top Filter Controls -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100 shrink-0">
           <div>
-            <h2 class="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Rapports & Analyse des Ventes</h2>
-            <p class="text-xs text-slate-500">Chiffre d'affaires, répartition par caissier et suivi des performances.</p>
+            <h2 class="text-lg sm:text-xl font-black text-slate-900 tracking-tight">${t('analytics_title', currentLang)}</h2>
+            <p class="text-xs text-slate-500">${t('analytics_subtitle', currentLang)}</p>
           </div>
 
           <!-- Time Period Pills -->
@@ -986,27 +1017,27 @@ export function renderPosView(container, store, categories, items) {
         <!-- 4 Big Metric Cards -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           <div class="p-3 sm:p-4 rounded-2xl bg-orange-50/70 border border-orange-100 flex flex-col justify-between">
-            <span class="text-[10px] sm:text-xs font-bold text-orange-900 uppercase tracking-wider">Chiffre Total</span>
+            <span class="text-[10px] sm:text-xs font-bold text-orange-900 uppercase tracking-wider">${t('total_revenue', currentLang)}</span>
             <div class="text-xl sm:text-3xl font-black text-orange-600 mt-1 sm:mt-2">${totalSales.toFixed(2)} €</div>
-            <span class="text-[10px] sm:text-[11px] text-orange-700/80 mt-1">${orderCount} commandes</span>
+            <span class="text-[10px] sm:text-[11px] text-orange-700/80 mt-1">${t('orders_count', currentLang, orderCount)}</span>
           </div>
 
           <div class="p-3 sm:p-4 rounded-2xl bg-blue-50/70 border border-blue-100 flex flex-col justify-between">
-            <span class="text-[10px] sm:text-xs font-bold text-blue-900 uppercase tracking-wider">Panier Moyen</span>
+            <span class="text-[10px] sm:text-xs font-bold text-blue-900 uppercase tracking-wider">${t('avg_basket', currentLang)}</span>
             <div class="text-xl sm:text-3xl font-black text-blue-600 mt-1 sm:mt-2">${avgBasket.toFixed(2)} €</div>
-            <span class="text-[10px] sm:text-[11px] text-blue-700/80 mt-1">Par ticket / client</span>
+            <span class="text-[10px] sm:text-[11px] text-blue-700/80 mt-1">${t('per_ticket', currentLang)}</span>
           </div>
 
           <div class="p-3 sm:p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100 flex flex-col justify-between">
-            <span class="text-[10px] sm:text-xs font-bold text-emerald-900 uppercase tracking-wider">Carte (TPE)</span>
+            <span class="text-[10px] sm:text-xs font-bold text-emerald-900 uppercase tracking-wider">${t('card_tpe', currentLang)}</span>
             <div class="text-xl sm:text-3xl font-black text-emerald-600 mt-1 sm:mt-2">${cardSales.toFixed(2)} €</div>
-            <span class="text-[10px] sm:text-[11px] text-emerald-700/80 mt-1">${totalSales > 0 ? ((cardSales / totalSales) * 100).toFixed(0) : 0}% du chiffre</span>
+            <span class="text-[10px] sm:text-[11px] text-emerald-700/80 mt-1">${totalSales > 0 ? ((cardSales / totalSales) * 100).toFixed(0) : 0}% ${currentLang === 'en' ? 'of sales' : 'du chiffre'}</span>
           </div>
 
           <div class="p-3 sm:p-4 rounded-2xl bg-amber-50/70 border border-amber-100 flex flex-col justify-between">
-            <span class="text-[10px] sm:text-xs font-bold text-amber-900 uppercase tracking-wider">Espèces</span>
+            <span class="text-[10px] sm:text-xs font-bold text-amber-900 uppercase tracking-wider">${t('cash', currentLang)}</span>
             <div class="text-xl sm:text-3xl font-black text-amber-600 mt-1 sm:mt-2">${cashSales.toFixed(2)} €</div>
-            <span class="text-[10px] sm:text-[11px] text-amber-700/80 mt-1">${totalSales > 0 ? ((cashSales / totalSales) * 100).toFixed(0) : 0}% du chiffre</span>
+            <span class="text-[10px] sm:text-[11px] text-amber-700/80 mt-1">${totalSales > 0 ? ((cashSales / totalSales) * 100).toFixed(0) : 0}% ${currentLang === 'en' ? 'of sales' : 'du chiffre'}</span>
           </div>
         </div>
 
@@ -1017,14 +1048,14 @@ export function renderPosView(container, store, categories, items) {
             <div class="flex justify-between items-center">
               <h3 class="font-extrabold text-slate-900 text-sm flex items-center space-x-1.5">
                 <span>👤</span>
-                <span>Ventes par Personne</span>
+                <span>${t('sales_by_person', currentLang)}</span>
               </h3>
-              <span class="text-xs font-bold text-slate-400">${staffSalesList.length} caissiers</span>
+              <span class="text-xs font-bold text-slate-400">${t('cashiers_count', currentLang, staffSalesList.length)}</span>
             </div>
 
             <div class="space-y-2.5 sm:space-y-3">
               ${staffSalesList.length === 0 ? `
-                <p class="text-xs text-slate-400 py-4 text-center">Aucune vente enregistrée sur cette période.</p>
+                <p class="text-xs text-slate-400 py-4 text-center">${t('no_sales_period', currentLang)}</p>
               ` : staffSalesList.map(st => {
                 const pct = totalSales > 0 ? ((st.total / totalSales) * 100).toFixed(0) : 0;
                 return `
@@ -1059,7 +1090,7 @@ export function renderPosView(container, store, categories, items) {
             <div class="flex justify-between items-center">
               <h3 class="font-extrabold text-slate-900 text-sm flex items-center space-x-1.5">
                 <span>📈</span>
-                <span>Évolution 7 Derniers Jours</span>
+                <span>${t('weekly_evolution', currentLang)}</span>
               </h3>
               <span class="text-xs font-bold text-slate-500">Total : ${dailyTrend.reduce((s, d) => s + d.total, 0).toFixed(2)} €</span>
             </div>
@@ -1082,7 +1113,7 @@ export function renderPosView(container, store, categories, items) {
               }).join('')}
             </div>
 
-            <p class="text-[10px] sm:text-[11px] text-slate-400 text-center">Chiffre d'affaires journalier (7 derniers jours)</p>
+            <p class="text-[10px] sm:text-[11px] text-slate-400 text-center">${t('daily_sales_legend', currentLang)}</p>
           </div>
         </div>
 
@@ -1091,20 +1122,20 @@ export function renderPosView(container, store, categories, items) {
           <div class="space-y-1">
             <div class="flex items-center space-x-2">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <h3 class="font-black text-slate-900 text-sm tracking-wide uppercase">Clôture Journalière (Rapport Z) & Fiscalité</h3>
+              <h3 class="font-black text-slate-900 text-sm tracking-wide uppercase">${t('z_closing_section_title', currentLang)}</h3>
               <span class="text-[10px] bg-slate-900 text-white font-mono px-2 py-0.5 rounded-full">Art. 286 CGI</span>
             </div>
             <p class="text-xs text-slate-600">
-              Scellez les ventes en cours, incrémentez le <strong>Grand Total Perpétuel</strong> et téléchargez l'archive fiscale officielle en cas de contrôle DGFiP.
+              ${t('z_closing_section_desc', currentLang)}
             </p>
           </div>
 
           <div class="flex items-center space-x-2 w-full sm:w-auto shrink-0">
             <button id="close-z-btn" class="flex-1 sm:flex-initial bg-slate-900 hover:bg-black text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 active:scale-95">
-              <span>🔒 Clôturer la Caisse (Z)</span>
+              <span>${t('btn_close_z', currentLang)}</span>
             </button>
             <button id="export-fiscal-btn" title="Télécharger l'Archive Fiscale pour audit DGFiP" class="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-bold px-3 py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1 shadow-sm active:scale-95">
-              <span>📥 Archive Audit</span>
+              <span>${t('btn_fiscal_archive', currentLang)}</span>
             </button>
           </div>
         </div>
@@ -1177,19 +1208,19 @@ export function renderPosView(container, store, categories, items) {
         <!-- Header Controls -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 sm:gap-3 pb-3 border-b border-slate-100 shrink-0">
           <div>
-            <h2 class="text-base sm:text-lg font-black text-slate-900">Carte & Gestion des Employés</h2>
-            <p class="text-xs text-slate-500">Gérez les plats du restaurant et les comptes de vos caissiers.</p>
+            <h2 class="text-base sm:text-lg font-black text-slate-900">${t('menu_mgmt_title', currentLang)}</h2>
+            <p class="text-xs text-slate-500">${t('menu_mgmt_desc', currentLang)}</p>
           </div>
 
           <div class="grid grid-cols-3 sm:flex items-center gap-1.5 sm:space-x-2 w-full sm:w-auto">
             <button id="manage-team-btn" class="text-[11px] sm:text-xs bg-slate-900 hover:bg-black text-white px-2 sm:px-3.5 py-2 sm:py-2.5 rounded-xl font-bold transition-colors flex items-center justify-center space-x-1 shadow">
-              <span>👥 Équipe (${staffList.length})</span>
+              <span>${t('btn_team', currentLang, staffList.length)}</span>
             </button>
             <button id="add-category-btn" class="text-[11px] sm:text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 sm:px-3.5 py-2 sm:py-2.5 rounded-xl font-bold transition-colors text-center">
               + Catégorie
             </button>
             <button id="add-item-btn" class="text-[11px] sm:text-xs bg-orange-600 hover:bg-orange-700 text-white px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold shadow-md shadow-orange-600/25 transition-transform active:scale-95 flex items-center justify-center space-x-1">
-              <span>+ Article</span>
+              <span>${t('btn_add_item', currentLang)}</span>
             </button>
           </div>
         </div>
@@ -1199,22 +1230,22 @@ export function renderPosView(container, store, categories, items) {
           <div class="space-y-1">
             <div class="flex items-center space-x-2">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span class="text-xs font-black tracking-wider uppercase text-emerald-400">Contrôle Admin & Conformité Fiscale</span>
+              <span class="text-xs font-black tracking-wider uppercase text-emerald-400">${t('admin_control_title', currentLang)}</span>
               <span class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-mono">${store.slug}.allonssy.com</span>
             </div>
             <p class="text-xs text-slate-300">
-              <strong class="text-white">Auto-sync externe : Désactivé</strong>. POS certifié conforme CGI Art. 286 I-3° bis (Inaltérabilité, Sécurisation SHA-256, Conservation & Archivage).
+              <strong class="text-white">${t('admin_control_desc', currentLang)}</strong>
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
             <button id="tax-cert-btn" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 border border-slate-600 active:scale-95">
-              <span>📜 Attestation Fiscale</span>
+              <span>${t('btn_tax_cert', currentLang)}</span>
             </button>
             <button id="tech-dossier-btn" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 border border-slate-600 active:scale-95">
-              <span>📄 Dossier Technique</span>
+              <span>${t('btn_tech_dossier', currentLang)}</span>
             </button>
             <button id="manual-sync-btn" class="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow flex items-center justify-center space-x-1.5 active:scale-95">
-              <span>🔄 Forcer sync Allonssy</span>
+              <span>${t('btn_force_sync', currentLang)}</span>
             </button>
           </div>
         </div>
@@ -1222,7 +1253,7 @@ export function renderPosView(container, store, categories, items) {
         <!-- Filter Categories Bar -->
         <div class="flex space-x-2 overflow-x-auto pb-1 shrink-0 hide-scrollbar">
           <button data-mgr-cat="all" class="mgr-cat-btn px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${managerSelectedCat === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
-            Tous les articles (${items.length})
+            ${t('all_items', currentLang, items.length)}
           </button>
           ${categories.map(c => {
             const count = items.filter(i => i.category_id === c.id).length;
@@ -1239,8 +1270,8 @@ export function renderPosView(container, store, categories, items) {
           ${displayedItems.length === 0 ? `
             <div class="h-64 flex flex-col items-center justify-center text-center p-8 bg-slate-50 rounded-2xl border border-slate-100">
               <span class="text-3xl mb-2">🍽️</span>
-              <h4 class="font-bold text-slate-700">Aucun article dans cette catégorie</h4>
-              <p class="text-xs text-slate-400 mt-1">Cliquez sur "+ Ajouter un Article" pour créer votre premier plat.</p>
+              <h4 class="font-bold text-slate-700">${t('no_items_category', currentLang)}</h4>
+              <p class="text-xs text-slate-400 mt-1">${t('no_items_category_hint', currentLang)}</p>
             </div>
           ` : `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1275,7 +1306,7 @@ export function renderPosView(container, store, categories, items) {
 
                     <div class="pt-3 border-t border-slate-200/70 flex items-center justify-between gap-2">
                       <button data-toggle-stock="${item.id}" class="text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors ${item.is_available ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}">
-                        ${item.is_available ? '● En stock' : '○ Rupture'}
+                        ${item.is_available ? t('in_stock', currentLang) : t('out_of_stock', currentLang)}
                       </button>
 
                       <div class="flex items-center space-x-1">
@@ -1462,7 +1493,7 @@ export function renderPosView(container, store, categories, items) {
                 <div class="text-[10px] text-slate-500">Rôle: ${st.role === 'owner' ? 'Patron / Administrateur' : 'Caissier'} • PIN: ****</div>
               </div>
               ${st.role !== 'owner' ? `
-                <button data-remove-staff="${st.id}" class="text-red-500 font-bold hover:underline text-[11px]">Supprimer</button>
+                <button data-remove-staff="${st.id}" class="text-red-500 font-bold hover:underline text-[11px]">${t('delete', currentLang)}</button>
               ` : `<span class="text-slate-400 font-medium text-[10px]">Compte Principal</span>`}
             </div>
           `).join('')}
@@ -1548,7 +1579,7 @@ export function renderPosView(container, store, categories, items) {
         </div>
 
         <div class="flex justify-end space-x-2 pt-2">
-          <button id="cancel-cat-btn" class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700">Annuler</button>
+          <button id="cancel-cat-btn" class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700">${t('cancel', currentLang)}</button>
           <button id="save-cat-btn" class="px-4 py-2 text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white rounded-xl shadow">Créer</button>
         </div>
       </div>
@@ -1648,7 +1679,7 @@ export function renderPosView(container, store, categories, items) {
         </div>
 
         <div class="flex justify-end space-x-2 pt-3 border-t border-slate-100">
-          <button id="cancel-item-btn" class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700">Annuler</button>
+          <button id="cancel-item-btn" class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700">${t('cancel', currentLang)}</button>
           <button id="save-item-btn" class="px-5 py-2.5 text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white rounded-xl shadow-md shadow-orange-600/25">Enregistrer</button>
         </div>
       </div>
@@ -1799,16 +1830,16 @@ export function renderPosView(container, store, categories, items) {
             <div class="sep"></div>
 
             <div class="row">
-              <span>Ticket: #${order.order_number}</span>
+              <span>${currentLang === 'en' ? 'Receipt' : 'Ticket'}: #${order.order_number}</span>
               <span>${formattedDate} ${formattedTime}</span>
             </div>
             <div class="row">
-              <span>Client: ${order.customer_name || 'Comptoir'}</span>
-              <span>Caissier: ${order.staff_name || currentStaff?.name || 'Caissier'}</span>
+              <span>${currentLang === 'en' ? 'Customer' : 'Client'}: ${order.customer_name || (currentLang === 'en' ? 'Counter' : 'Comptoir')}</span>
+              <span>${currentLang === 'en' ? 'Server' : 'Caissier'}: ${order.staff_name || currentStaff?.name || t('role_cashier', currentLang)}</span>
             </div>
             <div class="row">
-              <span>Mode: ${order.payment_method === 'card' ? 'CARTE BANCAIRE (TPE)' : 'ESPÈCES'}</span>
-              <span class="bold">PAYÉ</span>
+              <span>${currentLang === 'en' ? 'Method' : 'Mode'}: ${order.payment_method === 'card' ? (currentLang === 'en' ? 'CARD (TERMINAL)' : 'CARTE BANCAIRE (TPE)') : (currentLang === 'en' ? 'CASH' : 'ESPÈCES')}</span>
+              <span class="bold">${currentLang === 'en' ? 'PAID' : 'PAYÉ'}</span>
             </div>
             <div class="sep"></div>
 
@@ -1826,32 +1857,32 @@ export function renderPosView(container, store, categories, items) {
 
             <!-- VAT Details -->
             <div class="row">
-              <span>Sous-total HT :</span>
+              <span>${t('total_ht', currentLang)}</span>
               <span>${totalHt.toFixed(2)} €</span>
             </div>
             <div class="row">
-              <span>TVA 10.0% :</span>
+              <span>${t('tva_10', currentLang)}</span>
               <span>${tva10.toFixed(2)} €</span>
             </div>
             ${tva55 > 0 ? `
               <div class="row">
-                <span>TVA 5.5% :</span>
+                <span>${t('tva_55', currentLang)}</span>
                 <span>${tva55.toFixed(2)} €</span>
               </div>
             ` : ''}
             <div class="sep"></div>
             <div class="row bold text-sm pt-0.5">
-              <span>TOTAL TTC :</span>
+              <span>${t('total_ttc', currentLang)}</span>
               <span>${totalTtc.toFixed(2)} €</span>
             </div>
             <div class="sep"></div>
 
             <!-- Security Hash -->
             <div class="text-[9px] text-slate-400 break-all text-center">
-              Empreinte fiscale : ${order.signature_hash ? order.signature_hash.substring(0, 24) + '...' : 'SCELLEMENT_ACTIF'}
+              ${t('receipt_seal', currentLang)} ${order.signature_hash ? order.signature_hash.substring(0, 24) + '...' : 'SCELLEMENT_ACTIF'}
             </div>
             <div class="center text-[9px] text-slate-500 mt-1">
-              Conforme Art. 286, I-3° bis du CGI<br>Système certifié Allonssy POS
+              ${t('receipt_legal', currentLang)}
             </div>
           </div>
         </div>
@@ -1859,7 +1890,7 @@ export function renderPosView(container, store, categories, items) {
         <!-- Action Buttons -->
         <div class="flex items-center space-x-2 pt-2 border-t border-slate-100 shrink-0">
           <button id="print-receipt-btn" class="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-orange-600/25 transition-transform active:scale-95">
-            <span>🖨️ Imprimer la Note</span>
+            <span>${t('receipt_btn_print', currentLang)}</span>
           </button>
           <button id="close-receipt-btn-2" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
             Fermer
@@ -1895,7 +1926,7 @@ export function renderPosView(container, store, categories, items) {
         <div class="flex justify-between items-center pb-2 border-b border-slate-100 shrink-0">
           <div class="flex items-center space-x-2">
             <span class="text-base">🔒</span>
-            <h3 class="font-black text-slate-900 text-sm">Rapport Z de Caisse #${zNum} (Officiel)</h3>
+            <h3 class="font-black text-slate-900 text-sm">${t('z_modal_title', currentLang)} #${zNum}</h3>
           </div>
           <button id="close-z-modal" class="p-1 text-slate-400 hover:text-slate-600">✕</button>
         </div>
@@ -1906,7 +1937,7 @@ export function renderPosView(container, store, categories, items) {
             <div class="center text-[11px] text-slate-600">${store.address}, ${store.city}</div>
             <div class="center text-[10px] text-slate-500">SIRET: 928 345 812 00018</div>
             <div class="sep"></div>
-            <div class="center bold text-sm">*** RAPPORT Z DE CAISSE N° ${zNum} ***</div>
+            <div class="center bold text-sm">*** ${t('z_report_num', currentLang, zNum)} ***</div>
             <div class="center text-[10px] text-slate-500">Clôture journalière inaltérable</div>
             <div class="sep"></div>
 
@@ -1936,7 +1967,7 @@ export function renderPosView(container, store, categories, items) {
 
             <div class="bold text-[11px] uppercase pb-1">Ventilation des Règlements :</div>
             <div class="row">
-              <span>• Total Espèces :</span>
+              <span>• Total ${t('cash', currentLang)} :</span>
               <span class="bold">${Number(z.total_cash || 0).toFixed(2)} €</span>
             </div>
             <div class="row">
