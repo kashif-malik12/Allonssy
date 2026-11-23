@@ -10,11 +10,34 @@ BACKUP_TMP_DIR="/tmp/r2_backup_bundle"
 TIMESTAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 DATE_MONTH="$(date -u +%Y-%m)"
 
+# ------------------------------------------------------------------------------
+# 🛡️ HARD SPEND CAP / SAFETY GUARD (Free Tier is 10 GB, we cap at 5 GB)
+# ------------------------------------------------------------------------------
+MAX_R2_BYTES=5368709120 # 5 GiB strict safety ceiling
+
 if ! [ -f "${RCLONE_CONFIG_FILE}" ]; then
   echo "[ERROR] rclone config not found at ${RCLONE_CONFIG_FILE}."
   echo "Please configure your Cloudflare R2 credentials first."
   exit 1
 fi
+
+echo "[$(date -u +%FT%TZ)] Checking Cloudflare R2 bucket usage against free tier limit..."
+CURRENT_R2_BYTES=$(/home/deploy/bin/rclone size r2:allonssy-backups --json 2>/dev/null | grep -o '"bytes":[0-9]*' | cut -d: -f2 || echo 0)
+CURRENT_R2_MB=$(( CURRENT_R2_BYTES / 1024 / 1024 ))
+
+echo "[$(date -u +%FT%TZ)] Current R2 storage: ${CURRENT_R2_MB} MB / 5120 MB (Limit: 5 GB of 10 GB Free Tier)"
+
+if [ "${CURRENT_R2_BYTES}" -ge "${MAX_R2_BYTES}" ]; then
+  echo "[FATAL GUARD TRIGGERED] R2 bucket size (${CURRENT_R2_MB} MB) has reached the 5 GB safety threshold!"
+  echo "Aborting upload to guarantee your Cloudflare account is NEVER billed a single cent."
+  exit 1
+fi
+
+# Auto-prune rolling web & server tarballs older than 30 days from R2 to keep usage permanently low
+# (Fiscal archives are preserved for 6 years as they only take ~4 KB each)
+echo "--> Pruning non-fiscal rolling archives older than 30 days in Cloudflare R2..."
+/home/deploy/bin/rclone delete "r2:allonssy-backups/allonssy/" --min-age 30d --include "allonssy_web_*.tar.gz" 2>/dev/null || true
+/home/deploy/bin/rclone delete "r2:allonssy-backups/tradister/" --min-age 30d --include "*.tar.gz" 2>/dev/null || true
 
 rm -rf "${BACKUP_TMP_DIR}"
 mkdir -p "${BACKUP_TMP_DIR}/allonssy" "${BACKUP_TMP_DIR}/tradister"
