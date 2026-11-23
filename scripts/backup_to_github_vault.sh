@@ -6,7 +6,7 @@ set -euo pipefail
 # ==============================================================================
 
 VAULT_DIR="${HOME}/github_backup_vault"
-GIT_REMOTE="git@github.com:kashif-malik12/allonssy-vault-backups.git"
+GIT_REMOTE="git@github.com:kashif-malik12/tradister-allonssy-bacakups.git"
 TIMESTAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 
 echo "[$(date -u +%FT%TZ)] Starting offsite backup to Private GitHub Vault..."
