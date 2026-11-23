@@ -7,3 +7,9 @@
   - **Reason:** Gmail deduplicates emails originating from the same account and skips the inbox because the message is already in "Sent Mail".
   - **Rule:** Always test inbound routing from a completely different sender email address.
   - **Reference:** [Cloudflare Email Routing Documentation](https://developers.cloudflare.com/email-routing/enable-email-routing#test-your-configuration).
+
+## 🔒 Secret Zero-Leakage & API Key Policy (CRITICAL)
+- **Zero Hardcoded Secrets:** Never commit, push, or hardcode API keys (Resend, Cloudflare, Supabase, Stripe, etc.), passwords, or high-entropy tokens in source files, scripts, or backup vaults (even private GitHub repos).
+- **Environment Variables Only:** Always inject secrets dynamically using `getenv()` / process environment variables or secure `.env` files strictly excluded via `.gitignore`.
+- **Automated Backup Sanitization:** Any script syncing directories to remote git repositories (e.g., GitHub backup vaults) must exclude `.env`, sensitive credentials, and verify no raw secrets exist before running `git add` and `git push`.
+- **Pre-Commit / Pre-Push Secret Verification:** Always audit staged diffs (`git diff --staged`) or run secret pattern scanning before pushing code to any remote.

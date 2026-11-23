@@ -45,11 +45,11 @@ if [ -f "${HOME}/backups/supabase/latest/manifest.txt" ]; then
   cp "${HOME}/backups/supabase/latest/manifest.txt" "${VAULT_DIR}/database/"
 fi
 
-# 5. Copy Tradister Applications (Clean source & configs)
+# 5. Copy Tradister Applications (Clean source & configs, excluding sensitive envs/backups)
 echo "--> Syncing Tradister Compte & Plan..."
 mkdir -p "${VAULT_DIR}/tradister"
-rsync -a --delete --exclude='backups/' --exclude='.git/' "${HOME}/tradister-compte" "${VAULT_DIR}/tradister/"
-rsync -a --delete --exclude='.git/' "${HOME}/tradister-plan" "${VAULT_DIR}/tradister/"
+rsync -a --delete --exclude='backups/' --exclude='.git/' --exclude='*.env*' --exclude='*secret*' "${HOME}/tradister-compte" "${VAULT_DIR}/tradister/"
+rsync -a --delete --exclude='.git/' --exclude='*.env*' --exclude='*secret*' "${HOME}/tradister-plan" "${VAULT_DIR}/tradister/"
 
 # 6. Documentation Manifest
 cat > "${VAULT_DIR}/README.md" <<EOF
