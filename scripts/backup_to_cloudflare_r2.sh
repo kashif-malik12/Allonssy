@@ -71,6 +71,11 @@ echo "--> Syncing to Cloudflare R2 bucket: allonssy-backups..."
 /home/deploy/bin/rclone copy -L "${BACKUP_TMP_DIR}/allonssy/" "r2:allonssy-backups/allonssy/${DATE_MONTH}/" --stats 10s
 /home/deploy/bin/rclone copy -L "${BACKUP_TMP_DIR}/tradister/" "r2:allonssy-backups/tradister/${DATE_MONTH}/" --stats 10s
 
+# Direct mirror of full Tradister folders (uncompressed & fully browsable in R2)
+echo "--> Syncing complete Tradister folders directly to Cloudflare R2..."
+/home/deploy/bin/rclone sync "${HOME}/tradister-compte" "r2:allonssy-backups/tradister/tradister-compte" --exclude 'backups/**' --exclude '.git' --stats 10s
+/home/deploy/bin/rclone sync "${HOME}/tradister-plan" "r2:allonssy-backups/tradister/tradister-plan" --exclude '.git' --stats 10s
+
 # Keep a "latest" copy in R2 root
 /home/deploy/bin/rclone sync -L "${BACKUP_TMP_DIR}/" "r2:allonssy-backups/latest/" --stats 10s
 
