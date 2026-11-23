@@ -43,7 +43,8 @@ else:
 
 PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.allonssy.app"
 WEBSITE_URL = "https://app.allonssy.com"
-CREATOR_HUB_URL = "https://kashif-malik12.github.io/allonssy/creator.html"
+CREATOR_HUB_URL = "https://kashif-malik12.github.io/Allonssy/creator.html"
+GITHUB_RAW_BASE = "https://github.com/kashif-malik12/Allonssy/raw/main/docs/videos"
 
 SCHEDULE = [
     {
@@ -232,7 +233,9 @@ def send_post_email(item):
     print(f"🎬 Generating video for Day {item['day']}...")
     video_info = build_video(day=item["day"])
 
-    video_web_url = f"https://kashif-malik12.github.io/allonssy/videos/{video_info['name']}"
+    # Direct GitHub raw download link (works 100% immediately without requiring GitHub Pages)
+    video_web_url = f"{GITHUB_RAW_BASE}/{video_info['name']}"
+    pages_video_url = f"https://kashif-malik12.github.io/Allonssy/videos/{video_info['name']}"
 
     # Pre-filled Reddit submission link
     reddit_params = {

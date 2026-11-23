@@ -380,14 +380,15 @@
       document.getElementById("dayTitle").innerText = `Day ${day}: ${data.title}`;
       document.getElementById("dayDesc").innerText = data.desc;
 
-      const videoUrl = `videos/${data.videoName}`;
+      const rawFallback = `https://github.com/kashif-malik12/Allonssy/raw/main/docs/videos/${data.videoName}`;
+      const videoUrl = window.location.hostname.includes('github.io') ? `videos/${data.videoName}` : rawFallback;
       const videoPlayer = document.getElementById("videoPlayer");
       const videoSource = document.getElementById("videoSource");
       videoSource.src = videoUrl;
       videoPlayer.load();
 
       const downloadBtn = document.getElementById("downloadBtn");
-      downloadBtn.href = videoUrl;
+      downloadBtn.href = rawFallback;
       downloadBtn.setAttribute("download", data.videoName);
 
       document.getElementById("captionText").innerText = data.caption;
