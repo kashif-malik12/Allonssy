@@ -351,7 +351,12 @@ def run_next(force=False):
         print(f"Post already sent today ({today_str}). Use --force to send again.")
         return
 
-    current_day = (state.get("last_day_sent", 0) % len(SCHEDULE)) + 1
+    if state.get("last_day_sent", 0) > 0:
+        current_day = (state["last_day_sent"] % len(SCHEDULE)) + 1
+    elif os.environ.get("GITHUB_ACTIONS") == "true":
+        current_day = (date.today().toordinal() % len(SCHEDULE)) + 1
+    else:
+        current_day = 1
     item = next((s for s in SCHEDULE if s["day"] == current_day), SCHEDULE[0])
 
     success = send_post_email(item)

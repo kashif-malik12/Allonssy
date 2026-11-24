@@ -21,6 +21,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: marketing/requirements.txt
 
       - name: Install System Dependencies & Fonts
         run: |
@@ -29,8 +30,8 @@ jobs:
 
       - name: Install Python Dependencies
         run: |
-          pip install --upgrade pip
-          pip install pillow edge-tts requests python-dotenv
+          python -m pip install --upgrade pip
+          pip install -r marketing/requirements.txt
 
       - name: Run Daily Video Generator & Email Dispatcher
         env:
