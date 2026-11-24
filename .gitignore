@@ -75,3 +75,7 @@ output/
 *.state.json
 .daily_post_state.json
 
+
+.env
+.env.*
+
