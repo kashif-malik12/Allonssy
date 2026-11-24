@@ -272,7 +272,7 @@ def send_post_email(item):
       <div class="card">
         <span class="badge">🚀 Allonssy Autopilot Growth • Day {item['day']} of {len(SCHEDULE)}</span>
         <h2>Your Daily Growth Dispatch</h2>
-        <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Two quick 1-minute actions to grow Allonssy today:</p>
+        <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Today's 1080p merchant marketing video &amp; TikTok dispatch:</p>
 
         <!-- PART 1: VIDEO -->
         <div class="section-box">
@@ -296,26 +296,6 @@ def send_post_email(item):
 
           <p style="font-size: 13px; font-weight: bold; color: #0f172a; margin-top: 12px; margin-bottom: 4px;">Copy-Paste Caption & Hashtags:</p>
           <div class="caption-code">{video_info['caption']} #reels #explorepage</div>
-        </div>
-
-        <!-- PART 2: REDDIT -->
-        <div class="section-box">
-          <span class="badge badge-reddit">🔥 Action 2: Publish Today's Reddit Post</span>
-          <h3>Subreddit: {item['target']}</h3>
-          <p style="color: #64748b; font-size: 13px;">{item['description']}</p>
-          
-          <div class="warning-box">
-            ⚠️ <strong>Submission Checklist:</strong><br>
-            • Mode: <strong>Post (Text tab)</strong> — not Link/Image.<br>
-            • Required Flair: <span class="flair-pill">{item['flair_needed']}</span>
-          </div>
-
-          <div style="text-align: center;">
-            <a href="{submit_url}" class="btn" style="background: #FF4500;" target="_blank">👉 Open Pre-Filled Reddit Submission</a>
-          </div>
-
-          <p style="font-size: 13px; color: #334155; margin-bottom: 6px;"><strong>Title:</strong> {item['title']}</p>
-          <div class="preview">{item['body']}</div>
         </div>
 
         <div class="footer">
